@@ -9726,6 +9726,312 @@ func main() { run() }
 	}
 }
 
+// TestEmitCStoreIntoLocal holds what a callee stores through a local's address to
+// the local in the summaries (intoCand, applyIntoCands): `set(&k, buf); return k`
+// hands buf back, as `k = buf; return k` does. The call site's own check marked the
+// local for the body, and the summary read it as holding nothing, so a caller
+// passing a buffer of its own got a view of its dead frame back, kept it in a
+// package variable or had it stored through an out parameter, in every release
+// (dom69). And under a defer a return returns the named results, which a deferred
+// call may set after the values listed.
+func TestEmitCStoreIntoLocal(t *testing.T) {
+	const decls = `import "errors"
+
+var ErrX = errors.New("x")
+
+type E struct{ p *int }
+
+func (e *E) Error() string { return "e" }
+
+type H struct{ n int }
+
+func (h *H) two() (int, *H) { return 1, h }
+
+func g(p []byte) []byte { return p }
+
+var gk []byte
+var gerr error
+var gp *H
+var gq *int
+var gn int
+var ge E
+var gbuf [4]byte
+
+`
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		{
+			name: "a deferred call storing the parameter into a named result",
+			src: `func view(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+func set(pk *[]byte, v []byte) { *pk = v }
+
+func f(buf []byte) (k []byte) {
+	defer set(&k, buf)
+	return nil
+}
+
+func run() {
+	var buf [4]byte
+	gk = f(buf[:])
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local buf in package variable gk",
+		},
+		{
+			name: "a call storing the parameter into a named result, returned bare",
+			src: `func view(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+func set(pk *[]byte, v []byte) { *pk = v }
+
+func f(buf []byte) (k []byte) {
+	set(&k, buf)
+	return
+}
+
+func run() {
+	var buf [4]byte
+	gk = f(buf[:])
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local buf in package variable gk",
+		},
+		{
+			name: "a call storing the parameter into a named result, returned by name",
+			src: `func view(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+func set(pk *[]byte, v []byte) { *pk = v }
+
+func f(buf []byte) (k []byte) {
+	set(&k, buf)
+	return k
+}
+
+func run() {
+	var buf [4]byte
+	gk = f(buf[:])
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local buf in package variable gk",
+		},
+		{
+			name: "a call storing the parameter into a local, returned",
+			src: `func view(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+func set(pk *[]byte, v []byte) { *pk = v }
+
+func f(buf []byte) []byte {
+	var k []byte
+	set(&k, buf)
+	return k
+}
+
+func run() {
+	var buf [4]byte
+	gk = f(buf[:])
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local buf in package variable gk",
+		},
+		{
+			name: "a call storing the parameter into a local, kept in a package variable",
+			src: `func view(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+func set(pk *[]byte, v []byte) { *pk = v }
+
+func f(buf []byte) {
+	var k []byte
+	set(&k, buf)
+	gk = k
+}
+
+func run() {
+	var lbuf [4]byte
+	f(lbuf[:])
+}
+
+func main() { run() }
+`,
+			want: "cannot pass a slice backed by local lbuf to f",
+		},
+		{
+			name: "a call storing the parameter into a local, stored through an out parameter",
+			src: `func view(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+func set(pk *[]byte, v []byte) { *pk = v }
+
+func f(buf []byte, out *[]byte) {
+	var k []byte
+	set(&k, buf)
+	*out = k
+}
+
+func run() {
+	var lbuf [4]byte
+	f(lbuf[:], &gk)
+}
+
+func main() { run() }
+`,
+			want: "cannot pass a slice backed by local lbuf to f",
+		},
+		{
+			name: "a method storing the parameter into a local receiver",
+			src: `type B struct{ xs []byte }
+
+func (b *B) set(v []byte) { b.xs = v }
+
+func f(buf []byte) []byte {
+	var b B
+	b.set(buf)
+	return b.xs
+}
+
+func run() {
+	var buf [4]byte
+	gk = f(buf[:])
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local buf in package variable gk",
+		},
+		{
+			name: "a call storing the parameter through a local pointer to a local",
+			src: `func set(pk *[]byte, v []byte) { *pk = v }
+
+func f(buf []byte) []byte {
+	var k []byte
+	pk := &k
+	set(pk, buf)
+	return k
+}
+
+func run() {
+	var buf [4]byte
+	gk = f(buf[:])
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local buf in package variable gk",
+		},
+		{
+			name: "errors.As into a local, returned",
+			src: `func f(err error) *E {
+	var le *E
+	errors.As(err, &le)
+	return le
+}
+
+var gle *E
+
+func run() {
+	var x E
+	gle = f(&x)
+}
+
+func main() { run() }
+`,
+			want: "cannot store the address of local variable x in package variable gle",
+		},
+		{
+			name: "a call filling a local struct with a view of the parameter",
+			src: `type B struct{ xs []byte }
+
+func fill(b *B, v []byte) { b.xs = v }
+
+func f(buf []byte) B {
+	var b B
+	fill(&b, buf)
+	return b
+}
+
+var gb B
+
+func run() {
+	var buf [4]byte
+	gb = f(buf[:])
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local buf in package variable gb",
+		},
+		{
+			name: "a call storing the parameter into a local, its length returned",
+			src: `func set(pk *[]byte, v []byte) { *pk = v }
+
+func f(buf []byte) int {
+	var k []byte
+	set(&k, buf)
+	return len(k)
+}
+
+func run() {
+	var buf [4]byte
+	println(f(buf[:]))
+}
+
+func main() { run() }
+`,
+			want: "",
+		},
+		{
+			name: "a call storing the parameter through a relay into a local",
+			src: `func set(pk *[]byte, v []byte) { *pk = v }
+
+func relay(pk *[]byte, v []byte) { set(pk, v) }
+
+func f(buf []byte) []byte {
+	var k []byte
+	relay(&k, buf)
+	return k
+}
+
+func run() {
+	var buf [4]byte
+	gk = f(buf[:])
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local buf in package variable gk",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a reference outliving its frame; want %q", test.want)
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCRuneStringEscape(t *testing.T) {
 	const decls = `var g string
 

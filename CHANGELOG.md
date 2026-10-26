@@ -27,6 +27,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   and so did a method handing back its receiver in a named result, a function
   literal, an interface's method and two results set in a list, in every release.
   Each is refused now, as the same function returning `k` by name was.
+- **What a callee stores through a local's address is what the local holds, to
+  the lifetime rules too**: `var k []byte; set(&k, buf); return k`, for a `set`
+  storing its second parameter through its first, handed the caller's buffer back
+  unrecorded -- the call's own check marked k inside the function, and the summary
+  its callers are judged by read k as holding nothing -- so `gk = f(local[:])` kept
+  a view of the caller's dead frame, `70 0 0 0` where Go prints `10 11 12 13`. So
+  did a method storing into a local receiver, a store through a local pointer to
+  the local, `errors.As` into a local that is returned, a local struct a callee
+  fills, the local kept in a package variable or stored through an out parameter,
+  and a deferred call setting a named result after `return nil`, in every release.
+  Each is refused now.
 
 ### Fixed
 

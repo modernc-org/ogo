@@ -6685,7 +6685,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool, seeds loopSeeds) (loopSeeds, error) {
-	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanSendClosedElems: map[string]bool{}, chanBufElems: map[string]bool{}, chanLenElems: map[string]bool{}, chanReadyElems: map[string]bool{}, aliasOf: map[string]string{}, aliasLits: map[string]bool{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]int{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, recvInto: map[string]uint32{}, recvSelf: map[string]bool{}, retRecv: map[string]bool{}, retRecvShallow: map[string]bool{}, retPosUnknown: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string]shiftHelper{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, stackChecked: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanSendClosedElems: map[string]bool{}, chanBufElems: map[string]bool{}, chanLenElems: map[string]bool{}, chanReadyElems: map[string]bool{}, aliasOf: map[string]string{}, aliasLits: map[string]bool{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]int{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, recvInto: map[string]uint32{}, recvSelf: map[string]bool{}, intoHolds: map[string]map[string][]held{}, intoSeen: map[string]bool{}, crossInfos: map[string]crossInfo{}, retRecv: map[string]bool{}, retRecvShallow: map[string]bool{}, retPosUnknown: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string]shiftHelper{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, stackChecked: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -6830,6 +6830,19 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	forEachFile(func() { e.collectFuncValues(e.f.AST) })
 	forEachFile(func() { e.collectCrossParams(e.f.AST) })
 	e.closeCrossParams()
+	// A local whose address a call hands a callee holds what the callee stores
+	// there, which only the closed summaries say (applyIntoCands): the functions
+	// whose locals gain a binding are summarised again, and the summaries closed
+	// again, until none does. Bindings only grow, so it ends.
+	for redo := e.applyIntoCands(); len(redo) != 0; redo = e.applyIntoCands() {
+		for _, cn := range redo {
+			ci := e.crossInfos[cn]
+			e.f, e.curPkgPrefix, e.pkgOrd = ci.f, ci.prefix, ci.ord
+			e.collectFuncCross(ci.fi)
+		}
+		e.curPkgPrefix = ""
+		e.closeCrossParams()
+	}
 
 	// Pass 1: forward prototypes for user functions. C requires a declaration
 	// before use, but OctoGo (like Go) does not order top-level declarations, so
@@ -7903,176 +7916,180 @@ type emitter struct {
 	labelContinue       map[string]string       // source label -> C continue-target label, for "continue L" (a labeled for)
 	labelUsed           map[string]bool         // C labels a labeled break/continue jumped to, so an unreferenced one is not emitted
 	labelSeq            int
-	retSeq              int                     // disambiguates a result-struct name two different result lists spell alike                      // counter minting unique labeled-loop break/continue labels
-	pendingContLabel    string                  // the current labeled for's C continue target, for emitLoopBody to place at the body's end
-	postContLabel       string                  // the enclosing loop's post-statement label, when its post cannot fit C's third clause
-	loopContLabel       string                  // the label ending the enclosing loop's body, for a continue a select's own C loop would take (selectInLoop)
-	selectInLoop        int                     // selects open since the enclosing loop's body began: each is a C loop of its own
-	pendingPost         func()                  // that loop's post statements, emitted after the label
-	pendingSwitchLabel  string                  // the source label of a labeled switch, for emitSwitch to bind to its end label
-	deferBlockDepth     int                     // nesting inside if/for/switch bodies; a defer at depth > 0 needs a runtime flag
-	deferReplay         int                     // slot being replayed, or -1: makes emitCallArgs read the captured temporaries
-	iota                int                     // the current iota value while emitting a const spec's expression, or -1 outside one
-	deferReplayArgs     []deferArg              // that slot's arguments, so emitCallArgs knows which were captured
-	deferReplayOff      int                     // where a print's own argument 0 is among them: 1 for printf, past its format
-	usesPanic           bool                    // ogo_panic is called: emit its definition and pull in its includes
-	usesSpin2           bool                    // a Spin2 object is declared, whose methods may start cogs
-	testEntry           string                  // the entry point of a test binary, replacing main (see TestEntry)
-	usesBound           bool                    // ogo_bound is called: emit the index bounds-check helper
-	usesBound64         bool                    // ogo_bound64 is called, for an index of int64
-	usesBound64u        bool                    // ogo_bound64u is called, for an index of uint64
-	usesSBound64        bool                    // ogo_sbound64 is called, for a slice bound of int64
-	mkLenHelpers        map[string]bool         // the length checks of make called (emitMakeLen)
-	usesSBound64u       bool                    // ogo_sbound64u is called, for a slice bound of uint64
-	usesLUT             bool                    // p2.ReadLUT or p2.WriteLUT is called: emit ogo_rdlut and ogo_wrlut (lutHelperDef)
-	fvState                                     // what FuncValueClasses writes (funcclasses.go)
-	stackChecks         map[string]bool         // the functions, by C name, whose entry checks the stack (StackChecks); nil for none
-	stackPerCog         bool                    // the checks read each cog's end of stack, which a goroutine's trampoline records
-	stackChecked        map[string]bool         // the functions of stackChecks emitted with their check
-	nilHelpers          map[string]bool         // pointer types whose nil-dereference guard is called
-	initSkew            map[string]bool         // flexccInitSkew's answers, by C type
-	arrPtrHelpers       map[string]arrDim       // pointer-to-array types a slice is converted to: emit each one's helper
-	usliceHelpers       map[string]bool         // element C types unsafe.Slice makes a slice of: emit each one's helper
-	usesNonzero         bool                    // ogo_nonzero is called: emit the divide-by-zero-check helper
-	usesFloatFmt        bool                    // ogo_print_float is called: a float printed by print, println or any float verb (see floatFmtHelper)
-	usesF64Fmt          bool                    // ogo_print_f64 is called: the same for a float64 (f64FmtHelper)
-	usesBytesPrint      bool                    // ogo_print_hex_bytes / ogo_print_qbytes are called: %x, %X or %q over a string or a byte slice
-	usesQBytes          bool                    // ogo_print_qbytes is called: %q over a string or a byte slice (qbytesHelper)
-	usesRuneQuote       bool                    // ogo_print_qrune is called: %q of an integer
-	usesQuoteFmt        bool                    // %q under a flag, a width or a precision: emit quoteFmtHelpers
-	usesUnicodePrint    bool                    // %U under a width or a precision: emit unicodePrintHelper
-	usesUnicodeSharp    bool                    // %#U: emit unicodeSharpHelper
-	stringLits          map[string]string       // a constant string's value -> the file-scope ogo_string holding its header (stringLitName)
-	stringLitDecls      []stringLitDecl         // the declarations of stringLits, in the order they were named
-	userTypeNames       map[string]string       // C name -> source name of every type the program DECLARES, in any package (see typeNameForT)
-	usesIfaceNil        bool                    // ogo_iface_vt (nil-interface call guard) is called
-	usesNonzero64       bool                    // ogo_nonzero64 (64-bit divisor guard) is called
-	usesNonzero64u      bool                    // ogo_nonzero64u (the uint64 divisor's guard) is called
-	usesUDivHi          bool                    // ogo_udivhi is called: an unsigned division the target computes wrongly (udivHighConst)
-	usesUModHi          bool                    // ogo_umodhi is called: its remainder
-	litDepth            int                     // aggregate initializers being emitted: a constant inside one is spelled for an initializer (see constSpelling)
-	constWide           map[string]string       // 64-bit integer constants, by C name, to their underlying C type: inlined at each use, never declared (see emitConstSpecName)
-	foldUnsigned        bool                    // the fold computes as a uint64: the level being folded is unsigned (see wideConstValue)
-	usesF2u32           bool                    // ogo_f2u32 is called: a float converts to a 32-bit unsigned integer
-	usesF2i64           bool                    // ogo_f2i64 is called: a float converts to an int64 (needs ogo_f2u32)
-	usesF2u64           bool                    // ogo_f2u64 is called: a float converts to a uint64 (needs both)
-	usesU2f             bool                    // ogo_u2f is called: an integer converts to a float (needs ogo_fprec)
-	usesI2f             bool                    // ogo_i2f is called: a signed integer converts to a float (needs ogo_u2f)
-	shiftHelpers        map[string]shiftHelper  // guarded shift helper name -> what it is defined from
-	shl32Types          map[string]bool         // the 64-bit C types a shift left by 32 is written for through its helper (shl32C)
-	storeCarries        *carriedRef             // what the value emitStore is about to write carries of this frame, for the list forms (see carryInto)
-	shiftCTypes         map[*int32]string       // a shift operator, by its place in the AST -> the C type its untyped constant operand takes, where the emitter typed the context (see typeUntypedShifts)
-	shiftWalked         map[shiftWalkKey]bool   // the nodes typeUntypedShiftsNode has walked, each for a context
-	shiftIn             map[*int32]bool         // whether a shift operator occurs under a node, by its place in the AST (see hasShift)
-	divHelpers          map[string][2]string    // guarded signed division helper name -> {operator, value C type}
-	clock               *clockSetting           // a clock the program asks for, instead of the backend's 160 MHz default
-	release             bool                    // release build: a panic reboots (_reboot) instead of stopping every cog
-	inline              bool                    // mark the small functions for the backend to inline (set by Inline)
-	switchChains        bool                    // write every switch as a chain of compares (set by SwitchChains)
-	calledNames         map[string]int          // how many times each name is written with a "(" after it, in the whole program: its calls and its declarations (see inlineCandidate)
-	usesInline          bool                    // a function was marked, so the C defines the mark (inlineMacro)
-	checks              bool                    // emit runtime bounds / divide-by-zero checks (set by Checked; ogo build enables it by default)
-	locals              map[string]string       // current function's parameter/local name -> C type, for typing `x := y`
-	curFunc             string                  // name of the function whose body is being emitted (for its result-struct type)
-	pkgScope            bool                    // a package variable's initializer is being emitted, where this frame's storage does not exist
-	inUnminted          bool                    // a question unminted asks is under way: the types it mints are forgotten
-	curResultNames      []string                // current function's result C-variable names, for a bare "return" (naked return)
-	curArrayResult      string                  // the NAME its single array result was declared with, which a return copies into the caller's storage
-	curResultTypes      []string                // current function's result C types, for typing a `return nil` in a slice-returning function
-	tmp                 int                     // per-function counter for generated temporaries (destructuring)
-	makeN               int                     // translation-unit counter for make() backing arrays
-	wroteDecl           bool                    // a top-level definition has been emitted (drives blank-line separators)
-	mainRet             bool                    // currently emitting main's body: a bare `return` yields `return 0;`
-	mainOutlives        bool                    // main's outermost block outlives every cog (mainOutlivesCogs): no goto back in main (backwardGoto), and main not called by the program
-	declInit            bool                    // emitting a static initializer: a string literal must use a brace, not a compound literal
-	usesString          bool                    // an ogo_string type/literal appears: emit stringTypedef
-	usesStringPrint     bool                    // a string is printed: emit stringHelpers
-	usesStringPad       bool                    // printf %s with a width: emit stringPadHelper
-	usesRunePrint       bool                    // printf %c is used: emit runePrintHelper
-	usesRunePad         bool                    // printf %c with a width: emit runePadHelper
-	usesIntPrint        bool                    // ogo_print_int is called: an integer verb with a flag, width or precision, a signed %x or %o, or any %b (see intPrintHelper)
-	goStack             int                     // longs of stack per goroutine slot, 0 for the default (see goStackLongs)
-	usesStringEq        bool                    // a string == / != appears: emit ogo_string_eq
-	eqStructs           map[string]bool         // struct C types compared with == / !=: emit an ogo_eq_<T> helper
-	eqArrays            map[string]arrDim       // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
-	prologue            []string                // lines to emit before the statement being emitted, for a temporary an expression needs hoisted out of itself (see emitStatement)
-	discardCall         bool                    // the call about to be emitted is a statement that throws its value away (see emitCallStmtExpr)
-	chainDiscard        bool                    // the chain chainCText renders next is a statement's whose value is thrown away (chainFallback)
-	printArgs           []printArg              // a print's arguments already bound to temporaries, so nothing the print itself emits can change state (see hoistPrintArgs)
-	scopeNames          []map[string]bool       // per open block, the local names visible entering it, so blockDepthOf can say which block declares a name
-	curParams           map[string]bool         // the parameter names of the function being emitted. A parameter's own storage is this frame's, but what it POINTS AT is the caller's, which isFrameVar deliberately does not distinguish and the receiver-leak rule must (see checkRecvLeak).
-	litPath             string                  // the C path from the composite literal being rendered to the element now being rendered -- "[1]", ".xs", "[0].xs". Empty outside one.
-	litUnderAddr        bool                    // the composite literal about to be rendered is the operand of &: its elements' storage is what the address points at (see litDerefMark)
-	underAddr           bool                    // the operand of & is being rendered, an index's value excepted: what it reaches is addressed, not read (see wideRowC)
-	litFixups           []litFixup              // that literal's elements C cannot spell in an initializer, deferred to a copy after the declaration (see recordLitFixup)
-	litFixable          bool                    // the literal being rendered has an owner that will emit those copies -- one that gives it a NAME. False in the positions that have no storage to copy into.
-	frameBacked         map[string]int          // local slice variables whose backing array is storage of this frame, so returning one would dangle (see checkReturnBacking), each with the block depth of that storage where it is known (markBacked)
-	crossParams         map[string][]leak       // per function, how each parameter lets a value escape the caller's frame -- a cog crossing or a store that outlives it, directly or through a call (see collectCrossParams)
-	crossContents       map[string][]leak       // per function, how each parameter's CONTENTS escape -- what its elements, or its pointee's fields, hold -- `gp = v[0]` (see heldKind)
-	retContents         map[string][]bool       // per function, which parameters' CONTENTS a result carries, `return v[0]`
-	recvContents        map[string]leak         // a method's receiver's CONTENTS kept where they outlive the call, `gs = c.d`
-	paramCalls          map[string][]paramCall  // per function, which of its parameters it CALLS and with what of its others (see paramCall)
-	siteSeq             int                     // numbers the calls the summaries record, so edges of one call can be paired (see crossEdge.site)
-	siteFuncs           []siteFunc              // declared functions handed as arguments, by call (see siteFunc)
-	curParamOrder       []string                // the parameter names of the function being emitted, in order, unnamed ones as bindParams names them
-	funcParamAlias      map[string]string       // a local holding one of those parameters, a function value, `g := f`: the parameter
-	frameCalls          map[string][]frameCall  // per function, the calls of its callback parameters handed this frame's storage (see frameCall)
-	pendingCallbacks    []pendingCallback       // functions handed to a callee, asked about its frameCalls once every body is emitted
-	funcValueMembers    map[string][]string     // per function type (funcShapeID), the summary names of every function used as a VALUE of it (see collectFuncValues)
-	methodExprMembers   map[string]emMethodExpr // a method expression among those members, by its member name (see methodExprSummary)
-	memberShown         map[string]string       // how a diagnostic names each of those members
-	litLifted           map[string][]string     // a function literal's summary key -> the C names it was lifted to, whose frameCalls are its own
-	typeCallees         []string                // the "type:" callees the summaries have edges to, refreshed by the fixed point (unionSummary)
-	heldCallValues      map[string][]int32      // the call a "call@" name in a function's summary holds stands for (see summaryHolds)
-	methodNames         map[string]bool         // the name of every method of every type, which a selector calling one is known by (scanBindings)
-	bindWrites          map[string]int          // in the function being emitted, how often a name -- or one field of it, funcFieldKey -- is declared or assigned (see boundFunc)
-	bindBlock           map[string]int          // ... the block all those writes are in, or -1 for more than one
-	bindOpaque          map[string]bool         // ... a write the binding does not follow: a range, a receive, several results
-	bindLits            map[string]int          // ... a name declared with a value, which may set its fields, and the block it is in
-	bindValue           map[string][]int32      // ... the value a name is given by a plain `x := v` or `x = v`, the last one seen (see targetThroughRef, which believes it where bindWrites is 1)
-	bindAliased         map[string]bool         // ... a name something else may write through: its address is taken, or a method is called on it
-	bindSelfAddr        map[string]bool         // ... a name whose OWN value something else may write: `&x` of x itself -- not of an element or a field of it, which bindAliased counts too
-	bindSelfCall        map[string]bool         // ... a name a method is called on itself, `x.m()`, whose address a pointer receiver takes unless x is a pointer (see onceBound)
-	bindViews           map[string][]held       // ... what each name the function binds may hold, by shape (summaryHolds): a slice's VIEWS, read by viewedHolder
-	bindGotos           bool                    // ... it has a goto, which may run a block's writes again after a later one
-	derefShown          map[string]string       // a temporary bound for a store through `(*f())`, and the source it stands for, for a message (emitAssignment)
-	nilSafe             map[string]bool         // the C names of the pointer parameters an earlier statement of the function body's own list dereferenced, which need no nil check again (emitTopStatement)
-	nilEmitted          map[string]bool         // ... the C text of every pointer the statement being emitted nil-checked
-	nilBody             bool                    // the next emitBlockStmts is a function body, whose statements fill nilSafe
-	nilRecv             string                  // the pointer receiver of the method being emitted, a parameter as the others are
-	bindBody, bindSeq   int                     // ... the block of its body, where its parameters are written, and the last block numbered
-	recvLeaks           map[string]leak         // a pointer method's RECEIVER kept where it outlives the call: leakGlobal, leakCog (see recvEdge)
-	recvEdges           []recvEdge              // how a receiver's keeping travels to callers (see recvEdge)
-	copyRecvEdges       []copyRecvEdge          // how a copied receiver's contents travel to callers (see copyRecvEdge)
-	retRecv             map[string]bool         // a pointer method returns its receiver, so its result is what it was called on
-	retRecvShallow      map[string]bool         // ...and some return is the receiver's own value or a place in its pointee, not only what is reached past that (see deepRecvReturn)
-	retPosUnknown       map[string]bool         // a function some return of which does not list each of its several results: its summary by position (resultPos) is not kept
-	crossInto           map[string][]uint32     // per function, which PARAMETERS each parameter is stored through, as a bitmask of their indices. leakRecv answers this for a method's receiver; a plain function has no receiver and needed the general form (see pointerParamSlots)
-	recvInto            map[string]uint32       // a pointer method's RECEIVER stored through its parameters, a bitmask of their indices, as crossInto says it of a parameter: `*p = m` in a method of m (see checkRecvInto)
-	recvSelf            map[string]bool         // a pointer method's RECEIVER stored into the receiver's own storage, `w.free = &w.pool[0]`: what it is called on holds a pointer into itself from the call on (checkRecvAt)
-	ifaceSummaries      map[string]ifaceSummary // "<iface>.<method>" -> the union of the summaries of every implementation, since which one a call reaches is the vtable's answer (see ifaceCallSummary)
-	retParams           map[string][]bool       // per function, which parameters a RESULT derives from, so a reference handed back out is followed to the storage it came from (see frameRefOf)
-	funcValueOf         map[string]string       // variable holding a function -> that function's C name, when it is known, so a call through the variable is judged by the callee's summaries (see bindFuncValue)
-	crossEdges          []crossEdge             // call sites passing a parameter straight on, the graph closeCrossParams walks
-	retEdges            []crossEdge             // returns of a call taking a parameter, the graph the result summary is closed over
-	derivedEdges        []derivedEdge           // a call's result, derived from a parameter, stored or crossed (see derivedEdge)
-	crossNames          map[string]string       // C function name -> the name it was declared with, for crossParams diagnostics
-	frameHolder         map[string]string       // local -> the local whose storage it holds a reference to, a struct field having been given one (see noteFrameHolder)
-	tmpShown            map[string]string       // a temporary -> what it binds as the program wrote it, `*hh`, for a diagnostic (displayName)
-	arrayView           viewFunc                // while the summaries are collected: where an array a chain reaches is (summaryReach)
-	summaryRecv         string                  // while the summaries are collected: the method's receiver, whose handing back is a value and a depth (deepRecvReturn)
-	loopSeedsIn         loopSeeds               // the marks the pass before found each loop's body to make, given at its head (applyLoopSeeds)
-	loopSeedsOut        loopSeeds               // the marks this pass found a loop's body to make that its head did not have (noteLoopSeeds)
-	chanCells           []string                // file-scope static cell declarations for locally declared channels, discovered while emitting bodies (see emitLocalChanCell)
-	selectRots          []string                // file-scope counters where each select of two clauses or more starts its tests (emitSelect)
-	pkgLitObjects       []string                // file-scope static objects that give a package initializer's &T{...} its storage (see pkgLitObject)
-	errorsAsTarget      bool                    // the errors package is in the program, so its asTarget is written after the last body (mintErrorsAsTarget)
-	chanCellN           int                     // counter minting unique cell names, program-wide like makeN
-	chanSiteInit        []string                // what package initialization does first: each make site's lock taken, each package-level cell made (emitMakeChan)
-	chanLockN           int                     // counter minting the make sites' lock variables
-	usesStringCmp       bool                    // a string < <= > >= appears: emit ogo_string_cmp
-	usesRuneDecode      bool                    // `for i, c := range s` appears: emit ogo_decode_rune
-	usesRuneCount       bool                    // `len([]rune(s))` appears: emit ogo_rune_count
+	retSeq              int                          // disambiguates a result-struct name two different result lists spell alike                      // counter minting unique labeled-loop break/continue labels
+	pendingContLabel    string                       // the current labeled for's C continue target, for emitLoopBody to place at the body's end
+	postContLabel       string                       // the enclosing loop's post-statement label, when its post cannot fit C's third clause
+	loopContLabel       string                       // the label ending the enclosing loop's body, for a continue a select's own C loop would take (selectInLoop)
+	selectInLoop        int                          // selects open since the enclosing loop's body began: each is a C loop of its own
+	pendingPost         func()                       // that loop's post statements, emitted after the label
+	pendingSwitchLabel  string                       // the source label of a labeled switch, for emitSwitch to bind to its end label
+	deferBlockDepth     int                          // nesting inside if/for/switch bodies; a defer at depth > 0 needs a runtime flag
+	deferReplay         int                          // slot being replayed, or -1: makes emitCallArgs read the captured temporaries
+	iota                int                          // the current iota value while emitting a const spec's expression, or -1 outside one
+	deferReplayArgs     []deferArg                   // that slot's arguments, so emitCallArgs knows which were captured
+	deferReplayOff      int                          // where a print's own argument 0 is among them: 1 for printf, past its format
+	usesPanic           bool                         // ogo_panic is called: emit its definition and pull in its includes
+	usesSpin2           bool                         // a Spin2 object is declared, whose methods may start cogs
+	testEntry           string                       // the entry point of a test binary, replacing main (see TestEntry)
+	usesBound           bool                         // ogo_bound is called: emit the index bounds-check helper
+	usesBound64         bool                         // ogo_bound64 is called, for an index of int64
+	usesBound64u        bool                         // ogo_bound64u is called, for an index of uint64
+	usesSBound64        bool                         // ogo_sbound64 is called, for a slice bound of int64
+	mkLenHelpers        map[string]bool              // the length checks of make called (emitMakeLen)
+	usesSBound64u       bool                         // ogo_sbound64u is called, for a slice bound of uint64
+	usesLUT             bool                         // p2.ReadLUT or p2.WriteLUT is called: emit ogo_rdlut and ogo_wrlut (lutHelperDef)
+	fvState                                          // what FuncValueClasses writes (funcclasses.go)
+	stackChecks         map[string]bool              // the functions, by C name, whose entry checks the stack (StackChecks); nil for none
+	stackPerCog         bool                         // the checks read each cog's end of stack, which a goroutine's trampoline records
+	stackChecked        map[string]bool              // the functions of stackChecks emitted with their check
+	nilHelpers          map[string]bool              // pointer types whose nil-dereference guard is called
+	initSkew            map[string]bool              // flexccInitSkew's answers, by C type
+	arrPtrHelpers       map[string]arrDim            // pointer-to-array types a slice is converted to: emit each one's helper
+	usliceHelpers       map[string]bool              // element C types unsafe.Slice makes a slice of: emit each one's helper
+	usesNonzero         bool                         // ogo_nonzero is called: emit the divide-by-zero-check helper
+	usesFloatFmt        bool                         // ogo_print_float is called: a float printed by print, println or any float verb (see floatFmtHelper)
+	usesF64Fmt          bool                         // ogo_print_f64 is called: the same for a float64 (f64FmtHelper)
+	usesBytesPrint      bool                         // ogo_print_hex_bytes / ogo_print_qbytes are called: %x, %X or %q over a string or a byte slice
+	usesQBytes          bool                         // ogo_print_qbytes is called: %q over a string or a byte slice (qbytesHelper)
+	usesRuneQuote       bool                         // ogo_print_qrune is called: %q of an integer
+	usesQuoteFmt        bool                         // %q under a flag, a width or a precision: emit quoteFmtHelpers
+	usesUnicodePrint    bool                         // %U under a width or a precision: emit unicodePrintHelper
+	usesUnicodeSharp    bool                         // %#U: emit unicodeSharpHelper
+	stringLits          map[string]string            // a constant string's value -> the file-scope ogo_string holding its header (stringLitName)
+	stringLitDecls      []stringLitDecl              // the declarations of stringLits, in the order they were named
+	userTypeNames       map[string]string            // C name -> source name of every type the program DECLARES, in any package (see typeNameForT)
+	usesIfaceNil        bool                         // ogo_iface_vt (nil-interface call guard) is called
+	usesNonzero64       bool                         // ogo_nonzero64 (64-bit divisor guard) is called
+	usesNonzero64u      bool                         // ogo_nonzero64u (the uint64 divisor's guard) is called
+	usesUDivHi          bool                         // ogo_udivhi is called: an unsigned division the target computes wrongly (udivHighConst)
+	usesUModHi          bool                         // ogo_umodhi is called: its remainder
+	litDepth            int                          // aggregate initializers being emitted: a constant inside one is spelled for an initializer (see constSpelling)
+	constWide           map[string]string            // 64-bit integer constants, by C name, to their underlying C type: inlined at each use, never declared (see emitConstSpecName)
+	foldUnsigned        bool                         // the fold computes as a uint64: the level being folded is unsigned (see wideConstValue)
+	usesF2u32           bool                         // ogo_f2u32 is called: a float converts to a 32-bit unsigned integer
+	usesF2i64           bool                         // ogo_f2i64 is called: a float converts to an int64 (needs ogo_f2u32)
+	usesF2u64           bool                         // ogo_f2u64 is called: a float converts to a uint64 (needs both)
+	usesU2f             bool                         // ogo_u2f is called: an integer converts to a float (needs ogo_fprec)
+	usesI2f             bool                         // ogo_i2f is called: a signed integer converts to a float (needs ogo_u2f)
+	shiftHelpers        map[string]shiftHelper       // guarded shift helper name -> what it is defined from
+	shl32Types          map[string]bool              // the 64-bit C types a shift left by 32 is written for through its helper (shl32C)
+	storeCarries        *carriedRef                  // what the value emitStore is about to write carries of this frame, for the list forms (see carryInto)
+	shiftCTypes         map[*int32]string            // a shift operator, by its place in the AST -> the C type its untyped constant operand takes, where the emitter typed the context (see typeUntypedShifts)
+	shiftWalked         map[shiftWalkKey]bool        // the nodes typeUntypedShiftsNode has walked, each for a context
+	shiftIn             map[*int32]bool              // whether a shift operator occurs under a node, by its place in the AST (see hasShift)
+	divHelpers          map[string][2]string         // guarded signed division helper name -> {operator, value C type}
+	clock               *clockSetting                // a clock the program asks for, instead of the backend's 160 MHz default
+	release             bool                         // release build: a panic reboots (_reboot) instead of stopping every cog
+	inline              bool                         // mark the small functions for the backend to inline (set by Inline)
+	switchChains        bool                         // write every switch as a chain of compares (set by SwitchChains)
+	calledNames         map[string]int               // how many times each name is written with a "(" after it, in the whole program: its calls and its declarations (see inlineCandidate)
+	usesInline          bool                         // a function was marked, so the C defines the mark (inlineMacro)
+	checks              bool                         // emit runtime bounds / divide-by-zero checks (set by Checked; ogo build enables it by default)
+	locals              map[string]string            // current function's parameter/local name -> C type, for typing `x := y`
+	curFunc             string                       // name of the function whose body is being emitted (for its result-struct type)
+	pkgScope            bool                         // a package variable's initializer is being emitted, where this frame's storage does not exist
+	inUnminted          bool                         // a question unminted asks is under way: the types it mints are forgotten
+	curResultNames      []string                     // current function's result C-variable names, for a bare "return" (naked return)
+	curArrayResult      string                       // the NAME its single array result was declared with, which a return copies into the caller's storage
+	curResultTypes      []string                     // current function's result C types, for typing a `return nil` in a slice-returning function
+	tmp                 int                          // per-function counter for generated temporaries (destructuring)
+	makeN               int                          // translation-unit counter for make() backing arrays
+	wroteDecl           bool                         // a top-level definition has been emitted (drives blank-line separators)
+	mainRet             bool                         // currently emitting main's body: a bare `return` yields `return 0;`
+	mainOutlives        bool                         // main's outermost block outlives every cog (mainOutlivesCogs): no goto back in main (backwardGoto), and main not called by the program
+	declInit            bool                         // emitting a static initializer: a string literal must use a brace, not a compound literal
+	usesString          bool                         // an ogo_string type/literal appears: emit stringTypedef
+	usesStringPrint     bool                         // a string is printed: emit stringHelpers
+	usesStringPad       bool                         // printf %s with a width: emit stringPadHelper
+	usesRunePrint       bool                         // printf %c is used: emit runePrintHelper
+	usesRunePad         bool                         // printf %c with a width: emit runePadHelper
+	usesIntPrint        bool                         // ogo_print_int is called: an integer verb with a flag, width or precision, a signed %x or %o, or any %b (see intPrintHelper)
+	goStack             int                          // longs of stack per goroutine slot, 0 for the default (see goStackLongs)
+	usesStringEq        bool                         // a string == / != appears: emit ogo_string_eq
+	eqStructs           map[string]bool              // struct C types compared with == / !=: emit an ogo_eq_<T> helper
+	eqArrays            map[string]arrDim            // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
+	prologue            []string                     // lines to emit before the statement being emitted, for a temporary an expression needs hoisted out of itself (see emitStatement)
+	discardCall         bool                         // the call about to be emitted is a statement that throws its value away (see emitCallStmtExpr)
+	chainDiscard        bool                         // the chain chainCText renders next is a statement's whose value is thrown away (chainFallback)
+	printArgs           []printArg                   // a print's arguments already bound to temporaries, so nothing the print itself emits can change state (see hoistPrintArgs)
+	scopeNames          []map[string]bool            // per open block, the local names visible entering it, so blockDepthOf can say which block declares a name
+	curParams           map[string]bool              // the parameter names of the function being emitted. A parameter's own storage is this frame's, but what it POINTS AT is the caller's, which isFrameVar deliberately does not distinguish and the receiver-leak rule must (see checkRecvLeak).
+	litPath             string                       // the C path from the composite literal being rendered to the element now being rendered -- "[1]", ".xs", "[0].xs". Empty outside one.
+	litUnderAddr        bool                         // the composite literal about to be rendered is the operand of &: its elements' storage is what the address points at (see litDerefMark)
+	underAddr           bool                         // the operand of & is being rendered, an index's value excepted: what it reaches is addressed, not read (see wideRowC)
+	litFixups           []litFixup                   // that literal's elements C cannot spell in an initializer, deferred to a copy after the declaration (see recordLitFixup)
+	litFixable          bool                         // the literal being rendered has an owner that will emit those copies -- one that gives it a NAME. False in the positions that have no storage to copy into.
+	frameBacked         map[string]int               // local slice variables whose backing array is storage of this frame, so returning one would dangle (see checkReturnBacking), each with the block depth of that storage where it is known (markBacked)
+	crossParams         map[string][]leak            // per function, how each parameter lets a value escape the caller's frame -- a cog crossing or a store that outlives it, directly or through a call (see collectCrossParams)
+	crossContents       map[string][]leak            // per function, how each parameter's CONTENTS escape -- what its elements, or its pointee's fields, hold -- `gp = v[0]` (see heldKind)
+	retContents         map[string][]bool            // per function, which parameters' CONTENTS a result carries, `return v[0]`
+	recvContents        map[string]leak              // a method's receiver's CONTENTS kept where they outlive the call, `gs = c.d`
+	paramCalls          map[string][]paramCall       // per function, which of its parameters it CALLS and with what of its others (see paramCall)
+	siteSeq             int                          // numbers the calls the summaries record, so edges of one call can be paired (see crossEdge.site)
+	siteFuncs           []siteFunc                   // declared functions handed as arguments, by call (see siteFunc)
+	curParamOrder       []string                     // the parameter names of the function being emitted, in order, unnamed ones as bindParams names them
+	funcParamAlias      map[string]string            // a local holding one of those parameters, a function value, `g := f`: the parameter
+	frameCalls          map[string][]frameCall       // per function, the calls of its callback parameters handed this frame's storage (see frameCall)
+	pendingCallbacks    []pendingCallback            // functions handed to a callee, asked about its frameCalls once every body is emitted
+	funcValueMembers    map[string][]string          // per function type (funcShapeID), the summary names of every function used as a VALUE of it (see collectFuncValues)
+	methodExprMembers   map[string]emMethodExpr      // a method expression among those members, by its member name (see methodExprSummary)
+	memberShown         map[string]string            // how a diagnostic names each of those members
+	litLifted           map[string][]string          // a function literal's summary key -> the C names it was lifted to, whose frameCalls are its own
+	typeCallees         []string                     // the "type:" callees the summaries have edges to, refreshed by the fixed point (unionSummary)
+	heldCallValues      map[string][]int32           // the call a "call@" name in a function's summary holds stands for (see summaryHolds)
+	methodNames         map[string]bool              // the name of every method of every type, which a selector calling one is known by (scanBindings)
+	bindWrites          map[string]int               // in the function being emitted, how often a name -- or one field of it, funcFieldKey -- is declared or assigned (see boundFunc)
+	bindBlock           map[string]int               // ... the block all those writes are in, or -1 for more than one
+	bindOpaque          map[string]bool              // ... a write the binding does not follow: a range, a receive, several results
+	bindLits            map[string]int               // ... a name declared with a value, which may set its fields, and the block it is in
+	bindValue           map[string][]int32           // ... the value a name is given by a plain `x := v` or `x = v`, the last one seen (see targetThroughRef, which believes it where bindWrites is 1)
+	bindAliased         map[string]bool              // ... a name something else may write through: its address is taken, or a method is called on it
+	bindSelfAddr        map[string]bool              // ... a name whose OWN value something else may write: `&x` of x itself -- not of an element or a field of it, which bindAliased counts too
+	bindSelfCall        map[string]bool              // ... a name a method is called on itself, `x.m()`, whose address a pointer receiver takes unless x is a pointer (see onceBound)
+	bindViews           map[string][]held            // ... what each name the function binds may hold, by shape (summaryHolds): a slice's VIEWS, read by viewedHolder
+	bindGotos           bool                         // ... it has a goto, which may run a block's writes again after a later one
+	derefShown          map[string]string            // a temporary bound for a store through `(*f())`, and the source it stands for, for a message (emitAssignment)
+	nilSafe             map[string]bool              // the C names of the pointer parameters an earlier statement of the function body's own list dereferenced, which need no nil check again (emitTopStatement)
+	nilEmitted          map[string]bool              // ... the C text of every pointer the statement being emitted nil-checked
+	nilBody             bool                         // the next emitBlockStmts is a function body, whose statements fill nilSafe
+	nilRecv             string                       // the pointer receiver of the method being emitted, a parameter as the others are
+	bindBody, bindSeq   int                          // ... the block of its body, where its parameters are written, and the last block numbered
+	recvLeaks           map[string]leak              // a pointer method's RECEIVER kept where it outlives the call: leakGlobal, leakCog (see recvEdge)
+	recvEdges           []recvEdge                   // how a receiver's keeping travels to callers (see recvEdge)
+	copyRecvEdges       []copyRecvEdge               // how a copied receiver's contents travel to callers (see copyRecvEdge)
+	retRecv             map[string]bool              // a pointer method returns its receiver, so its result is what it was called on
+	retRecvShallow      map[string]bool              // ...and some return is the receiver's own value or a place in its pointee, not only what is reached past that (see deepRecvReturn)
+	retPosUnknown       map[string]bool              // a function some return of which does not list each of its several results: its summary by position (resultPos) is not kept
+	crossInto           map[string][]uint32          // per function, which PARAMETERS each parameter is stored through, as a bitmask of their indices. leakRecv answers this for a method's receiver; a plain function has no receiver and needed the general form (see pointerParamSlots)
+	recvInto            map[string]uint32            // a pointer method's RECEIVER stored through its parameters, a bitmask of their indices, as crossInto says it of a parameter: `*p = m` in a method of m (see checkRecvInto)
+	intoCands           []intoCand                   // calls handing a callee the address of a local, or a local as the receiver, whose stores there the closed summaries decide (applyIntoCands)
+	intoHolds           map[string]map[string][]held // per function, what a local holds of what a callee stored through its address (applyIntoCands), read with the body's own bindings
+	intoSeen            map[string]bool              // the intoCands recorded, by fn, callee, target and site, for a summary taken again to record none twice
+	crossInfos          map[string]crossInfo         // per summarised function, what collectFuncCross was called with and in which file, for taking a summary again (applyIntoCands)
+	recvSelf            map[string]bool              // a pointer method's RECEIVER stored into the receiver's own storage, `w.free = &w.pool[0]`: what it is called on holds a pointer into itself from the call on (checkRecvAt)
+	ifaceSummaries      map[string]ifaceSummary      // "<iface>.<method>" -> the union of the summaries of every implementation, since which one a call reaches is the vtable's answer (see ifaceCallSummary)
+	retParams           map[string][]bool            // per function, which parameters a RESULT derives from, so a reference handed back out is followed to the storage it came from (see frameRefOf)
+	funcValueOf         map[string]string            // variable holding a function -> that function's C name, when it is known, so a call through the variable is judged by the callee's summaries (see bindFuncValue)
+	crossEdges          []crossEdge                  // call sites passing a parameter straight on, the graph closeCrossParams walks
+	retEdges            []crossEdge                  // returns of a call taking a parameter, the graph the result summary is closed over
+	derivedEdges        []derivedEdge                // a call's result, derived from a parameter, stored or crossed (see derivedEdge)
+	crossNames          map[string]string            // C function name -> the name it was declared with, for crossParams diagnostics
+	frameHolder         map[string]string            // local -> the local whose storage it holds a reference to, a struct field having been given one (see noteFrameHolder)
+	tmpShown            map[string]string            // a temporary -> what it binds as the program wrote it, `*hh`, for a diagnostic (displayName)
+	arrayView           viewFunc                     // while the summaries are collected: where an array a chain reaches is (summaryReach)
+	summaryRecv         string                       // while the summaries are collected: the method's receiver, whose handing back is a value and a depth (deepRecvReturn)
+	loopSeedsIn         loopSeeds                    // the marks the pass before found each loop's body to make, given at its head (applyLoopSeeds)
+	loopSeedsOut        loopSeeds                    // the marks this pass found a loop's body to make that its head did not have (noteLoopSeeds)
+	chanCells           []string                     // file-scope static cell declarations for locally declared channels, discovered while emitting bodies (see emitLocalChanCell)
+	selectRots          []string                     // file-scope counters where each select of two clauses or more starts its tests (emitSelect)
+	pkgLitObjects       []string                     // file-scope static objects that give a package initializer's &T{...} its storage (see pkgLitObject)
+	errorsAsTarget      bool                         // the errors package is in the program, so its asTarget is written after the last body (mintErrorsAsTarget)
+	chanCellN           int                          // counter minting unique cell names, program-wide like makeN
+	chanSiteInit        []string                     // what package initialization does first: each make site's lock taken, each package-level cell made (emitMakeChan)
+	chanLockN           int                          // counter minting the make sites' lock variables
+	usesStringCmp       bool                         // a string < <= > >= appears: emit ogo_string_cmp
+	usesRuneDecode      bool                         // `for i, c := range s` appears: emit ogo_decode_rune
+	usesRuneCount       bool                         // `len([]rune(s))` appears: emit ogo_rune_count
 	err                 error
 }
 
@@ -12936,6 +12953,63 @@ const (
 	recvLocal
 )
 
+// intoCand is a call of fn handing callee the address of locals of fn at argument
+// target, or one of them as the receiver for a target < 0, and what each argument
+// reaches: where the callee's closed summary stores its parameter i there --
+// crossInto, or leakRecv for the receiver -- the locals hold what argument i
+// reaches (applyIntoCands).
+type intoCand struct {
+	fn, callee string
+	target     int
+	locals     []string
+	vals       [][]held
+}
+
+// crossInfo is what collectFuncCross was called with and where, for a summary
+// taken again.
+type crossInfo struct {
+	fi     funcInfo
+	f      *File
+	prefix string
+	ord    int
+}
+
+// applyIntoCands gives each local a call handed a callee the address of what the
+// callee's closed summary stores there (intoCand), and returns the functions whose
+// locals gained a binding, sorted, for their summaries to be taken again.
+func (e *emitter) applyIntoCands() (redo []string) {
+	grew := map[string]bool{}
+	for _, c := range e.intoCands {
+		for i, hs := range c.vals {
+			stores := false
+			if c.target >= 0 {
+				ci := e.crossInto[c.callee]
+				stores = i < len(ci) && c.target < intoBits && ci[i]&(1<<c.target) != 0
+			} else {
+				cp := e.crossParams[c.callee]
+				stores = i < len(cp) && cp[i]&leakRecv != 0
+			}
+			if !stores || len(hs) == 0 {
+				continue
+			}
+			for _, l := range c.locals {
+				m := e.intoHolds[c.fn]
+				if m == nil {
+					m = map[string][]held{}
+					e.intoHolds[c.fn] = m
+				}
+				for _, h := range asPart(hs) {
+					if !slices.Contains(m[l], h) {
+						m[l] = append(m[l], h)
+						grew[c.fn] = true
+					}
+				}
+			}
+		}
+	}
+	return slices.Sorted(maps.Keys(grew))
+}
+
 // collectCrossParams seeds the per-parameter crossing summary for the functions of
 // one file, and records the call edges the fixed point later walks.
 //
@@ -13054,6 +13128,7 @@ func (e *emitter) litParamNames(lit Node) (funcInfo, bool) {
 // collectCrossParams.
 func (e *emitter) collectFuncCross(fi funcInfo) {
 	cname, srcName, params, body, recvName := fi.cname, fi.srcName, fi.params, fi.body, fi.recvName
+	e.crossInfos[cname] = crossInfo{fi, e.f, e.curPkgPrefix, e.pkgOrd}
 	// A POINTER receiver is the address of whatever the method is called on; what
 	// the method keeps of it is summarised as a parameter's is (recvLeaks).
 	recvPtr := recvName != "" && e.isPointer(fi.recvCType)
@@ -13070,6 +13145,12 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	for name, operand := range e.typeSwitchAliases(body) {
 		holds[name] = append(holds[name], held{operand, heldAlias})
 	}
+	// And what a callee stored through a local's address, which the closed summaries
+	// said (applyIntoCands): `set(&k, buf); return k` hands buf back.
+	for name, hs := range e.intoHolds[cname] {
+		holds[name] = append(holds[name], hs...)
+	}
+	deferred := e.bodyDefers(body)
 	// resolve walks what a value reaching hs may carry through the holds, calling fn
 	// with each name and whether it is that name's CONTENTS rather than its value
 	// (see heldKind). A name's value is what it holds by value or as a part, and the
@@ -14105,6 +14186,54 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		}
 		return out
 	}
+	// noteInto records a call handing callee the address of a local of this
+	// function, at argument j, or a local as its receiver (recvLocal): what the
+	// callee stores there of its parameter i, the local holds of argument i from
+	// the call on -- which the callee's closed summary says, not this walk
+	// (intoCand, applyIntoCands). The call site's own check marks the local for
+	// the body (checkIntoArgsIn, checkRecvLeak); the summary read the local as
+	// holding nothing, so `set(&k, buf); return k` handed buf back unrecorded.
+	frameLocal := func(n string) bool {
+		return n != "" && n != "_" && !strings.ContainsAny(n, "@?") && at(n) < 0 && !isRecv(n) && !e.outlivesByName(n)
+	}
+	noteInto := func(callee string, site int, args []Node, owner []int, recvCopy string) {
+		var vals [][]held
+		valsOf := func() [][]held {
+			if vals == nil {
+				vals = make([][]held, len(args))
+				for i, a := range args {
+					vals[i] = e.summaryReach(a.ast)
+				}
+			}
+			return vals
+		}
+		record := func(target int, locals []string) {
+			if len(locals) == 0 {
+				return
+			}
+			key := fmt.Sprintf("%s|%s|%d|%d|%v", cname, callee, target, site, locals)
+			if e.intoSeen[key] {
+				return
+			}
+			e.intoSeen[key] = true
+			e.intoCands = append(e.intoCands, intoCand{fn: cname, callee: callee, target: target, locals: locals, vals: valsOf()})
+		}
+		for j, a := range args {
+			if j >= len(owner) || owner[j] != argLocal {
+				continue
+			}
+			var locals []string
+			resolve(e.summaryReach(a.ast), func(n string, contents bool) {
+				if !contents && frameLocal(n) && !slices.Contains(locals, n) {
+					locals = append(locals, n)
+				}
+			})
+			record(j, locals)
+		}
+		if recvCopy != "" && frameLocal(recvCopy) {
+			record(-1, []string{recvCopy})
+		}
+	}
 	if _, seen := e.crossParams[cname]; !seen {
 		e.crossParams[cname] = make([]leak, len(params))
 	}
@@ -14791,12 +14920,24 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			// A bare return returns the named results. Read as returning nothing,
 			// `k = buf; return` handed the caller's buffer back in silence, and a
 			// caller keeping k kept a view of its own frame past its return.
-			if len(exprs) == 0 {
+			bare := len(exprs) == 0
+			if bare {
 				for _, t := range fi.resultToks {
 					exprs = append(exprs, []int32{t})
 				}
 			}
-			retSummary(cname, exprs, func([]Node) bool { return true })
+			// And under a defer every return returns them, whatever it lists: a
+			// deferred call may set them after the values are, `defer set(&k, buf);
+			// return nil` handing buf back.
+			alsoNamed := deferred && !bare && len(fi.resultToks) == len(exprs)
+			whole := exprs
+			if alsoNamed {
+				whole = slices.Clone(exprs)
+				for _, t := range fi.resultToks {
+					whole = append(whole, []int32{t})
+				}
+			}
+			retSummary(cname, whole, func([]Node) bool { return true })
 			// And each result of several on its own (resultPos), what the caller
 			// binding them asks of each: `k, err := e.key(buf[:])` hands buf back in
 			// k and not in err, which a summary of the whole call cannot say. A
@@ -14812,7 +14953,11 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 							e.retParams[pn], e.retContents[pn] = make([]bool, len(params)), make([]bool, len(params))
 						}
 						lo, hi := firstIndex(v), lastIndex(v)
-						retSummary(pn, [][]int32{v}, func(args []Node) bool {
+						list := [][]int32{v}
+						if alsoNamed {
+							list = append(list, []int32{fi.resultToks[i]})
+						}
+						retSummary(pn, list, func(args []Node) bool {
 							return len(args) != 0 && args[0].Pos() >= lo && args[0].Pos() <= hi
 						})
 					}
@@ -14857,6 +15002,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			site := e.siteSeq
 			e.siteSeq++
 			funcArgs(site, c.callee, c.args)
+			if len(c.args) != 0 {
+				noteInto(c.callee, int(c.args[0].Pos()), args, owner, "")
+			}
 			for j, a := range args {
 				e.crossEdges = append(e.crossEdges, viaEdges(crossEdge{caller: cname, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner, site: site}, a.ast, false)...)
 				hs := e.summaryReach(a.ast)
@@ -14892,6 +15040,13 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			args, owner := fwdOwners(c.args)
 			site := e.siteSeq
 			e.siteSeq++
+			if len(c.args) != 0 {
+				recvCopy := ""
+				if c.recv == recvLocal {
+					recvCopy = c.copyOf
+				}
+				noteInto(c.callee, int(c.args[0].Pos()), args, owner, recvCopy)
+			}
 			for j, a := range args {
 				e.crossEdges = append(e.crossEdges, viaEdges(crossEdge{caller: cname, callee: c.callee, to: j, recv: c.recv, recvAt: c.recvAt, argOwner: owner, site: site}, a.ast, false)...)
 				hs := e.summaryReach(a.ast)
@@ -21070,6 +21225,23 @@ func (e *emitter) arrayResultName(sig []int32) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// bodyDefers reports whether the function whose body is ast defers a call, a
+// function literal's own defers not counted.
+func (e *emitter) bodyDefers(ast []int32) bool {
+	for n := range it(ast) {
+		switch {
+		case n.sym == 0:
+			if e.f.ch(n.tok) == DEFER {
+				return true
+			}
+		case n.sym == FuncLiteral:
+		case e.bodyDefers(n.ast):
+			return true
+		}
+	}
+	return false
 }
 
 // bodyHasNakedReturn reports whether ast contains a bare "return" -- a return
