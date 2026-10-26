@@ -82,6 +82,8 @@ silent fault puts the count back to 0. Each round's account is in
   bare return handed back nothing, and a callee's store through a local's address
   was not the local's), one false refusal fixed (a call's error beside a view of a
   local buffer) -- 0
+- dom70 (2026-10-26), a CAN network: silent (an array of structs holding an array,
+  a literal's field, copied as one element) -- 0
 
 ## Language feature policy (read before assuming something is excluded)
 
@@ -1159,7 +1161,9 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **Two operands that do something in one C expression are bound in Go's order,
   whichever compiler builds it** (indexOnceC, bindTargetOrder; A VALUE OF SEVERAL
   WORDS IS A ROW OF EVERY POSITION, ON THE BOARD).
-- **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED**. **A STRUCT OF MORE THAN
+- **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED**: **A check asked of a
+  position's C type asks first whether the position is an array: an array's ctype
+  is its element's** (dom70). **A STRUCT OF MORE THAN
   FOUR WORDS PASSED WHERE A CALL STANDS**: **A new place a struct-valued call is
   handed on binds it first**.
 

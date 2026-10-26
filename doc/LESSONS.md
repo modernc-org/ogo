@@ -3642,6 +3642,28 @@ refusal lifted the host's compiler refused dom69's C: a named result the body
 declares again, `state, _, err := header(sec)` in a loop, every return listing its
 values, was declared and never read; it is marked used where the body redeclares it
 (bodyRedeclares). The round found silent faults: the count goes back to 0.
+**dom70, a CAN network** (2026-10-26): three controllers on cogs and a bus that is
+main's, every bit time each node's driven bit taken over a channel and the wired AND
+handed back -- `level &= <-tx[i]`, channels an array of a package variable's makes,
+directional parameters -- framing as a controller does (stuffing, CRC-15,
+arbitration bit by bit, the ACK slot, error flags and the counters), ISO-TP above
+it (a first frame, consecutive frames under flow control, a single frame), the bus
+flipped once and one node's view once. Its first build was a SILENT FAULT: each
+node's Summary, a literal of ~500 bytes sent back over a channel, logged one frame
+of 24. Its field `log [24]rxLog`, rxLog holding a Frame that holds an array, took
+the struct branch of the literal's deferred copy (recordStructLitFixup) with the
+element's C type, an array position's ctype being its element's, and was copied
+as one element -- `S{7, g}` for an `es [3]E` printed `7 1 0 0` on a P2-EDGE for Go's
+`7 1 3 6`, in every position a literal stands (a package variable, a nested literal,
+an array's and a slice's element, a result, a send, an argument, an address), in
+every release. The host's compiler had refused the C, a missing-braces warning, so
+no run case could hold the shape: **A form the host's compiler refuses is a form
+nothing tests**, again. An array position takes the array's copy now; the interface
+branch above it already asked. **A check asked of a position's C type asks first
+whether the position is an array: an array's ctype is its element's.** Its 400
+mutants on the host: 345 print what Go prints, 11 panic as Go does, 39 are refused
+alike for Go's reasons, and the 5 that differ deadlock (DIFFERENCES.md). A round
+with a silent fault: the count stays 0.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
