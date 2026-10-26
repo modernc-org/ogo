@@ -26686,6 +26686,64 @@ func header2() (a, b int, err error) {
 		want: "4 18 true\ntrue\n",
 	},
 	{
+		// An ARRAY of structs that hold an array, as a literal's field: the copy the
+		// literal defers took the element's size, so `S{7, g}` for an `es [3]E` copied
+		// the first element alone -- `7 1 0 0` on a P2-EDGE for Go's `7 1 3 6` -- in a
+		// package variable, a nested literal, an array's and a slice's element, a
+		// result, an assignment, a send, an argument and through an address. The host's
+		// compiler refused that C with a missing-braces warning, so no case had run it
+		// (dom70).
+		name: "an array of structs holding an array, a literal's field",
+		src: `type E struct {
+	a  int
+	bs [2]byte
+}
+
+type S struct {
+	n  int
+	es [3]E
+}
+
+type T struct {
+	s S
+	k int
+}
+
+var g = [3]E{{1, [2]byte{2, 2}}, {3, [2]byte{4, 4}}, {5, [2]byte{6, 6}}}
+
+func sum(es [3]E) int { return es[0].a + es[1].a*10 + es[2].a*100 + int(es[2].bs[1])*1000 }
+
+var gs = S{7, g}
+
+var gp = &S{6, g}
+
+var ch = make(chan S, 1)
+
+func mk(x [3]E) S { return S{9, x} }
+
+func pass(s S) int { return s.n + sum(s.es) }
+
+func main() {
+	s := S{7, g}
+	println(s.n, s.es[0].a, s.es[1].a, s.es[2].bs[1])
+	println(gs.n, sum(gs.es), gp.n, sum(gp.es))
+	t := T{S{7, g}, 8}
+	println(sum(t.s.es), t.k)
+	ss := [2]S{{1, g}, {2, g}}
+	sl := []S{{1, g}, {2, g}}
+	println(sum(ss[1].es), sum(sl[1].es))
+	println(sum(mk(g).es), pass(S{2, g}))
+	var u S
+	u = S{n: 3, es: g}
+	ch <- S{4, g}
+	v := <-ch
+	p := &S{5, g}
+	println(sum(u.es), sum(v.es), p.n, sum(p.es))
+}
+`,
+		want: "7 1 3 6\n7 6531 6 6531\n6531 8\n6531 6531\n6531 6533\n6531 6531 5 6531\n",
+	},
+	{
 		// `type A = B` is another NAME for B, not a type: literals written via the
 		// alias, identity in both directions, methods and fields through it, a
 		// predeclared target, a defined ARRAY target with its elements and method,

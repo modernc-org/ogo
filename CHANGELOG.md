@@ -41,6 +41,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An array of structs that hold an array, as a literal's field, is copied
+  whole**: `S{7, g}` for an `es [3]E`, E holding an array, copied the first element
+  alone and left the others zero -- `7 1 0 0` on a P2-EDGE where Go prints `7 1 3
+  6` -- in a package variable, a nested literal, an array's and a slice's element,
+  a result, a send, an argument and through an address, in every release. The
+  host's compiler refused that C with a warning, so no test had run it.
 - **What a call of several results hands back is asked of each result**: `k, err
   := s.key(&r, buf[:])` gave err the provenance of the local buffer too, so `if err
   != nil { return err }` -- reading into a buffer of one's own and passing on what

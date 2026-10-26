@@ -24800,8 +24800,11 @@ func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 	// "incompatible types" rather than anything a reader could act on. A whole
 	// literal of such a struct is fine -- that is C's own aggregate initialization,
 	// which emitStructLit writes -- so this refuses only an element COPIED from
-	// something else.
-	if e.hasArrayField(expectType) && !e.isCompositeLitExpr(v) {
+	// something else. Not an ARRAY of such structs, whose ctype is its element's:
+	// `S{7, g}` for an `es [3]E` copied sizeof(E), the first element alone, and on
+	// a P2-EDGE printed `7 1 0 0` for Go's `7 1 3 6` -- the array branch below
+	// copies the field whole (dom70).
+	if e.hasArrayField(expectType) && expect.dim.bound == "" && !e.isCompositeLitExpr(v) {
 		if !e.recordStructLitFixup(v, expectType) {
 			return
 		}
