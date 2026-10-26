@@ -6594,9 +6594,10 @@ type loopSeeds map[*int32]map[string]loopMark
 // whether the variable is declared by the loop's own header, `for p := ...; ; p =
 // &x`, and so is marked after the header declares it rather than ahead of the loop.
 type loopMark struct {
-	backed bool
-	holder string
-	header bool
+	backed  bool
+	holder  string
+	header  bool
+	unplain bool // a holder the body took the plainness of (frameHolderPlain)
 }
 
 // mergeLoopSeeds adds more to seeds, in a new map.
@@ -6614,6 +6615,7 @@ func mergeLoopSeeds(seeds, more loopSeeds) loopSeeds {
 					w.holder = v.holder
 				}
 				w.header = v.header
+				w.unplain = w.unplain || v.unplain
 				r[k][n] = w
 			}
 		}
@@ -6685,7 +6687,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool, seeds loopSeeds) (loopSeeds, error) {
-	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanSendClosedElems: map[string]bool{}, chanBufElems: map[string]bool{}, chanLenElems: map[string]bool{}, chanReadyElems: map[string]bool{}, aliasOf: map[string]string{}, aliasLits: map[string]bool{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]int{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, recvInto: map[string]uint32{}, recvSelf: map[string]bool{}, intoHolds: map[string]map[string][]held{}, intoSeen: map[string]bool{}, crossInfos: map[string]crossInfo{}, retRecv: map[string]bool{}, retRecvShallow: map[string]bool{}, retPosUnknown: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string]shiftHelper{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, stackChecked: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanSendClosedElems: map[string]bool{}, chanBufElems: map[string]bool{}, chanLenElems: map[string]bool{}, chanReadyElems: map[string]bool{}, aliasOf: map[string]string{}, aliasLits: map[string]bool{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]int{}, frameHolder: map[string]string{}, frameHolderPlain: map[string]bool{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, recvInto: map[string]uint32{}, recvSelf: map[string]bool{}, intoHolds: map[string]map[string][]held{}, intoSeen: map[string]bool{}, crossInfos: map[string]crossInfo{}, retRecv: map[string]bool{}, retRecvShallow: map[string]bool{}, retPosUnknown: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string]shiftHelper{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, stackChecked: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -8079,8 +8081,10 @@ type emitter struct {
 	derivedEdges        []derivedEdge                // a call's result, derived from a parameter, stored or crossed (see derivedEdge)
 	crossNames          map[string]string            // C function name -> the name it was declared with, for crossParams diagnostics
 	frameHolder         map[string]string            // local -> the local whose storage it holds a reference to, a struct field having been given one (see noteFrameHolder)
+	frameHolderPlain    map[string]bool              // a holder declared from a literal whose references are in no field that can hold a string: a string read out of it is no view (markHolder clears it)
 	tmpShown            map[string]string            // a temporary -> what it binds as the program wrote it, `*hh`, for a diagnostic (displayName)
 	arrayView           viewFunc                     // while the summaries are collected: where an array a chain reaches is (summaryReach)
+	builderOf           builderFunc                  // while the summaries are collected: whether a chain is a Builder, or a pointer to one (summaryReach)
 	summaryRecv         string                       // while the summaries are collected: the method's receiver, whose handing back is a value and a depth (deepRecvReturn)
 	loopSeedsIn         loopSeeds                    // the marks the pass before found each loop's body to make, given at its head (applyLoopSeeds)
 	loopSeedsOut        loopSeeds                    // the marks this pass found a loop's body to make that its head did not have (noteLoopSeeds)
@@ -9432,7 +9436,7 @@ func (e *emitter) ifaceStoreC(target, key, iface string, rhs []int32) string {
 			// key is the variable's name, which the marks are kept by; target is
 			// its C spelling, which differs for a keyword or a macro.
 			if origin := e.frameHolder[name]; origin != "" {
-				e.frameHolder[key] = origin
+				e.markHolder(key, origin)
 			}
 		}
 		return target + " = " + e.captureC(func() { e.emitExpr(rhs) }) + ";\n"
@@ -9461,10 +9465,10 @@ func (e *emitter) ifaceStoreC(target, key, iface string, rhs []int32) string {
 	if temp {
 		// The value lives in a temporary of this frame, so what holds it holds a
 		// reference into this frame, exactly as the address of a local does.
-		e.frameHolder[target] = tempOrigin
+		e.markHolder(target, tempOrigin)
 	}
 	if root, isRoot := e.addrOfRoot(rhs); isRoot && e.isFrameVar(root) {
-		e.frameHolder[target] = "local " + root
+		e.markHolder(target, "local "+root)
 	} else if name, isName := e.exprIdent(rhs); isName {
 		// A bare name reaching here is a POINTER (see ifaceOperand), and the value
 		// is its value: the interface points where the pointer does, which is the
@@ -9472,7 +9476,7 @@ func (e *emitter) ifaceStoreC(target, key, iface string, rhs []int32) string {
 		// made from a pointer PARAMETER held "local p", and a method keeping its
 		// receiver was refused on the caller's storage, which Go accepts.
 		if origin := e.frameHolder[name]; origin != "" {
-			e.frameHolder[target] = origin
+			e.markHolder(target, origin)
 		}
 	}
 	return target + ".data = " + data + "; " + target + ".vt = &" + e.ifaceVTVar(iface, concrete) + ";\n"
@@ -9496,7 +9500,7 @@ func (e *emitter) ifaceWidenC(target, iface, src, from string) string {
 		}
 	}
 	if origin := e.frameHolder[src]; origin != "" {
-		e.frameHolder[target] = origin
+		e.markHolder(target, origin)
 	}
 	var types []string
 	for _, ct := range e.ifaceImplementors(from) {
@@ -9532,7 +9536,7 @@ func (e *emitter) ifaceWidenFrom(target, iface string, rhs []int32, from string)
 	src := e.hoist(from, func() { e.emitExpr(rhs) })
 	e.locals[src] = from
 	if r, ok := e.frameRefOf(rhs); ok {
-		e.frameHolder[src] = r.origin
+		e.markHolder(src, r.origin)
 	}
 	return e.ifaceWidenC(target, iface, src, from)
 }
@@ -13829,9 +13833,28 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	// What a slice step of an ARRAY views is the storage the chain before it
 	// reaches (summaryReach): shallow where that is the root's own or what the
 	// root points at, and typed where the walk says what the chain is.
-	prevView, prevRecv := e.arrayView, e.summaryRecv
-	defer func() { e.arrayView, e.summaryRecv = prevView, prevRecv }()
+	prevView, prevRecv, prevBuilder := e.arrayView, e.summaryRecv, e.builderOf
+	defer func() { e.arrayView, e.summaryRecv, e.builderOf = prevView, prevRecv, prevBuilder }()
 	e.summaryRecv = recvName
+	e.builderOf = func(chain Node) (ptr, typed bool) {
+		if !e.inUnminted {
+			e.inUnminted = true
+			defer func() { e.inUnminted = false }()
+			e.unminted(func() { ptr, typed = e.builderOf(chain) })
+			return ptr, typed
+		}
+		w, ok := walkTarget(chain)
+		if !ok || w.unnamed || w.call {
+			return false, false
+		}
+		switch e.underlyingCType(w.cur.ctype) {
+		case "ogo_builder":
+			return false, true
+		case "ogo_builder*":
+			return true, true
+		}
+		return false, false
+	}
 	e.arrayView = func(chain Node) (shallow, typed bool) {
 		if !e.inUnminted {
 			e.inUnminted = true
@@ -17417,6 +17440,47 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 	if arg, ok := e.unsafeConvOperand(ast); ok {
 		return e.summaryReach(arg) // `unsafe.Pointer(p)` is p
 	}
+	// A BUILDER holds the backing it is made over, `NewBuilder(back)`, and its
+	// String() is a view of that backing: what the Builder reaches, by value, or as
+	// its contents through a pointer to one. Calls nothing summarises, they handed
+	// back nothing: `return sb.String()` over a parameter's bytes, and `gs =
+	// view(local[:])` kept the frame's bytes in a package variable.
+	if recv, suffix, ok := e.directCall(ast); ok && recv == "NewBuilder" && e.universe(recv) && len(suffix) == 1 && suffix[0].sym == CallSuffix {
+		if args := e.callArgExprs(suffix[0].ast); len(args) == 1 {
+			return e.summaryReach(args[0].ast)
+		}
+	}
+	if fac, ok := e.soleFactorNode(ast); ok && e.builderOf != nil {
+		kids := slices.Collect(it(fac.ast))
+		if k := len(kids); k >= 2 && kids[k-1].sym == FactorSuffix {
+			steps := slices.Collect(it(kids[k-1].ast))
+			if n := len(steps); n >= 2 && steps[n-1].sym == CallSuffix && steps[n-2].sym == Selector &&
+				e.soleIdent(steps[n-2].ast) == "String" && len(e.callArgExprs(steps[n-1].ast)) == 0 {
+				var prefix []int32
+				for _, kid := range kids[:k-1] {
+					if kid.sym == 0 {
+						prefix = append(prefix, kid.tok)
+						continue
+					}
+					prefix = append(prefix, encodeNode(kid.sym, kid.ast)...)
+				}
+				if n > 2 {
+					var suffix []int32
+					for _, st := range steps[:n-2] {
+						suffix = append(suffix, encodeNode(st.sym, st.ast)...)
+					}
+					prefix = append(prefix, encodeNode(FactorSuffix, suffix)...)
+				}
+				if ptr, typed := e.builderOf(Node{sym: Factor, ast: prefix}); typed {
+					hs := e.summaryReach(encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, prefix)))))
+					if ptr {
+						return asElem(hs)
+					}
+					return hs
+				}
+			}
+		}
+	}
 	// `unsafe.Slice(p, n)[i]` is an element of what p points at, as `(*T)(p).x` is.
 	if arg, rest, ok := e.unsafeSliceChainOf(ast); ok && len(rest) != 0 {
 		return asElem(e.summaryReach(arg))
@@ -17567,6 +17631,10 @@ func (e *emitter) parenDerefAddrPtr(ast []int32) ([]int32, bool) {
 // viewFunc answers where an array a chain reaches is (emitter.arrayView).
 type viewFunc func(chain Node) (shallow, typed bool)
 
+// builderFunc answers whether a chain is a Builder, or a pointer to one
+// (emitter.builderOf).
+type builderFunc func(chain Node) (ptr, typed bool)
+
 // factorWithout is the Factor fac with the last n steps of its suffix left out,
 // `r.buf` of `r.buf[:]`.
 func (e *emitter) factorWithout(fac Node, n int) (Node, bool) {
@@ -17610,8 +17678,10 @@ func (e *emitter) fieldNameMayCarry(name string) bool {
 			declared = true
 			// A function or a channel counts too: the summaries follow a function
 			// value read out of a field to the functions it may be, and a channel
-			// to its sends.
-			if u := e.underlyingCType(f.ctype); e.carriesReference(f.ctype) || e.isFuncCType(u) || e.isChanCType(u) { // an array field's ctype is its element's
+			// to its sends. And a STRING, which may be a view of a Builder's
+			// backing: read as holding nothing, `gs = e.name` in a callee kept the
+			// caller's frame in a package variable for an e holding sb.String().
+			if u := e.underlyingCType(f.ctype); e.carriesReference(f.ctype) || e.isFuncCType(u) || e.isChanCType(u) || u == cString { // an array field's ctype is its element's
 				return true
 			}
 		}
@@ -19527,6 +19597,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.sliceVars = map[string]string{}
 	e.frameBacked = map[string]int{}
 	e.frameHolder = map[string]string{}
+	e.frameHolderPlain = map[string]bool{}
 	e.tmpShown = nil
 	e.tmp = 0
 	e.defers = nil
@@ -19830,6 +19901,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.sliceVars = map[string]string{}
 	e.frameBacked = map[string]int{}
 	e.frameHolder = map[string]string{}
+	e.frameHolderPlain = map[string]bool{}
 	e.tmp, e.indent, e.deferReplay, e.defers, e.prologue = 0, 0, -1, nil, nil
 	e.curFunc, e.curArrayResult = cname, ""
 	e.scopeNames = nil
@@ -20904,7 +20976,7 @@ func (e *emitter) bindPtrConv(pc emPtrConv) string {
 	tmp := e.hoist(pc.ct, func() { e.emit(text) })
 	e.locals[tmp] = pc.ct
 	if r, ok := e.frameRefOf(pc.arg.ast); ok {
-		e.frameHolder[tmp] = r.origin
+		e.markHolder(tmp, r.origin)
 	}
 	return tmp
 }
@@ -21655,6 +21727,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 	e.sliceVars = map[string]string{}
 	e.frameBacked = map[string]int{}
 	e.frameHolder = map[string]string{}
+	e.frameHolderPlain = map[string]bool{}
 	e.tmpShown = nil
 	e.tmp = 0
 	e.defers = nil
@@ -24310,7 +24383,7 @@ func (e *emitter) emitVarSpec(names []string, typeAST []int32, initExprs [][]int
 				e.markBacked(nm, depth)
 			}
 			if elemRefs {
-				e.frameHolder[nm] = elemOrigin // what its elements reach (noteSliceElemRefs)
+				e.markHolder(nm, elemOrigin) // what its elements reach (noteSliceElemRefs)
 			}
 			// A self-referential shadowing copy (`var xs []T = xs` with an outer
 			// xs) means the outer header; capture it before the new one shadows it
@@ -25557,7 +25630,7 @@ func (e *emitter) emitArrayCopy(dst, src string, a arrDim) {
 	// text, and a local's -- a temporary's above all, which is how a shadowing
 	// declaration and a multiple assignment bind an array -- is its name.
 	if origin := e.frameHolder[src]; origin != "" {
-		e.frameHolder[dst] = origin
+		e.markHolder(dst, origin)
 	}
 	e.includes["string.h"] = true
 	// dst is the variable's name, which the maps above know it by; C knows it by
@@ -25752,7 +25825,7 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 			// declaring the array and then storing it, or an element of it, in a
 			// package variable carried the slice out of the frame.
 			if r, isRef := e.frameRefInLitLevels(lit, e.elemLitLevels(typeAST)); isRef {
-				e.frameHolder[name] = r.origin
+				e.markHolder(name, r.origin)
 			}
 		}
 		// A zero-length array has nothing to initialize, and "{0}" names an element
@@ -25807,7 +25880,7 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 	// read out of it carries what the elements carry (noteSliceElemRefs).
 	if !static {
 		if r, isRef := e.frameRefInLitLevels(lit, e.elemLitLevels(typeAST)); isRef {
-			e.frameHolder[name] = r.origin
+			e.markHolder(name, r.origin)
 		}
 	}
 }
@@ -32336,7 +32409,7 @@ func (e *emitter) bindDeref(name string) string {
 	}
 	origin, backed := e.pointeeMarks(name)
 	if origin != "" {
-		e.frameHolder[tmp] = origin
+		e.markHolder(tmp, origin)
 	}
 	if backed != "" {
 		e.markBacked(tmp, backedUnknown)
@@ -32404,7 +32477,7 @@ func (e *emitter) asDerefName(name string, fn func(tmp string)) {
 			e.sliceVars[tmp] = oldSlice
 		}
 		if hadHolder {
-			e.frameHolder[tmp] = oldHolder
+			e.markHolder(tmp, oldHolder)
 		}
 		if hadBacked {
 			e.frameBacked[tmp] = oldBacked
@@ -32416,7 +32489,7 @@ func (e *emitter) asDerefName(name string, fn func(tmp string)) {
 	}
 	origin, backed := e.pointeeMarks(name)
 	if origin != "" {
-		e.frameHolder[tmp] = origin
+		e.markHolder(tmp, origin)
 	}
 	if backed != "" {
 		e.markBacked(tmp, backedUnknown)
@@ -34182,7 +34255,7 @@ func (e *emitter) emitForInitDefine(h forHeader) {
 			e.noteHolderRef(name, refs[i])
 		}
 		if elemOrigins[i] != "" && e.isSliceVar(name) {
-			e.frameHolder[name] = elemOrigins[i] // what its elements reach (noteSliceElemRefs)
+			e.markHolder(name, elemOrigins[i]) // what its elements reach (noteSliceElemRefs)
 		}
 		e.ind()
 		// localIdent: a loop variable named after a type is ordinary Go and the
@@ -34465,7 +34538,7 @@ func (e *emitter) emitFor(nodes []Node) {
 			e.noteHolderRef(initName, ref)
 		}
 		if elemOrigin != "" && e.isSliceVar(initName) {
-			e.frameHolder[initName] = elemOrigin // what its elements reach (noteSliceElemRefs)
+			e.markHolder(initName, elemOrigin) // what its elements reach (noteSliceElemRefs)
 		}
 	}
 condition:
@@ -35787,7 +35860,7 @@ func (e *emitter) emitTypeSwitchStmt(guardAST []int32, cases []Node) bool {
 		e.emit(ts.iface + " " + ts.operand + " = " + ts.bindText + ";\n")
 		e.locals[ts.operand] = ts.iface
 		if r, ok := e.frameRefOf(ts.bindAST); ok && ts.bindAST != nil {
-			e.frameHolder[ts.operand] = r.origin
+			e.markHolder(ts.operand, r.origin)
 		}
 		if !slices.ContainsFunc(cases, func(c Node) bool { _, isDefault := e.caseHead(c.ast); return !isDefault }) {
 			// Evaluated, as Go evaluates it, and read by no case: `switch
@@ -36432,7 +36505,7 @@ func (e *emitter) emitTypeSwitch(ts typeSwitch, cases []Node) {
 // silence, where `keep = r` was refused.
 func (e *emitter) typeSwitchNameMark(ts typeSwitch) {
 	if origin := e.frameHolder[ts.operand]; origin != "" {
-		e.frameHolder[ts.name] = origin
+		e.markHolder(ts.name, origin)
 	}
 }
 
@@ -42921,7 +42994,7 @@ func (e *emitter) checkCopyElems(dst, src Node) {
 		return
 	}
 	if root != "" && e.isFrameVar(root) {
-		e.frameHolder[root] = origin
+		e.markHolder(root, origin)
 	}
 }
 
@@ -48521,7 +48594,7 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 			// the copy reads the spelling, and what a frame holder marks is the name.
 			e.emitArrayCopy(name, e.localIdent(rhs), a)
 			if origin := e.frameHolder[rhs]; origin != "" {
-				e.frameHolder[name] = origin
+				e.markHolder(name, origin)
 			}
 			return
 		}
@@ -48655,7 +48728,7 @@ func (e *emitter) declareCopy(name, tmp string) {
 		e.markBacked(name, depth)
 	}
 	if holder != "" {
-		e.frameHolder[name] = holder
+		e.markHolder(name, holder)
 	}
 	if fn != "" {
 		e.funcValueOf[name] = fn
@@ -48689,6 +48762,18 @@ func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
 		e.noteSliceElemRefs(name, initExpr)
 		return
 	}
+	// A STRING where its value is a view, `s := sb.String()` of a Builder over a
+	// local array: the assignment's mark (noteFrameHolder) asks no type, and the
+	// declaration's left the string out, so `s := sb.String(); gs = s` kept the
+	// frame's bytes in a package variable where `s = sb.String()` was refused. The
+	// value is asked whole and nothing inside it: `s := names[len(a[:])]` mentions a
+	// frame reference and carries none out.
+	if e.underlyingCType(ctype) == cString {
+		if r, ok := e.frameRefOf(initExpr); ok {
+			e.noteHolderRef(name, r)
+		}
+		return
+	}
 	// A BUILDER is considered too. It is a pointer into a backing array the caller
 	// owns -- that is the whole point of it -- so one built over a LOCAL array holds
 	// a reference to this frame as surely as a struct with a slice field does, and
@@ -48699,7 +48784,14 @@ func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
 		return
 	}
 	if r, ok := e.frameRefOf(initExpr); ok {
-		e.frameHolder[name] = r.origin
+		e.markHolder(name, r.origin)
+		// A literal whose references are all in fields that can hold no string,
+		// `H{buf: a[:], name: "x"}`, makes a holder a string read out of is no
+		// view of: refused, h.name was the ordinary string field a great many
+		// structs have beside a buffer.
+		if _, _, isLit := e.soleCompositeLit(e.unparenExpr(initExpr)); isLit && e.litStringFree(initExpr) {
+			e.frameHolderPlain[name] = true
+		}
 		return
 	}
 	// An address through a dereference in parentheses is decided by what its pointer
@@ -48731,7 +48823,7 @@ func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
 			continue
 		}
 		if r, ok := e.frameRefOf(n.ast); ok {
-			e.frameHolder[name] = r.origin
+			e.markHolder(name, r.origin)
 			return
 		}
 		if e.summarisedCall(n) {
@@ -58173,8 +58265,10 @@ func (e *emitter) noteRangeValue(h *forHeader, val, elem string) {
 	// What the element is asked first: an element carrying no reference -- a byte
 	// of `range []byte(s)` among them, whose operand has no type of its own to ask
 	// about (stringSliceConvOf) -- needs nothing of the operand.
+	// A STRING element is asked: whether it is a view is the operand's to say, and
+	// `for _, w := range [1]string{s}` of a marked s kept the frame's bytes in w.
 	isSlice := e.isSliceCType(e.underlyingCType(elem))
-	if !isSlice && !e.carriesReference(elem) {
+	if !isSlice && !e.carriesReference(elem) && e.underlyingCType(elem) != cString {
 		return
 	}
 	r, reaches := e.rangeElemRef(h.rangeExpr)
@@ -58199,7 +58293,7 @@ func (e *emitter) noteRangeValue(h *forHeader, val, elem string) {
 		e.markBacked(root, e.refDepth(r))
 		return
 	}
-	e.frameHolder[root] = r.origin
+	e.markHolder(root, r.origin)
 }
 
 // rangeElemRef is what an ELEMENT of a range operand reaches of this frame. A
@@ -58641,11 +58735,23 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 	if fac, isFac := e.soleFactorNode(ast); isFac {
 		if base, steps, isChain := e.factorAccessChain(e.unparenKids(slices.Collect(it(fac.ast)))); isChain {
 			if origin := e.viewedHolder(base); origin != "" {
+				// A reslice of a marked STRING, `s[1:]`, is a view of what s views:
+				// no chain type walks a string's slice step.
+				if ct, ok := e.varType(base); ok && e.underlyingCType(ct) == cString &&
+					!slices.ContainsFunc(steps, func(n Node) bool { return !e.endsInSliceStep([]Node{n}) }) {
+					return readHolderRef(e.f.exprSource(fac), origin), true
+				}
 				// The whole chain, not a field path: an ARRAY of slices or of structs
 				// is marked on the array, and `xs[0]` and `bs[1].d` reach out of it
 				// exactly as `b.d` does.
 				if cur, walked := e.accessChainType(base, steps); walked {
-					if ct, valued := e.chainValueCType(cur); valued && e.carriesReference(ct) {
+					// A STRING read out of a holder counts too, as a method's string
+					// result does above: what is counted is the provenance, a
+					// string out of a marked holder, and `e := Entry{name:
+					// sb.String()}; gs = e.name` and `gs = s[1:]` of a marked s kept
+					// the frame's bytes past it.
+					if ct, valued := e.chainValueCType(cur); valued && (e.carriesReference(ct) ||
+						e.underlyingCType(ct) == cString && !(e.frameHolder[base] != "" && e.frameHolderPlain[base])) {
 						return readHolderRef(e.f.exprSource(fac), origin), true
 					}
 					// An ARRAY read out of it, `rows[1]` of a [2][1]Box, has no C type
@@ -59610,7 +59716,7 @@ func (e *emitter) noteFrameHolder(base string, op []Node) {
 // what is read out of it.
 func (e *emitter) noteSliceElemRefs(name string, value []int32) {
 	if origin, has, _ := e.sliceElemOrigin(value); has && e.isFrameVar(name) {
-		e.frameHolder[name] = origin
+		e.markHolder(name, origin)
 	}
 }
 
@@ -60127,6 +60233,72 @@ func (e *emitter) chainSource(base string, steps []Node) string {
 	return b.String()
 }
 
+// litStringFree reports whether every reference to this frame a composite literal
+// carries is in a value that can hold no string -- a nested literal asked the same
+// way -- so that no string read out of what it fills is a view (frameHolderPlain).
+// A value whose type is not known may hold one.
+func (e *emitter) litStringFree(ast []int32) bool {
+	_, lit, isLit := e.soleCompositeLit(e.unparenExpr(ast))
+	if !isLit {
+		return false
+	}
+	for _, el := range compositeLitElements(lit) {
+		if _, _, isLit := e.soleCompositeLit(e.unparenExpr(el.value.ast)); isLit {
+			if !e.litStringFree(el.value.ast) {
+				return false
+			}
+			continue
+		}
+		if _, ok := e.frameRefOf(el.value.ast); !ok {
+			continue
+		}
+		ct, typed := e.inferCType(el.value.ast)
+		if !typed || e.holdsString(ct, map[string]bool{}) {
+			return false
+		}
+	}
+	return true
+}
+
+// holdsString reports whether a value of this C type may hold a string, directly or
+// through what it points at, its elements or its fields; an interface, a channel and
+// a function may hold anything.
+func (e *emitter) holdsString(ct string, seen map[string]bool) bool {
+	u := e.underlyingCType(ct)
+	switch {
+	case u == cString:
+		return true
+	case e.isIfaceCType(u), e.isChanCType(u), e.isFuncCType(u):
+		return true
+	case e.isSliceCType(u):
+		el, ok := e.sliceElemByName[u]
+		return !ok || e.holdsString(el, seen)
+	case e.isPointer(u):
+		return e.holdsString(e.elemType(u), seen)
+	}
+	if a, isArr := e.namedArrays[u]; isArr {
+		return e.holdsString(a.elem, seen)
+	}
+	if !e.isStruct(u) || seen[u] {
+		return false
+	}
+	seen[u] = true
+	for _, f := range e.structs[u] {
+		if e.holdsString(f.ctype, seen) {
+			return true
+		}
+	}
+	return false
+}
+
+// markHolder records a local's holder mark, the one place every mark is made: a
+// mark made after a declaration said its holder plain (frameHolderPlain) may be a
+// string's, and takes the plainness back.
+func (e *emitter) markHolder(name, origin string) {
+	e.frameHolder[name] = origin
+	delete(e.frameHolderPlain, name)
+}
+
 // noteHolderRef is noteFrameHolder for a reference already found: the local base,
 // or something reached from it, was given r.
 func (e *emitter) noteHolderRef(base string, r frameRef) {
@@ -60141,7 +60313,7 @@ func (e *emitter) noteHolderRef(base string, r frameRef) {
 		e.markBacked(base, e.refDepth(r))
 		return
 	}
-	e.frameHolder[base] = r.origin
+	e.markHolder(base, r.origin)
 }
 
 // isSliceVar reports whether name is a slice variable, by its record or its type.
@@ -60366,7 +60538,9 @@ func (e *emitter) carryInto(t assignTarget, declare bool, ctype string, c *carri
 	if c == nil || t.name == "_" {
 		return func() {}
 	}
-	if c.typed && !e.carriesReference(ctype) && !e.interfaceTypes[ctype] {
+	// A STRING target is given what the value carries too: `t, _ :=
+	// strings.CutPrefix(s, "f")` of a view s is a view, and it was skipped.
+	if c.typed && !e.carriesReference(ctype) && !e.interfaceTypes[ctype] && e.underlyingCType(ctype) != cString {
 		return func() {}
 	}
 	base := e.storeRoot(t)
@@ -60392,7 +60566,7 @@ func (e *emitter) carryInto(t assignTarget, declare bool, ctype string, c *carri
 		e.noteHolderRef(base, c.r)
 		e.noteStoredThrough(st, c.r)
 		if elemRefs && e.isSliceVar(base) && e.isFrameVar(base) {
-			e.frameHolder[base] = origin
+			e.markHolder(base, origin)
 		}
 	}
 }
@@ -62315,6 +62489,7 @@ type loopHead struct {
 	key     *int32
 	backed  map[string]int
 	holder  map[string]string
+	plain   map[string]bool
 	visible map[string]bool
 	header  map[string]bool
 }
@@ -62322,7 +62497,7 @@ type loopHead struct {
 // loopHeadAt snapshots the marks at a loop's head, with the names visible there and
 // the names its own header declares.
 func (e *emitter) loopHeadAt(key *int32, header map[string]bool) loopHead {
-	return loopHead{key, maps.Clone(e.frameBacked), maps.Clone(e.frameHolder), e.visibleLocals(), header}
+	return loopHead{key, maps.Clone(e.frameBacked), maps.Clone(e.frameHolder), maps.Clone(e.frameHolderPlain), e.visibleLocals(), header}
 }
 
 // applyLoopSeeds gives the variables the pass before found a loop's body to mark
@@ -62337,7 +62512,10 @@ func (e *emitter) applyLoopSeeds(key *int32, header bool) {
 			e.markBacked(n, backedUnknown)
 		}
 		if m.holder != "" && e.frameHolder[n] == "" {
-			e.frameHolder[n] = m.holder
+			e.markHolder(n, m.holder)
+		}
+		if m.unplain {
+			delete(e.frameHolderPlain, n)
 		}
 	}
 }
@@ -62358,7 +62536,7 @@ func (e *emitter) noteLoopSeeds(h loopHead) {
 		}
 		m.header = h.header[n]
 		old := e.loopSeedsIn[h.key][n]
-		if m.backed && old.backed || m.holder != "" && old.holder != "" {
+		if m.backed && old.backed || m.holder != "" && old.holder != "" || m.unplain && old.unplain {
 			return
 		}
 		if e.loopSeedsOut[h.key] == nil {
@@ -62370,6 +62548,7 @@ func (e *emitter) noteLoopSeeds(h loopHead) {
 			w.holder = m.holder
 		}
 		w.header = m.header
+		w.unplain = w.unplain || m.unplain
 		e.loopSeedsOut[h.key][n] = w
 	}
 	for n := range e.frameBacked {
@@ -62380,6 +62559,13 @@ func (e *emitter) noteLoopSeeds(h loopHead) {
 	for n, o := range e.frameHolder {
 		if o != "" && h.holder[n] == "" {
 			note(n, loopMark{holder: o})
+		}
+	}
+	// A holder plain at the head that the body marked again: a string read out of
+	// it before the mark reads, on the body's next run, what the mark stored.
+	for n := range h.plain {
+		if !e.frameHolderPlain[n] {
+			note(n, loopMark{unplain: true})
 		}
 	}
 }

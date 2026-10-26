@@ -11415,6 +11415,1064 @@ func main() {
 	}
 }
 
+// TestEmitCStringView holds a string a Builder over a local array hands out,
+// sb.String(), to the lifetime rules wherever it travels: bound to a local,
+// resliced, a field, an element, a helper's result, a callee's parameter, a
+// channel (dom72, sweeps/string-view). A holder declared from a literal whose
+// references hold no string is plain, and a string read out of it is no view until
+// the holder is marked again, ahead of the read in a loop too (frameHolderPlain). Each was taken, in every release, and
+// printed the frame's leftovers once it was gone; the ordinary strings beside them
+// are taken still.
+func TestEmitCStringView(t *testing.T) {
+	const decls = `type Entry struct {
+	name string
+	id   int
+}
+
+type H struct {
+	buf  []byte
+	name string
+}
+
+var ge Entry
+var gs string
+var gback [16]byte
+
+func view(back []byte) string {
+	sb := NewBuilder(back)
+	sb.WriteString("view")
+	return sb.String()
+}
+
+func clobber(k int) int {
+	var a [32]int
+	for i := range a {
+		a[i] = i*k + 0x41414141
+	}
+	s := 0
+	for _, v := range a {
+		s += v
+	}
+	return s
+}
+
+`
+	for _, test := range []struct {
+		name    string
+		imports string
+		src     string
+		want    string // "" means the program must be accepted
+	}{
+		{
+			name:    "a constant in a literal",
+			imports: ``,
+			src: `func run() {
+	e := Entry{name: "const"}
+	ge = e
+	gs = e.name
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+		{
+			name:    "a constant field beside a buffer",
+			imports: ``,
+			src: `func run() {
+	var a [4]byte
+	h := H{buf: a[:], name: "x"}
+	h.buf[0] = 1
+	gs = h.name
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+		{
+			name:    "a constant field handed back",
+			imports: ``,
+			src: `func label(e *Entry) string { return e.name }
+
+func run() {
+	e := Entry{name: "lbl"}
+	gs = label(&e)
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+		{
+			name:    "a Builder over a package array",
+			imports: ``,
+			src: `func run() {
+	sb := NewBuilder(gback[:])
+	sb.WriteString("pkg")
+	s := sb.String()
+	gs = s
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+		{
+			name:    "compared and printed where it stands",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	s := sb.String()
+	if s == "frame" {
+		gs = "eq"
+	}
+	printf("%s %d\n", s, len(s))
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+		{
+			name:    "copied out by another Builder",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	s := sb.String()
+	sb2 := NewBuilder(gback[:])
+	sb2.WriteString(s)
+	gs = sb2.String()
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+		{
+			name:    "a helper over a constant",
+			imports: ``,
+			src: `func first(s string) string { return s[:1] }
+
+func run() { gs = first("abc") }
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+		{
+			name:    "an Error method over the receiver's bytes",
+			imports: ``,
+			src: `type PE struct {
+	op  string
+	msg [32]byte
+}
+
+func (e *PE) Error() string {
+	sb := NewBuilder(e.msg[:])
+	sb.WriteString(e.op)
+	sb.WriteString(" failed")
+	return sb.String()
+}
+
+var perr PE
+
+func run() {
+	perr.op = "open"
+	var err error = &perr
+	gs = err.Error()
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+		{
+			name:    "a reslice printed",
+			imports: `import "strings"`,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	s := sb.String()
+	t := s[1:]
+	printf("%s\n", t)
+	gs = strings.TrimSpace("  ok ")
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+		{
+			name:    "a helper over local bytes printed, over package bytes kept",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	s := view(back[:])
+	printf("%s\n", s)
+	gs = view(gback[:])
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+		{
+			name:    "a helper copying a field",
+			imports: ``,
+			src: `func name(e *Entry, back []byte) string {
+	sb := NewBuilder(back)
+	sb.WriteString(e.name)
+	return sb.String()
+}
+
+func run() {
+	var back [8]byte
+	e := Entry{name: "e1"}
+	printf("%s\n", name(&e, back[:]))
+	gs = name(&e, gback[:])
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+		{
+			name:    "a scalar field of a holder",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	e := Entry{name: sb.String(), id: 4}
+	ge.id = e.id
+	printf("%s\n", e.name)
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+		{
+			name:    "a method handing a constant field back",
+			imports: ``,
+			src: `func (e *Entry) N() string { return e.name }
+
+func run() {
+	e := Entry{name: "n"}
+	gs = e.N()
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+		{
+			name:    "a local bound to the view",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	s := sb.String()
+	gs = s
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a reslice of it",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	s := sb.String()
+	gs = s[1:]
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a field of a literal holding it",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	e := Entry{name: sb.String()}
+	gs = e.name
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a callee keeping the field",
+			imports: ``,
+			src: `func keep(e *Entry) { gs = e.name }
+
+func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	e := Entry{name: sb.String()}
+	keep(&e)
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "cannot pass &e, whose contents hold a pointer into local back to keep",
+		},
+		{
+			name:    "a callee keeping the local",
+			imports: ``,
+			src: `func keep(s string) { gs = s }
+
+func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	s := sb.String()
+	keep(s)
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a helper building it over the caller's bytes",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	gs = view(back[:])
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "cannot store a slice backed by local back in package variable gs",
+		},
+		{
+			name:    "the helper's result in a literal",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	e := Entry{name: view(back[:])}
+	ge = e
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "the helper's result returned in a literal",
+			imports: ``,
+			src: `func mk() Entry {
+	var back [8]byte
+	return Entry{name: view(back[:])}
+}
+
+func run() { ge = mk() }
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "cannot return a slice backed by local back",
+		},
+		{
+			name:    "a field given it",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	var e Entry
+	e.name = sb.String()
+	gs = e.name
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a method keeping the field in its receiver",
+			imports: ``,
+			src: `type Reg struct{ names [2]string }
+
+var reg Reg
+
+func (r *Reg) add(e *Entry) { r.names[0] = e.name }
+
+func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	e := Entry{name: sb.String()}
+	reg.add(&e)
+	gs = reg.names[0]
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "cannot pass &e, whose contents hold a pointer into local back to add",
+		},
+		{
+			name:    "a callee handing the field back",
+			imports: ``,
+			src: `func pick(e *Entry) string { return e.name }
+
+func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	e := Entry{name: sb.String()}
+	gs = pick(&e)
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "cannot store &e, whose contents hold a pointer into local back in package variable gs",
+		},
+		{
+			name:    "strings.TrimSpace of it",
+			imports: `import "strings"`,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	gs = strings.TrimSpace(sb.String())
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "an array element given it",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	var es [2]string
+	es[0] = sb.String()
+	gs = es[0]
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a local assigned it",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	s := ""
+	s = sb.String()
+	gs = s
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a local returned",
+			imports: ``,
+			src: `func get() string {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	s := sb.String()
+	return s
+}
+
+func run() { gs = get() }
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a method handing the field back",
+			imports: ``,
+			src: `func (e *Entry) N() string { return e.name }
+
+func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	e := Entry{name: sb.String()}
+	gs = e.N()
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a slice element given it",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	var sl [2]string
+	ss := sl[:]
+	ss[1] = sb.String()
+	gs = ss[1]
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a copy of the local",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	s := sb.String()
+	t := s
+	gs = t
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a reslice in a list",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	s, n := sb.String(), 1
+	gs = s[:n]
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "sent on a channel",
+			imports: ``,
+			src: `var out = make(chan string, 1)
+
+func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	s := sb.String()
+	out <- s
+	gs = <-out
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a helper reslicing it",
+			imports: ``,
+			src: `func first(s string) string { return s[:2] }
+
+func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	gs = first(sb.String())
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a field through a pointer",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	var e Entry
+	p := &e
+	p.name = sb.String()
+	ge = e
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a field given the local",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	s := sb.String()
+	var e Entry
+	e.name = s
+	ge = e
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "strings.CutPrefix of it, one of two results",
+			imports: `import "strings"`,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	s := sb.String()
+	gs, _ = strings.CutPrefix(s, "f")
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a range value over a literal holding it",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	s := sb.String()
+	for _, w := range [1]string{s} {
+		gs = w
+	}
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a plain holder given it after its declaration",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	var a [4]byte
+	h := H{buf: a[:], name: "x"}
+	h.name = sb.String()
+	gs = h.name
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a holder declared with it beside a buffer",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	var a [4]byte
+	h := H{buf: a[:], name: sb.String()}
+	gs = h.name
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a nested literal holding it",
+			imports: ``,
+			src: `type HH struct {
+	h H
+	n int
+}
+
+func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	var a [4]byte
+	hh := HH{h: H{buf: a[:], name: sb.String()}}
+	gs = hh.h.name
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a plain holder given it later in a loop",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	var a [4]byte
+	h := H{buf: a[:], name: "x"}
+	for i := 0; i < 2; i++ {
+		gs = h.name
+		h.name = sb.String()
+	}
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a plain holder given it before a goto back",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	var a [4]byte
+	h := H{buf: a[:], name: "x"}
+	i := 0
+again:
+	gs = h.name
+	h.name = sb.String()
+	i++
+	if i < 2 {
+		goto again
+	}
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a plain holder given a range value in a loop",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("frame")
+	var a [4]byte
+	h := H{buf: a[:], name: "x"}
+	for _, w := range [2]string{"y", sb.String()} {
+		gs = h.name
+		h.name = w
+	}
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a plain holder read in a loop that gives it no string",
+			imports: ``,
+			src: `func run() {
+	var a [4]byte
+	h := H{buf: a[:], name: "x"}
+	for i := 0; i < 2; i++ {
+		gs = h.name
+		h.buf[i] = 1
+	}
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+		{
+			name:    "a copy of a plain holder",
+			imports: ``,
+			src: `func run() {
+	var a [4]byte
+	h := H{buf: a[:], name: "x"}
+	c := h
+	c.buf[0] = 2
+	printf("%s %d\n", c.name, a[0])
+	gs = h.name
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.imports + "\n\n" + decls + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a reference outliving its frame; want %q", test.want)
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCRuneStringEscape(t *testing.T) {
 	const decls = `var g string
 

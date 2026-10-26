@@ -91,6 +91,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   the package variable, refusing a buffered writer over a local one. A store goes
   past what the name points at only through the pointer it holds, `f.fs.p = p`,
   and that is refused as before.
+- **A string a Builder over a local array hands out is a view of that frame,
+  wherever it goes**: `s := sb.String(); gs = s` kept the frame's bytes in a package
+  variable -- eight NUL bytes printed where Go prints `"sensor-1"` -- and so did a
+  reslice of it, a struct's field or an array's element given it and read back out,
+  a helper building it over the caller's bytes, `return sb.String()`, a callee
+  keeping it or handing a field of it back, a range value over a literal holding it,
+  one of several results, `t, _ := strings.CutPrefix(s, "f")`, and a send, in every
+  release; only `gs = sb.String()` written out was refused. Each is refused now. A
+  string read out of a struct that holds a view of the frame in another field is
+  refused with it, a string field having no provenance of its own.
 
 ## v0.59.0
 

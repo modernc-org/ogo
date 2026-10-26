@@ -27075,6 +27075,78 @@ func main() { run() }
 		want: "log1 113 true 1 8\n107 short 4\n",
 	},
 	{
+		// A string a Builder over a local array hands out is a view of that frame,
+		// refused wherever it would outlive the frame; these are the ordinary ones
+		// beside it, kept where their bytes live (dom72, sweeps/string-view).
+		name: "strings a Builder hands out, kept where their bytes live",
+		src: `import "strings"
+
+type Entry struct {
+	name string
+	id   int
+}
+
+type PE struct {
+	op  string
+	msg [32]byte
+}
+
+func (e *PE) Error() string {
+	sb := NewBuilder(e.msg[:])
+	sb.WriteString(e.op)
+	sb.WriteString(" failed")
+	return sb.String()
+}
+
+var gs, gt, gu string
+var gback [16]byte
+var gback2 [16]byte
+var perr PE
+
+func view(back []byte, s string) string {
+	sb := NewBuilder(back)
+	sb.WriteString(s)
+	return sb.String()
+}
+
+func name(e *Entry, back []byte) string {
+	sb := NewBuilder(back)
+	sb.WriteString(e.name)
+	sb.WriteByte('#')
+	return sb.String()
+}
+
+func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString(" frame ")
+	s := sb.String()
+	if strings.TrimSpace(s) == "frame" {
+		gs = "eq"
+	}
+	t := s[1:4]
+	println(t, len(s), strings.TrimSpace(s))
+	sb2 := NewBuilder(gback[:])
+	sb2.WriteString(strings.TrimSpace(s))
+	gt = sb2.String()
+	var vb, wb, nb [8]byte
+	println(view(vb[:], "local"), len([]byte(view(wb[:], "x"))))
+	gu = view(gback2[:], "kept")
+	e := Entry{name: s, id: 4}
+	println(e.id, name(&e, nb[:]))
+	perr.op = "open"
+	var err error = &perr
+	println(err.Error())
+}
+
+func main() {
+	run()
+	println(gs, gt, gu)
+}
+`,
+		want: "fra 7 frame\nlocal 1\n4  frame #\nopen failed\neq frame kept\n",
+	},
+	{
 		// The error of a call of several results beside a view of a local buffer,
 		// returned: through a method on a field, an interface whose methods hand back
 		// nothing in the error, one of them forwarding to another's `return a.gen(dst,
