@@ -14,7 +14,7 @@ The repository you are currently viewing might be a mirror. Please review the gu
 
 | Platform | Role | Contributing Guidelines |
 | :--- | :--- | :--- |
-| **GitLab** | **Primary Source** | This is the canonical repository (`cznic/ogo`). CI pipelines and main development happen here. |
+| **GitLab** | **Primary Source** | This is the canonical repository (`cznic/ogo`), where development happens. |
 | **GitHub** | **Mirror** | This is a mirror (`modernc-org/ogo`). We **do accept** Issues and Pull Requests here for your convenience! <br> *Note: PRs submitted here will be manually merged into the GitLab source, so please allow extra time for processing.* |
 
 ### **The Hook: Concurrent Blinky**
@@ -231,6 +231,34 @@ That is a stronger check than a test corpus gets. Pinning behaviour against what
 somebody wrote down as expected is only as good as the person who wrote it; pinning
 it against the language OctoGo is modelled on, running the same source, is not.
 
+### Trying a program as Go first, in Visual Studio Code
+
+An OctoGo program is written as Go is written, so Go's own tools are a good place
+to learn the language and to try a program before it goes to the board. Visual
+Studio Code with the Go extension gives completion, errors as you type, go to
+definition, formatting and a debugger. On Windows, roughly (elsewhere only the
+installer differs):
+
+1. Install Go from <https://go.dev/dl/> (on Windows, the `.msi`).
+2. Install VS Code, and from its Extensions view the **Go** extension by the Go
+   Team at Google. When it offers to install its tools (gopls, dlv), let it.
+3. Make a folder, open it in VS Code, and in its terminal (View > Terminal) run
+   `go mod init hello` once. Go builds a program as a module, and without the
+   `go.mod` this writes, `go run .` and F5 stop with "go.mod file not found in
+   current directory or any parent directory". `go env -w GO111MODULE=auto` makes
+   them work too, by turning on the GOPATH mode that predates modules; `go mod
+   init` is the current way, and `go env -u GO111MODULE` undoes the setting.
+4. Create `main.go` with `package main` and a `func main`, and run it with
+   `go run .` or debug it with F5.
+
+An example that imports no `p2` runs this way too, which is how `_examples/vacuum`
+can be stepped through in the debugger: copy its `main.ogo` into such a folder as
+`main.go`, put `package main` and `import "fmt"` at its top, and replace each
+`printf(` with `fmt.Printf(` — what the test suite does to it. Then `ogo run` the
+original on the board. An example that imports `p2` drives pins and cogs and runs
+only on a P2. For the language itself, the [Tour of Go](https://go.dev/tour/) runs
+in the browser.
+
 ## **Language Specification**
 
 The language is specified in the package documentation:
@@ -268,11 +296,12 @@ OctoGo is a source-to-source compiler (transpiler) written in Go.
 
 ## **Status: early preview**
 
-OctoGo compiles and runs real programs on real Propeller 2 hardware, and every
-change is verified by a suite that builds each test program with the real backend,
-loads it onto a P2 and checks its serial output. It is also unfinished. This
-section is the honest inventory — please read it before deciding the compiler is
-broken.
+OctoGo compiles and runs real programs on real Propeller 2 hardware. Every change
+goes through a suite that builds each test program with the real backend, and
+before each release every one is also loaded onto a P2 and its serial output
+checked; there is no public CI, a board being part of the test, so each release's
+notes say what passed. It is also unfinished. This section is the honest inventory
+— please read it before deciding the compiler is broken.
 
 **Works** (all of it exercised on hardware):
 
