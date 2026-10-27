@@ -36109,6 +36109,71 @@ func main() {
 		want: "5 0 3 0 0 true 5 0\n",
 	},
 	{
+		// A local struct given a view of the frame in one field keeps it in that
+		// field alone (markHolderField): a method, a function or a copy keeping
+		// another field keeps nothing of the frame. Each of these was refused, the
+		// holder marked whole (dom75, sweeps/field-holder).
+		name: "fields kept out of a struct holding a view of the frame in another",
+		src: `type Writer interface{ Write(p []byte) int }
+
+type Sink struct{ n int }
+
+func (s *Sink) Write(p []byte) int { s.n += len(p); return len(p) }
+
+type In struct {
+	ex []byte
+	n  int
+}
+
+type W struct {
+	w    *int
+	f    Writer
+	ex   []byte
+	in   In
+	name string
+}
+
+var (
+	pkg = 7
+	out Sink
+	g   *int
+	gf  Writer
+	gs  string
+	gin In
+)
+
+func store(p *int)       { g = p }
+func (z *W) keepW()      { g = z.w }
+func (z *W) keepF()      { gf = z.f; z.f.Write(z.ex) }
+func (z *W) keepName()   { gs = z.name }
+func (z *W) via()        { store(z.w) }
+func keepIn(in *In)      { gin = *in }
+func (in *In) keepSelf() { gin = *in }
+
+func run() int {
+	var a [4]byte
+	z := W{w: &pkg, f: &out, ex: a[:], name: "kept", in: In{n: 3}}
+	z.ex[1] = 5
+	z.keepW()
+	z.keepF()
+	z.keepName()
+	keepIn(&z.in)
+	z.in.n = 4
+	z.in.keepSelf()
+	z.via()
+	y := z
+	g = y.w
+	return int(z.ex[1]) + len(y.ex)
+}
+
+func main() {
+	n := run()
+	println(n, *g, gf.Write(nil), out.n, gs, gin.n)
+}
+`,
+		want: "9 7 0 4 kept 4\n",
+	},
+	{
 		name: "indexes, slice bounds and make lengths of 64 bits",
 		src: `var xs = [5]int{10, 11, 12, 13, 14}
 

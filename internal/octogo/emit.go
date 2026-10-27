@@ -6596,8 +6596,54 @@ type loopSeeds map[*int32]map[string]loopMark
 type loopMark struct {
 	backed  bool
 	holder  string
+	fields  map[string]string // holder's fields, where every mark was made through one (markHolderField); nil for a whole mark
 	header  bool
 	unplain bool // a holder the body took the plainness of (frameHolderPlain)
+}
+
+// mergeHolderMark is the holder half of two loopMarks merged: the first origin, and
+// the fields' union where both are by fields -- a whole one on either side is the
+// merge's.
+func mergeHolderMark(w, v loopMark) loopMark {
+	switch {
+	case v.holder == "":
+	case w.holder == "":
+		w.holder, w.fields = v.holder, v.fields
+	case w.fields == nil || v.fields == nil:
+		w.fields = nil
+	default:
+		merged := maps.Clone(w.fields)
+		for p, o := range v.fields {
+			if merged[p] == "" {
+				merged[p] = o
+			}
+		}
+		w.fields = merged
+	}
+	return w
+}
+
+// holderMarkCovers reports whether the holder mark old says all that m does: whole,
+// or by fields with every field m has.
+func holderMarkCovers(old, m loopMark) bool {
+	if m.holder == "" {
+		return true
+	}
+	if old.holder == "" {
+		return false
+	}
+	if old.fields == nil {
+		return true
+	}
+	if m.fields == nil {
+		return false
+	}
+	for p := range m.fields {
+		if old.fields[p] == "" {
+			return false
+		}
+	}
+	return true
 }
 
 // mergeLoopSeeds adds more to seeds, in a new map.
@@ -6611,9 +6657,7 @@ func mergeLoopSeeds(seeds, more loopSeeds) loopSeeds {
 			for n, v := range m {
 				w := r[k][n]
 				w.backed = w.backed || v.backed
-				if w.holder == "" {
-					w.holder = v.holder
-				}
+				w = mergeHolderMark(w, v)
 				w.header = v.header
 				w.unplain = w.unplain || v.unplain
 				r[k][n] = w
@@ -6687,7 +6731,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool, seeds loopSeeds) (loopSeeds, error) {
-	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanSendClosedElems: map[string]bool{}, chanBufElems: map[string]bool{}, chanLenElems: map[string]bool{}, chanReadyElems: map[string]bool{}, aliasOf: map[string]string{}, aliasLits: map[string]bool{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]int{}, frameHolder: map[string]string{}, frameHolderPlain: map[string]bool{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, recvInto: map[string]uint32{}, recvSelf: map[string]bool{}, intoHolds: map[string]map[string][]held{}, intoSeen: map[string]bool{}, crossInfos: map[string]crossInfo{}, retRecv: map[string]bool{}, retRecvShallow: map[string]bool{}, retPosUnknown: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string]shiftHelper{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, stackChecked: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanSendClosedElems: map[string]bool{}, chanBufElems: map[string]bool{}, chanLenElems: map[string]bool{}, chanReadyElems: map[string]bool{}, aliasOf: map[string]string{}, aliasLits: map[string]bool{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]int{}, frameHolder: map[string]string{}, frameHolderPlain: map[string]bool{}, frameHolderFields: map[string]holderFields{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, contWhole: map[string]map[int]leak{}, contPaths: map[string]map[int]pathLeaks{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, recvInto: map[string]uint32{}, recvSelf: map[string]bool{}, intoHolds: map[string]map[string][]held{}, intoSeen: map[string]bool{}, crossInfos: map[string]crossInfo{}, retRecv: map[string]bool{}, retRecvShallow: map[string]bool{}, retPosUnknown: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string]shiftHelper{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, stackChecked: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -8029,6 +8073,8 @@ type emitter struct {
 	crossContents       map[string][]leak            // per function, how each parameter's CONTENTS escape -- what its elements, or its pointee's fields, hold -- `gp = v[0]` (see heldKind)
 	retContents         map[string][]bool            // per function, which parameters' CONTENTS a result carries, `return v[0]`
 	recvContents        map[string]leak              // a method's receiver's CONTENTS kept where they outlive the call, `gs = c.d`
+	contWhole           map[string]map[int]leak      // per function collected from its body, per slot (-1 the receiver), the contents' leaks of recvContents and crossContents recorded for all of them (noteContents)
+	contPaths           map[string]map[int]pathLeaks // ... and those recorded through fields, by the fields' path as written (held.path)
 	paramCalls          map[string][]paramCall       // per function, which of its parameters it CALLS and with what of its others (see paramCall)
 	siteSeq             int                          // numbers the calls the summaries record, so edges of one call can be paired (see crossEdge.site)
 	siteFuncs           []siteFunc                   // declared functions handed as arguments, by call (see siteFunc)
@@ -8082,6 +8128,7 @@ type emitter struct {
 	crossNames          map[string]string            // C function name -> the name it was declared with, for crossParams diagnostics
 	frameHolder         map[string]string            // local -> the local whose storage it holds a reference to, a struct field having been given one (see noteFrameHolder)
 	frameHolderPlain    map[string]bool              // a holder declared from a literal whose references are in no field that can hold a string: a string read out of it is no view (markHolder clears it)
+	frameHolderFields   map[string]holderFields      // a holder every mark of which was made through a field of it, `z.ex = a[:]`: each field path marked and its origin (markHolderField); a holder marked any other way has none, and is marked whole
 	tmpShown            map[string]string            // a temporary -> what it binds as the program wrote it, `*hh`, for a diagnostic (displayName)
 	arrayView           viewFunc                     // while the summaries are collected: where an array a chain reaches is (summaryReach)
 	builderOf           builderFunc                  // while the summaries are collected: whether a chain is a Builder, or a pointer to one (summaryReach)
@@ -12220,6 +12267,7 @@ func (e *emitter) shadow(name string) {
 	}
 	delete(e.frameBacked, name)
 	delete(e.frameHolder, name)
+	delete(e.frameHolderFields, name)
 	e.shadowKinds(name)
 }
 
@@ -12450,6 +12498,14 @@ type crossEdge struct {
 	// what the callee does with its parameter to, the caller does with those
 	// contents.
 	contents bool
+	// path is, for contents, the fields they were read through (recvEdge.path).
+	path string
+	// exact says the argument is the caller's parameter or receiver written as its
+	// name (recvEdge.exact).
+	exact bool
+	// partPath is, for an argument that is the address of a part of the caller's
+	// parameter or receiver, `&p.in`, the fields written (recvEdge.part).
+	partPath string
 	// site numbers the call the edge was made for: two edges of one site are two
 	// arguments of one call, which is what pairs a callback handed on with the
 	// value handed on to it (see paramCall).
@@ -13218,7 +13274,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	// its switch anyway, and merging two switches' bindings can only refuse more.
 	holds := e.summaryHolds(body)
 	for name, operand := range e.typeSwitchAliases(body) {
-		holds[name] = append(holds[name], held{operand, heldAlias})
+		holds[name] = append(holds[name], held{operand, heldAlias, ""})
 	}
 	// And what a callee stored through a local's address, which the closed summaries
 	// said (applyIntoCands): `set(&k, buf); return k` hands buf back.
@@ -13235,8 +13291,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	type visit struct {
 		name     string
 		contents bool
+		path     string // the contents' fields (held.path), for a name hs holds directly; "" past a binding
 	}
-	resolve := func(hs []held, fn func(name string, contents bool)) {
+	resolvePaths := func(hs []held, fn func(name string, contents bool, path string)) {
 		seen := map[visit]bool{}
 		var walk func(v visit)
 		walk = func(v visit) {
@@ -13244,40 +13301,62 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				return
 			}
 			seen[v] = true
-			fn(v.name, v.contents)
+			fn(v.name, v.contents, v.path)
 			for _, h := range holds[v.name] {
 				switch {
 				case h.kind == heldContents:
-					walk(visit{h.name, true})
+					// What v holds is h.name's contents under h.path, its own
+					// contents among them: the fields read cover both.
+					walk(visit{h.name, true, h.path})
 				case h.kind == heldPart && v.contents:
-					walk(visit{h.name, false})
-					walk(visit{h.name, true})
+					walk(visit{h.name, false, ""})
+					walk(visit{h.name, true, ""})
 				default:
-					walk(visit{h.name, v.contents})
+					walk(visit{h.name, v.contents, ""})
 				}
 			}
 		}
 		for _, h := range hs {
-			walk(visit{h.name, h.kind == heldContents})
+			path := ""
+			if h.kind == heldContents {
+				path = h.path
+			}
+			walk(visit{h.name, h.kind == heldContents, path})
 		}
+	}
+	resolve := func(hs []held, fn func(name string, contents bool)) {
+		resolvePaths(hs, func(name string, contents bool, _ string) { fn(name, contents) })
 	}
 	// reached is what a value may carry of this function's parameters and receiver.
 	type reached struct {
 		vals, conts       []int
 		recvVal, recvCont bool
+		contPaths         map[int][]string // per slot of conts, -1 the receiver's, the fields each reach is through ("" all)
 	}
 	reachOf := func(hs []held) (r reached) {
-		resolve(hs, func(name string, contents bool) {
+		addPath := func(slot int, path string) {
+			if r.contPaths == nil {
+				r.contPaths = map[int][]string{}
+			}
+			if !slices.Contains(r.contPaths[slot], path) {
+				r.contPaths[slot] = append(r.contPaths[slot], path)
+			}
+		}
+		resolvePaths(hs, func(name string, contents bool, path string) {
 			if i := slices.Index(params, name); i >= 0 {
 				if contents && !slices.Contains(r.conts, i) {
 					r.conts = append(r.conts, i)
 				} else if !contents && !slices.Contains(r.vals, i) {
 					r.vals = append(r.vals, i)
 				}
+				if contents {
+					addPath(i, path)
+				}
 			}
 			if recvName != "" && name == recvName {
 				if contents {
 					r.recvCont = true
+					addPath(-1, path)
 				} else if recvPtr {
 					r.recvVal = true
 				}
@@ -13287,7 +13366,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	}
 	// ats is every parameter a name may hold by value, a part of it among them:
 	// what a call through the name may call, `w.f = p; w.f()`.
-	ats := func(name string) []int { return reachOf([]held{{name, heldAlias}}).vals }
+	ats := func(name string) []int { return reachOf([]held{{name, heldAlias, ""}}).vals }
 	// landsIn is what a store through a name lands in, one pointer from the name's
 	// value (storesPast says when it goes further), and what a callee handed the
 	// name, or a method called on it, stores into: the parameters, the receiver and
@@ -13390,7 +13469,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	// for what the call is handed; for what it hands BACK, forResult, it is every
 	// function of its type, the caller's function among them.
 	valueUnions := func(name string, nargs int, forResult bool) (out []string) {
-		resolve([]held{{name, heldAlias}}, func(n string, contents bool) {
+		resolve([]held{{name, heldAlias, ""}}, func(n string, contents bool) {
 			switch {
 			case strings.HasPrefix(n, "?"):
 				if !contents {
@@ -13421,7 +13500,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		case ok:
 			curs = append(curs, cur)
 		default:
-			resolve([]held{{base, heldAlias}}, func(n string, contents bool) {
+			resolve([]held{{base, heldAlias, ""}}, func(n string, contents bool) {
 				if cur, ok := curOf(n); ok && !contents {
 					curs = append(curs, cur)
 				}
@@ -13571,7 +13650,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			if _, isFunc := e.userFunc(recv); isFunc {
 				return nil, nil, false
 			}
-			resolve([]held{{recv, heldAlias}}, func(n string, contents bool) {
+			resolve([]held{{recv, heldAlias, ""}}, func(n string, contents bool) {
 				switch _, isFunc := e.userFunc(n); {
 				case contents || n == recv:
 				case strings.HasPrefix(n, "lit@"):
@@ -13595,12 +13674,18 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		}
 		for _, i := range r.conts {
 			e.crossContents[cname][i] |= flag
+			for _, p := range r.contPaths[i] {
+				e.noteContents(cname, i, flag, p)
+			}
 		}
 		if r.recvVal {
 			e.recvLeaks[cname] |= flag
 		}
 		if r.recvCont {
 			e.recvContents[cname] |= flag
+			for _, p := range r.contPaths[-1] {
+				e.noteContents(cname, -1, flag, p)
+			}
 		}
 	}
 	sink := func(v []int32, flag leak) { sinkHeld(e.summaryReach(v), flag) }
@@ -14445,9 +14530,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	}
 	recvHeld := func(recv string, suffix []Node) []held {
 		if len(suffix) == 2 {
-			return []held{{recv, heldAlias}}
+			return []held{{recv, heldAlias, ""}}
 		}
-		return []held{{recv, heldContents}}
+		return []held{{recv, heldContents, ""}}
 	}
 	var callsOfExpr func(c []int32) []valueCallT
 	// forwards reports whether a return's expressions are one call handing on the
@@ -14570,7 +14655,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		var parts []held
 		for _, h := range hs {
 			if h.kind == heldPart || packed && h.kind == heldAlias {
-				parts = append(parts, held{h.name, heldAlias})
+				parts = append(parts, held{h.name, heldAlias, ""})
 			}
 		}
 		for _, i := range reachOf(parts).vals {
@@ -14954,6 +15039,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				}
 				for _, i := range r.conts {
 					e.crossContents[cname][i] |= leakRecv
+					e.noteContents(cname, i, leakRecv, "")
 				}
 				if st.value != nil {
 					derived(st.value, leakRecv, -1)
@@ -14973,6 +15059,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				for _, i := range r.conts {
 					if i != slot {
 						e.crossContents[cname][i] |= leakGlobal
+						e.noteContents(cname, i, leakGlobal, "")
 					}
 				}
 				// The RECEIVER stored through a parameter, `*p = m`: which slot, the
@@ -14984,6 +15071,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				}
 				if r.recvCont {
 					e.recvContents[cname] |= leakGlobal
+					e.noteContents(cname, -1, leakGlobal, "")
 				}
 				if st.value != nil {
 					derived(st.value, 0, slot)
@@ -15020,18 +15108,18 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 						ptrName := c.recv == recvParam || c.recv == recvOwn && recvPtr
 						switch ptrMethod := e.methodPtr[c.callee]; {
 						case ptrName && ptrMethod:
-							sinkHeld([]held{{recv, heldAlias}}, leakCog)
+							sinkHeld([]held{{recv, heldAlias, ""}}, leakCog)
 						case ptrName:
-							sinkHeld([]held{{recv, heldContents}}, leakCog)
+							sinkHeld([]held{{recv, heldContents, ""}}, leakCog)
 						case c.copyOf != "" && !ptrMethod:
-							sinkHeld([]held{{recv, heldAlias}}, leakCog)
+							sinkHeld([]held{{recv, heldAlias, ""}}, leakCog)
 						case c.recvName != "" && ptrMethod:
 							// A pointer a local holds, or one loaded out of what a
 							// name points at: the cog is handed that pointer, or a
 							// copy of what it points at.
 							sinkHeld([]held{c.recvHeld()}, leakCog)
 						case c.recvName != "":
-							sinkHeld([]held{{c.recvName, heldContents}}, leakCog)
+							sinkHeld([]held{{c.recvName, heldContents, ""}}, leakCog)
 						}
 					}
 				}
@@ -15188,7 +15276,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 					if !inSpan(c.args) {
 						continue
 					}
-					resolve([]held{{c.name, heldAlias}}, func(n string, contents bool) {
+					resolve([]held{{c.name, heldAlias, ""}}, func(n string, contents bool) {
 						switch _, isFunc := e.userFunc(n); {
 						case contents || n == c.name:
 						case strings.HasPrefix(n, "lit@"):
@@ -15308,7 +15396,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				if !isName {
 					continue
 				}
-				resolve([]held{{name, heldAlias}}, func(n string, contents bool) {
+				resolve([]held{{name, heldAlias, ""}}, func(n string, contents bool) {
 					if _, isFunc := e.userFunc(n); !contents && isFunc {
 						e.siteFuncs = append(e.siteFuncs, siteFunc{site, callee, j, e.funcCallC(n)})
 					}
@@ -15337,6 +15425,8 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			}
 			for j, a := range args {
 				e.crossEdges = append(e.crossEdges, viaEdges(crossEdge{caller: cname, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner, site: site}, a.ast, false)...)
+				argName, _ := e.exprIdent(e.unparenExpr(a.ast))
+				partOf, part := e.addrPartOf(a.ast)
 				hs := e.summaryReach(a.ast)
 				pes, pto, packed := partEdges(c.callee, args, j, hs)
 				for _, pe := range pes {
@@ -15349,17 +15439,21 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				r := reachOf(hs)
 				for _, i := range r.vals {
 					e.crossEdges = append(e.crossEdges,
-						crossEdge{caller: cname, from: i, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner, site: site})
+						crossEdge{caller: cname, from: i, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner, site: site, exact: argName != "" && argName == params[i], partPath: partIf(partOf == params[i], part)})
 				}
 				for _, i := range r.conts {
-					e.crossEdges = append(e.crossEdges,
-						crossEdge{caller: cname, from: i, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner, contents: true, site: site})
+					for _, p := range r.contPaths[i] {
+						e.crossEdges = append(e.crossEdges,
+							crossEdge{caller: cname, from: i, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner, contents: true, path: p, site: site})
+					}
 				}
 				if r.recvVal {
-					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: j, argOwner: owner})
+					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: j, argOwner: owner, exact: argName != "" && argName == recvName, part: partIf(partOf == recvName, part)})
 				}
 				if r.recvCont {
-					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: j, contents: true, argOwner: owner})
+					for _, p := range r.contPaths[-1] {
+						e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: j, contents: true, path: p, argOwner: owner})
+					}
 				}
 			}
 		}
@@ -15408,26 +15502,30 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			// function keeps of that.
 			switch {
 			case c.recv == recvOwn && recvPtr:
-				e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: -1, argOwner: owner})
+				e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: -1, argOwner: owner, exact: !c.viaFields && c.copyPath == "", part: c.copyPath})
 			case c.recv == recvParam:
-				e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: c.recvAt, callee: c.callee, to: -1, argOwner: owner})
+				e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: c.recvAt, callee: c.callee, to: -1, argOwner: owner, exact: !c.viaFields && c.copyPath == "", part: c.copyPath})
 			}
 			// The receiver is a COPY of a name, or its address: what the method keeps of
 			// its receiver's contents, this function keeps of what that name's contents
 			// may carry of its parameters and receiver (see resolve for the kinds).
 			if c.copyOf != "" {
-				r := reachOf([]held{{c.copyOf, heldContents}})
+				r := reachOf([]held{{c.copyOf, heldContents, c.copyPath}})
 				for _, i := range r.vals {
 					e.copyRecvEdges = append(e.copyRecvEdges, copyRecvEdge{caller: cname, callee: c.callee, from: i, asVal: true})
 				}
 				for _, i := range r.conts {
-					e.copyRecvEdges = append(e.copyRecvEdges, copyRecvEdge{caller: cname, callee: c.callee, from: i})
+					for _, p := range r.contPaths[i] {
+						e.copyRecvEdges = append(e.copyRecvEdges, copyRecvEdge{caller: cname, callee: c.callee, from: i, path: p})
+					}
 				}
 				if r.recvVal {
 					e.copyRecvEdges = append(e.copyRecvEdges, copyRecvEdge{caller: cname, callee: c.callee, from: -1, asVal: true})
 				}
 				if r.recvCont {
-					e.copyRecvEdges = append(e.copyRecvEdges, copyRecvEdge{caller: cname, callee: c.callee, from: -1})
+					for _, p := range r.contPaths[-1] {
+						e.copyRecvEdges = append(e.copyRecvEdges, copyRecvEdge{caller: cname, callee: c.callee, from: -1, path: p})
+					}
 				}
 			}
 			// An interface's method is handed what the interface value holds: what
@@ -15457,7 +15555,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		// for the caller to ask (paramCall).
 		for _, c := range e.valueCalls(nodes) {
 			var callees []string
-			resolve([]held{{c.name, heldAlias}}, func(n string, contents bool) {
+			resolve([]held{{c.name, heldAlias, ""}}, func(n string, contents bool) {
 				if contents || n == c.name {
 					return
 				}
@@ -15673,6 +15771,20 @@ type recvEdge struct {
 	// contents: what is handed on is the CONTENTS of the caller's receiver or
 	// parameter, `keep(c.d)`, rather than the pointer itself.
 	contents bool
+	// path is, for contents, the fields they were read through, `d` of `keep(c.d)`
+	// (held.path): what the callee keeps of them, the caller keeps of those fields.
+	// "" is all the contents.
+	path string
+	// exact says what is handed on is the caller's receiver or parameter itself,
+	// written as its name -- `keep(c)`, `c.save()` -- so the fields the callee keeps of
+	// its contents are the caller's fields (throughContents). A part of it, `&c.in` or
+	// `c.in.save()`, the summaries read as the name too, and its fields are another
+	// struct's; so are a promoted method's, `c.hold()` of an embedded E's.
+	exact bool
+	// part is, for a method called on a part of the caller's receiver or parameter,
+	// the fields written and the promotion's (methodCall.copyPath): what the callee
+	// keeps of its receiver's contents, the caller keeps of its own under them.
+	part string
 	// argOwner is what the caller passed at each argument position, as
 	// crossEdge.argOwner: what the callee stores the pointer THROUGH (recvInto, or
 	// crossInto for a parameter), the caller stores it through that.
@@ -15705,6 +15817,10 @@ type copyRecvEdge struct {
 	caller, callee string
 	from           int
 	asVal          bool
+	// path is, for contents, the fields of them the receiver is reached through
+	// (methodCall.copyPath): what the method keeps of its receiver's contents, the
+	// caller keeps of those fields. "" is all of them.
+	path string
 }
 
 // closeCrossParams propagates the crossing summary along the recorded call edges
@@ -15757,9 +15873,11 @@ func (e *emitter) closeCrossParams() {
 				changed = true
 			}
 		}
-		// orContents adds flags to what the caller's parameter from -- or, with from
-		// < 0, its receiver -- lets its CONTENTS do.
-		orContents := func(caller string, from int, flags leak) {
+		// orContentsAt adds flags to what the caller's parameter from -- or, with from
+		// < 0, its receiver -- lets its CONTENTS do, through the fields path names (""
+		// all of them; noteContents). A path new to the summary is a change as a flag
+		// is: the callers' summaries read it on the next pass.
+		orContentsAt := func(caller string, from int, flags leak, path string) {
 			flags &= leakGlobal | leakCog
 			if flags == 0 {
 				return
@@ -15769,11 +15887,40 @@ func (e *emitter) closeCrossParams() {
 					e.recvContents[caller] |= flags
 					changed = true
 				}
+				if e.noteContents(caller, -1, flags, path) {
+					changed = true
+				}
 				return
 			}
-			if c := e.crossContents[caller]; from < len(c) && c[from]&flags != flags {
+			c := e.crossContents[caller]
+			if from >= len(c) {
+				return
+			}
+			if c[from]&flags != flags {
 				c[from] |= flags
 				changed = true
+			}
+			if e.noteContents(caller, from, flags, path) {
+				changed = true
+			}
+		}
+		orContents := func(caller string, from int, flags leak) {
+			orContentsAt(caller, from, flags, "")
+		}
+		// throughContents gives the caller's from what the callee lets its slot to's
+		// contents do, each flag read through adjust: by the paths the callee keeps
+		// them through where its summary accounts for every one (contentsScoped), all
+		// of them otherwise. The caller handed on its parameter or receiver itself,
+		// so the callee's fields are its fields.
+		throughContents := func(caller string, from int, callee string, to int, flags leak, adjust func(leak) leak) {
+			if _, scoped := e.contentsScoped(callee, to, flags); !scoped {
+				orContentsAt(caller, from, adjust(flags), "")
+				return
+			}
+			for _, p := range slices.Sorted(maps.Keys(e.contPaths[callee][to])) {
+				if f := e.contPaths[callee][to][p] & flags; f != 0 {
+					orContentsAt(caller, from, adjust(f), p)
+				}
 			}
 		}
 		// outlives is what a callee's flags mean at a call whose receiver is recv: a
@@ -15883,15 +16030,24 @@ func (e *emitter) closeCrossParams() {
 			}
 			if g.to < len(calleeC) {
 				// What the callee does with its parameter's contents, the caller does
-				// with what it passed there: its own parameter's contents, or -- for
-				// an argument that WAS those contents -- their contents in turn.
-				orContents(g.caller, g.from, outlives(calleeC[g.to], g.recv, 0))
+				// with what it passed there: its own parameter's contents, field by
+				// field as the callee keeps them, or -- for an argument that WAS those
+				// contents -- their contents in turn, which are of the fields read.
+				adjust := func(f leak) leak { return outlives(f, g.recv, 0) }
+				switch {
+				case g.contents:
+					orContentsAt(g.caller, g.from, adjust(calleeC[g.to]), g.path)
+				case g.exact:
+					throughContents(g.caller, g.from, g.callee, g.to, calleeC[g.to], adjust)
+				default:
+					orContentsAt(g.caller, g.from, adjust(calleeC[g.to]), g.partPath)
+				}
 			}
 			if g.contents {
 				// The caller passed its parameter's CONTENTS: where the callee puts
-				// its parameter, those contents go.
+				// its parameter, those contents go -- those of the fields read.
 				if g.to < len(calleeV) {
-					orContents(g.caller, g.from, outlives(calleeV[g.to], g.recv, intos))
+					orContentsAt(g.caller, g.from, outlives(calleeV[g.to], g.recv, intos), g.path)
 				}
 				continue
 			}
@@ -16186,10 +16342,15 @@ func (e *emitter) closeCrossParams() {
 					keptV = v[g.to]
 				}
 			}
-			orContents(g.caller, g.from, keptC)
 			if g.contents {
-				orContents(g.caller, g.from, keptV)
+				orContentsAt(g.caller, g.from, keptC, g.path)
+				orContentsAt(g.caller, g.from, keptV, g.path)
 				continue
+			}
+			if g.exact {
+				throughContents(g.caller, g.from, g.callee, g.to, keptC, func(f leak) leak { return f })
+			} else {
+				orContentsAt(g.caller, g.from, keptC, g.part)
 			}
 			var kept leak
 			if g.to < 0 {
@@ -16217,7 +16378,7 @@ func (e *emitter) closeCrossParams() {
 			switch {
 			case flags == 0:
 			case !g.asVal:
-				orContents(g.caller, g.from, flags)
+				orContentsAt(g.caller, g.from, flags, g.path)
 			case g.from < 0:
 				if e.recvLeaks[g.caller]&flags != flags {
 					e.recvLeaks[g.caller] |= flags
@@ -17460,10 +17621,15 @@ const (
 	heldContents
 )
 
-// held is one name a value reaches, and how.
+// held is one name a value reaches, and how. path is, for CONTENTS read through
+// fields, `p.w` or `p.in.ex`, the fields as written from the name (`w`, `in.ex`):
+// what of the contents the value is, which a summary keeps (noteContents) and a call
+// site reads against the fields its argument's holder marks (fieldHolder); "" is all
+// of them.
 type held struct {
 	name string
 	kind heldKind
+	path string
 }
 
 // summaryReach names every variable a value may reach and how, by SHAPE: the
@@ -17479,7 +17645,7 @@ type held struct {
 func (e *emitter) summaryReach(ast []int32) (out []held) {
 	ast = e.unparenExpr(ast)
 	if name, ok := e.exprIdent(ast); ok {
-		return []held{{name, heldAlias}}
+		return []held{{name, heldAlias, ""}}
 	}
 	// `(h.s).g[:]` is `h.s.g[:]` (spliceParenShape), as the emitter writes it.
 	if kids, ok := e.soleFactor(ast); ok {
@@ -17491,7 +17657,7 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 	// a name nothing else can spell, so it resolves as one and is what a call
 	// through f is a call of (valueCalls).
 	if lit, isLit := e.funcLitArg(ast); isLit {
-		return []held{{e.litKey(lit), heldAlias}}
+		return []held{{e.litKey(lit), heldAlias, ""}}
 	}
 	// `&unsafe.Slice(p, n)[i]` points where p does; asked first, addrOfRoot taking
 	// the qualifier for the root.
@@ -17509,13 +17675,13 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 			base != e.summaryRecv && steps[len(steps)-1].sym == Index && !e.endsInSliceStep(steps) {
 			if prefix, ok := e.factorWithout(operand, 1); ok {
 				if shallow, typed := e.arrayView(prefix); typed && !shallow {
-					return []held{{base, heldContents}}
+					return []held{{base, heldContents, ""}}
 				}
 			}
 		}
 	}
 	if name, ok := e.addrOfRoot(ast); ok {
-		return []held{{name, heldAlias}}
+		return []held{{name, heldAlias, ""}}
 	}
 	// `&(*p)[1]`, `&(h.v).x`: an address through a parenthesised head, read by shape
 	// as the head written without the parentheses (parenFactorShape). Unread, a
@@ -17526,9 +17692,9 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 	if operand, ok := e.addrOperandFactor(ast); ok && operand.sym == Factor {
 		if root, stars, _, ok := e.parenFactorStars(slices.Collect(it(operand.ast))); ok {
 			if len(stars) > 1 {
-				return []held{{root, heldContents}}
+				return []held{{root, heldContents, ""}}
 			}
-			return []held{{root, heldAlias}}
+			return []held{{root, heldAlias, ""}}
 		}
 		// `&(*h.p)[1]`, `&(**pp)[0]`: a pointer into what the dereferenced value
 		// reaches, its contents. Unread, `return &(*h.p)[1]` handed back nothing.
@@ -17628,18 +17794,18 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 		}
 	}
 	if name, ok := e.derefOperand(ast); ok {
-		return []held{{name, heldContents}}
+		return []held{{name, heldContents, ""}}
 	}
 	// The same by shape alone: derefOperand asks the name's type, which this pass
 	// has for no local and no parameter, so `w := *p` recorded nothing held.
 	if name, ok := e.derefName(ast); ok {
-		return []held{{name, heldContents}}
+		return []held{{name, heldContents, ""}}
 	}
 	if fac, ok := e.soleFactorNode(ast); ok {
 		kids := e.unparenKids(slices.Collect(it(fac.ast)))
 		if base, steps, isChain := e.factorAccessChain(kids); isChain && len(steps) != 0 {
 			if e.endsInSliceStep(steps) && len(steps) == 1 {
-				return []held{{base, heldAlias}}
+				return []held{{base, heldAlias, ""}}
 			}
 			// A slice of an ARRAY in the storage the root is or points at, `r.buf[:]`
 			// for an `r *R`, views that storage, which is the root's value as
@@ -17652,9 +17818,9 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 				if prefix, ok := e.factorWithout(fac, 1); ok {
 					switch shallow, typed := e.arrayView(prefix); {
 					case !typed:
-						return []held{{base, heldAlias}, {base, heldContents}}
+						return []held{{base, heldAlias, ""}, {base, heldContents, ""}}
 					case shallow:
-						return []held{{base, heldAlias}}
+						return []held{{base, heldAlias, ""}}
 					}
 				}
 			}
@@ -17668,7 +17834,7 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 					return nil
 				}
 			}
-			return []held{{base, heldContents}}
+			return []held{{base, heldContents, e.selectorPath(steps)}}
 		}
 		// `(*p).buf[:]` is p.buf[:]: the root's value where the array is in what p
 		// points at (arrayView).
@@ -17685,18 +17851,18 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 		}
 		if name, steps, isDeref := e.factorDerefChain(kids); isDeref && len(steps) != 0 {
 			if derefView(steps) {
-				return []held{{name, heldAlias}}
+				return []held{{name, heldAlias, ""}}
 			}
-			return []held{{name, heldContents}}
+			return []held{{name, heldContents, ""}}
 		}
 		// The same by shape, as derefName is for `*p`: `g = (*q).p` read nothing
 		// held, and a callee keeping what its parameter's pointee held was
 		// summarised as keeping nothing.
 		if name, steps, isDeref := e.factorDerefName(kids); isDeref {
 			if derefView(steps) {
-				return []held{{name, heldAlias}}
+				return []held{{name, heldAlias, ""}}
 			}
-			return []held{{name, heldContents}}
+			return []held{{name, heldContents, ""}}
 		}
 		// A dereference of anything else in parentheses, `(*h.p)[1:]`, `(**pp).f`:
 		// what the dereferenced value reaches, as contents -- what `h.p[1:]`, Go's
@@ -17708,6 +17874,45 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 		}
 	}
 	return nil
+}
+
+// addrPartOf is the name and the fields of an argument that is the address of a
+// part of a name reached by fields alone, `&p.in` or `&p.in.x`: what the callee is
+// handed is in the name's contents under those fields (crossEdge.part). "" for any
+// other shape.
+func (e *emitter) addrPartOf(ast []int32) (name, path string) {
+	operand, isAddr := e.addrOperandFactor(e.unparenExpr(ast))
+	if !isAddr || operand.sym != Factor {
+		return "", ""
+	}
+	base, steps, isChain := e.factorAccessChain(slices.Collect(it(operand.ast)))
+	if !isChain || len(steps) == 0 || slices.ContainsFunc(steps, func(n Node) bool { return n.sym != Selector }) {
+		return "", ""
+	}
+	return base, e.selectorPath(steps)
+}
+
+// partIf is part where is says the edge's name is the one the part is of.
+func partIf(is bool, part string) string {
+	if is {
+		return part
+	}
+	return ""
+}
+
+// selectorPath is the fields a chain's steps select before any other step, joined
+// by dots: `w` of `p.w`, `in.ex` of `p.in.ex[1]`, "" of `p[0].w`. A summary records
+// it as written (held.path); a call site reads it against the argument's type
+// (holderPathOf).
+func (e *emitter) selectorPath(steps []Node) string {
+	var names []string
+	for _, st := range steps {
+		if st.sym != Selector {
+			break
+		}
+		names = append(names, e.soleIdent(st.ast))
+	}
+	return strings.Join(names, ".")
 }
 
 // parenDerefOperand is X of a Factor `( *X ) FactorSuffix`, the operand of the
@@ -17976,7 +18181,7 @@ func (e *emitter) summaryHolds(body []int32) map[string][]held {
 				// function of its type (see valueUnions) -- the type is all there
 				// is to hold.
 				if ct := e.summaryCallResult(v); ct != "" {
-					hs = []held{{"?" + ct, heldAlias}}
+					hs = []held{{"?" + ct, heldAlias, ""}}
 				}
 			}
 			// `x := id(v)`: x holds whatever the call hands back, which the callee's
@@ -17992,14 +18197,14 @@ func (e *emitter) summaryHolds(body []int32) map[string][]held {
 				if pos >= 0 && firstIndex(c) == firstIndex(v) && lastIndex(c) == lastIndex(v) {
 					e.heldCallPos[key] = pos
 				}
-				hs = append(hs, held{key, heldAlias})
+				hs = append(hs, held{key, heldAlias, ""})
 			}
 			// `x := idH(h).c`: the value with its steps, which a sink reading x reads
 			// as written (callStepsShape).
 			if _, _, _, ok := e.callStepsShape(v); ok {
 				key := fmt.Sprintf("call@%d", len(e.heldCallValues))
 				e.heldCallValues[key] = v
-				hs = append(hs, held{key, heldAlias})
+				hs = append(hs, held{key, heldAlias, ""})
 			}
 			if i < len(into) && into[i] {
 				hs = asPart(hs) // `b.xs = v`: the value is a part of b
@@ -18539,14 +18744,23 @@ type methodCall struct {
 	// value parameter, the caller's own value receiver. What the method keeps of its
 	// receiver's contents, the caller keeps of that name's contents (copyRecvEdge).
 	copyOf string
+	// viaFields says the receiver is a field or an element of the name, `t.in.save()`,
+	// not the name itself: what the method keeps of its receiver's fields is no field
+	// of the name's own (recvEdge.exact).
+	viaFields bool
+	// copyPath is the fields of copyOf the receiver is reached through, `in` of
+	// `t.in.save()` and `c` of `z.c.run()`, or the embedded fields a promoted method
+	// is called through: what the method keeps of its receiver's contents is of
+	// copyOf's contents under them (copyRecvEdge.path). "" is all of them.
+	copyPath string
 }
 
 // recvHeld is what the receiver of a call with a recvName is, by that name.
 func (c methodCall) recvHeld() held {
 	if c.recvLoaded {
-		return held{c.recvName, heldContents}
+		return held{c.recvName, heldContents, ""}
 	}
-	return held{c.recvName, heldAlias}
+	return held{c.recvName, heldAlias, ""}
 }
 
 // stmtMethodCalls finds the METHOD calls a statement makes, which stmtCalls does not:
@@ -18882,6 +19096,9 @@ func (e *emitter) methodCallThrough(recv, stars string, suffix []Node, fi funcIn
 // methodCallFrom is the rest of methodCallOf, from the receiver's type and kind:
 // the fields after the name, then the method selected and called (suffix).
 func (e *emitter) methodCallFrom(recv, ct string, kind recvKind, at int, copyOf string, fields, suffix []Node) (methodCall, bool) {
+	// What the receiver is reached through of the name, for copyPath: the fields
+	// written, up to the first other step.
+	copyPath := e.selectorPath(fields)
 	method := e.soleIdent(suffix[0].ast)
 	if method == "" {
 		return methodCall{}, false
@@ -18984,6 +19201,9 @@ func (e *emitter) methodCallFrom(recv, ct string, kind recvKind, at int, copyOf 
 		if !found || len(path) == 0 {
 			return methodCall{}, false
 		}
+		if len(fields) == 0 {
+			copyPath = strings.Join(path, ".")
+		}
 		m := methodBaseType(ct)
 		for _, f := range path {
 			mt, ok := e.structFieldDirect(m, f)
@@ -18997,7 +19217,7 @@ func (e *emitter) methodCallFrom(recv, ct string, kind recvKind, at int, copyOf 
 		}
 		cname, copyOf = pc, recv
 	}
-	return methodCall{callee: cname, recv: kind, recvAt: at, args: e.callArgExprs(suffix[1].ast), copyOf: copyOf}, true
+	return methodCall{callee: cname, recv: kind, recvAt: at, args: e.callArgExprs(suffix[1].ast), copyOf: copyOf, viaFields: len(fields) != 0, copyPath: copyPath}, true
 }
 
 // stmtCalls finds the calls a statement makes, so that an argument which is one of
@@ -19723,6 +19943,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.frameBacked = map[string]int{}
 	e.frameHolder = map[string]string{}
 	e.frameHolderPlain = map[string]bool{}
+	e.frameHolderFields = map[string]holderFields{}
 	e.tmpShown = nil
 	e.tmp = 0
 	e.defers = nil
@@ -19930,6 +20151,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		sliceVars                      map[string]string
 		frameBacked                    map[string]int
 		frameHolder                    map[string]string
+		frameHolderFields              map[string]holderFields
 		labelHeads                     map[string]loopHead
 		tmp, indent, deferReplay       int
 		defers                         []deferredCall
@@ -19977,7 +20199,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	}
 	saved := state{
 		locals: e.locals, arrays: e.arrays, sliceVars: e.sliceVars,
-		frameBacked: e.frameBacked, frameHolder: e.frameHolder,
+		frameBacked: e.frameBacked, frameHolder: e.frameHolder, frameHolderFields: e.frameHolderFields,
 		tmp: e.tmp, indent: e.indent, deferReplay: e.deferReplay, defers: e.defers,
 		curFunc: e.curFunc, curResultNames: e.curResultNames, curResultTypes: e.curResultTypes,
 		curResultToks: e.curResultToks, curAddressed: e.curAddressed, gotoLast: e.gotoLast,
@@ -20027,6 +20249,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.frameBacked = map[string]int{}
 	e.frameHolder = map[string]string{}
 	e.frameHolderPlain = map[string]bool{}
+	e.frameHolderFields = map[string]holderFields{}
 	e.tmp, e.indent, e.deferReplay, e.defers, e.prologue = 0, 0, -1, nil, nil
 	e.curFunc, e.curArrayResult = cname, ""
 	e.scopeNames = nil
@@ -20087,7 +20310,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.constUntyped, e.constWide, e.constHuge = saved.constUntyped, saved.constWide, saved.constHuge
 
 	e.locals, e.arrays, e.sliceVars = saved.locals, saved.arrays, saved.sliceVars
-	e.frameBacked, e.frameHolder = saved.frameBacked, saved.frameHolder
+	e.frameBacked, e.frameHolder, e.frameHolderFields = saved.frameBacked, saved.frameHolder, saved.frameHolderFields
 	e.tmp, e.indent, e.deferReplay, e.defers = saved.tmp, saved.indent, saved.deferReplay, saved.defers
 	e.curFunc, e.curResultNames, e.curResultTypes = saved.curFunc, saved.curResultNames, saved.curResultTypes
 	e.curResultToks, e.curAddressed, e.gotoLast = saved.curResultToks, saved.curAddressed, saved.gotoLast
@@ -21853,6 +22076,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 	e.frameBacked = map[string]int{}
 	e.frameHolder = map[string]string{}
 	e.frameHolderPlain = map[string]bool{}
+	e.frameHolderFields = map[string]holderFields{}
 	e.tmpShown = nil
 	e.tmp = 0
 	e.defers = nil
@@ -23114,6 +23338,7 @@ func (e *emitter) enterScope() func() {
 	locals, arrays, sliceVars := maps.Clone(e.locals), maps.Clone(e.arrays), maps.Clone(e.sliceVars)
 	localConsts, localConstSpecs := maps.Clone(e.localConsts), maps.Clone(e.localConstSpecs)
 	frameBacked, frameHolder := maps.Clone(e.frameBacked), maps.Clone(e.frameHolder)
+	frameHolderFields := maps.Clone(e.frameHolderFields)
 	constInt, constStr := maps.Clone(e.constInt), maps.Clone(e.constStr)
 	constUntyped, constBool := maps.Clone(e.constUntyped), maps.Clone(e.constBool)
 	// A block constant's exact value, its width and its being beyond every type end
@@ -23149,15 +23374,35 @@ func (e *emitter) enterScope() func() {
 				mergeBacked(frameBacked, n, d)
 			}
 		}
+		// A mark by fields merges by fields, and a whole one on either side is the
+		// merge's: a block's field mark merged over a whole one -- a shadowing
+		// name's, `z := W{}; z.ex = b[:]` under an outer z given `W{w: &loc}` --
+		// would read the outer z's w as holding nothing.
 		for n, origin := range e.frameHolder {
-			if origin != "" && outer(n) {
-				frameHolder[n] = origin
+			if origin == "" || !outer(n) {
+				continue
 			}
+			inner, was := e.frameHolderFields[n], frameHolderFields[n]
+			if inner == nil || frameHolder[n] != "" && was == nil {
+				delete(frameHolderFields, n)
+			} else {
+				merged := maps.Clone(was)
+				if merged == nil {
+					merged = map[string]string{}
+				}
+				for p, o := range inner {
+					if merged[p] == "" {
+						merged[p] = o
+					}
+				}
+				frameHolderFields[n] = merged
+			}
+			frameHolder[n] = origin
 		}
 		e.scopeNames = e.scopeNames[:depth]
 		e.locals, e.arrays, e.sliceVars = locals, arrays, sliceVars
 		e.localConsts, e.localConstSpecs = localConsts, localConstSpecs
-		e.frameBacked, e.frameHolder = frameBacked, frameHolder
+		e.frameBacked, e.frameHolder, e.frameHolderFields = frameBacked, frameHolder, frameHolderFields
 		e.constInt, e.constStr = constInt, constStr
 		e.constUntyped, e.constBool = constUntyped, constBool
 		e.constVal, e.constWide, e.constHuge = constVal, constWide, constHuge
@@ -32654,6 +32899,7 @@ func (e *emitter) asDerefName(name string, fn func(tmp string)) {
 		delete(e.locals, tmp)
 		delete(e.sliceVars, tmp)
 		delete(e.frameHolder, tmp)
+		delete(e.frameHolderFields, tmp)
 		delete(e.frameBacked, tmp)
 		delete(e.tmpShown, tmp)
 		if hadShown {
@@ -48135,7 +48381,11 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	}
 	target := lifeTarget{base: storedIn, stars: len(stars), steps: postfix[:len(postfix)-1]}
 	e.checkStore(target, op)
-	e.noteFrameHolder(storedIn, op)
+	path := ""
+	if storedIn == base && len(stars) == 0 {
+		path = e.holderFieldPath(storedIn, target.steps)
+	}
+	e.noteFrameHolder(storedIn, path, op)
 	e.noteStoredThroughOp(target, op)
 	defer e.bindTargetOrder(base, postfix[:len(postfix)-1], op)()
 	// A written-out dereference applies to the WHOLE target and not to its head:
@@ -48971,6 +49221,22 @@ func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
 		return
 	}
 	if r, ok := e.frameRefOf(initExpr); ok {
+		// A copy of a holder marked by fields, `y := z`, holds what z's fields do,
+		// field by field.
+		if src, isName := e.exprIdent(e.unparenExpr(initExpr)); isName && e.copiesFields(src, name) {
+			for _, f := range slices.Sorted(maps.Keys(e.frameHolderFields[src])) {
+				e.markHolderField(name, f, e.frameHolderFields[src][f])
+			}
+			return
+		}
+		// A struct literal marks the fields its references are in, `z := W{w: &pkg,
+		// ex: a[:]}` its ex alone (markHolderField).
+		if refs := e.litFieldRefs(ctype, initExpr); len(refs) != 0 && e.isFrameVar(name) {
+			for _, f := range slices.Sorted(maps.Keys(refs)) {
+				e.markHolderField(name, f, refs[f])
+			}
+			return
+		}
 		e.markHolder(name, r.origin)
 		// A literal whose references are all in fields that can hold no string,
 		// `H{buf: a[:], name: "x"}`, makes a holder a string read out of is no
@@ -49021,6 +49287,60 @@ func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
 			return
 		}
 	}
+}
+
+// copiesFields reports whether dst, being given src, is given src's marks by field:
+// src is a local struct marked by fields alone (frameHolderFields), and dst a local
+// struct of the same type, held by value.
+func (e *emitter) copiesFields(src, dst string) bool {
+	if e.frameHolderFields[src] == nil || !e.isFrameVar(dst) || !e.isFrameVar(src) {
+		return false
+	}
+	st, ok1 := e.varType(src)
+	dt, ok2 := e.varType(dst)
+	if !ok1 || !ok2 || e.isPointer(st) || e.isPointer(dt) {
+		return false
+	}
+	u := e.underlyingCType(st)
+	_, isStruct := e.structs[u]
+	return isStruct && u == e.underlyingCType(dt)
+}
+
+// litFieldRefs is what each field of a struct literal of type ctype reaches of this
+// frame, by the field's name: the origin of the reference each element's value
+// holds, as frameRefOf finds it. Nil where the value is no struct literal of that
+// type or an element is no field of it -- a key that is not one, more values than
+// fields -- which the literal's own emission reports; the marks are then the
+// variable's whole.
+func (e *emitter) litFieldRefs(ctype string, initExpr []int32) map[string]string {
+	lname, lit, isLit := e.soleCompositeLit(e.unparenExpr(initExpr))
+	u := e.underlyingCType(ctype)
+	if !isLit || e.underlyingCType(lname) != u {
+		return nil
+	}
+	fields, isStruct := e.structs[u]
+	if !isStruct {
+		return nil
+	}
+	refs := map[string]string{}
+	for i, el := range compositeLitElements(lit) {
+		at := i
+		if el.keyed {
+			key, ok := e.soleToken(el.key.ast)
+			if !ok || e.f.ch(key) != IDENT {
+				return nil
+			}
+			nm := e.src(key)
+			at = slices.IndexFunc(fields, func(f structField) bool { return f.name == nm })
+		}
+		if at < 0 || at >= len(fields) || el.value.sym == CompositeLit {
+			return nil
+		}
+		if r, ok := e.frameRefOf(el.value.ast); ok {
+			refs[fields[at].name] = r.origin
+		}
+	}
+	return refs
 }
 
 // summarisedStepsCall reports a call's result with steps after it, read or
@@ -58660,8 +58980,8 @@ func (r frameRef) returnAdvice() string {
 // The address of a local. And a variable that was given one of those -- a struct
 // whose field was assigned a local's address or a slice of a local array, or a copy
 // of such a struct. The third is why frameHolder exists: a struct hands the reference
-// on without being one, and following it per field would mean tracking provenance
-// per field, so the variable carries the mark instead.
+// on without being one, so the variable carries the mark -- by the field it is in,
+// where every mark was made through a field (markHolderField), and whole otherwise.
 func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	r, ok := e.frameRefAny(ast)
 	if ok && e.outlivesCogs(r) {
@@ -58901,12 +59221,11 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 	// the same header by another spelling, and it was accepted at every sink: a
 	// dangling slice stored, returned, sent and launched, silently.
 	//
-	// The mark is per VARIABLE, deliberately (see noteFrameHolder), so there is no
-	// per-field provenance to consult and the field's own TYPE is what separates a
-	// reference-carrying read from a harmless one. That costs the same over-refusal
-	// the variable mark already costs -- a second slice field holding package storage
-	// reads as suspect too -- and it costs nothing on a scalar field, which cannot
-	// carry a reference at all.
+	// A holder marked by its fields is read by the field (fieldHolder): a field
+	// nothing marked reads nothing of the frame. A holder marked whole has no field to
+	// consult, and the field's own TYPE is what separates a reference-carrying read
+	// from a harmless one: a second slice field holding package storage reads as
+	// suspect too, and a scalar field, which cannot carry a reference, does not.
 	// A method CALL on a marked holder that hands the reference out: `sb.String()`
 	// is a VIEW of the Builder's backing, so it reaches whatever that backing does.
 	// Stored in a package variable it printed the frame's leftovers -- silently, the
@@ -58946,7 +59265,13 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 	}
 	if fac, isFac := e.soleFactorNode(ast); isFac {
 		if base, steps, isChain := e.factorAccessChain(e.unparenKids(slices.Collect(it(fac.ast)))); isChain {
-			if origin := e.viewedHolder(base); origin != "" {
+			origin := e.viewedHolder(base)
+			// A holder marked by its fields is read by the field: `g = z.w` beside a
+			// `z.ex = a[:]` reads nothing of the frame (markHolderField).
+			if o, decided := e.fieldHolder(base, e.holderFieldPath(base, steps)); decided {
+				origin = o
+			}
+			if origin != "" {
 				// A reslice of a marked STRING, `s[1:]`, is a view of what s views:
 				// no chain type walks a string's slice step.
 				if ct, ok := e.varType(base); ok && e.underlyingCType(ct) == cString &&
@@ -59892,14 +60217,16 @@ func (e *emitter) frameRefIn(exprs []Node) (Node, frameRef, bool) {
 // on a write into the variable or into a field of it -- `b.data = a[:]`, `n.p = &x` --
 // and on a copy of a variable already marked.
 //
-// The mark is per variable and is never cleared, which is what keeps it sound with no
-// per-field tracking: a struct with two fields, one holding a frame reference and one
-// not, must stay marked. The cost is not rare: every field that can hold a reference
-// reads as holding the frame's, so keeping a package variable's address out of such
-// a struct, `g = z.w` beside a `z.ex = a[:]`, is refused, and so is a callee or a
-// method keeping it, the summaries keeping what a receiver or a parameter holds whole
-// (dom75, sweeps/field-holder: 23 of 24 such rows refused; listed).
-func (e *emitter) noteFrameHolder(base string, op []Node) {
+// The mark is never cleared, which is what keeps it sound: a struct with two fields,
+// one holding a frame reference and one not, stays marked. A store into a field of a
+// local struct, `z.ex = a[:]`, marks the field (path, see holderFieldPath), so a read
+// of another field is no read of the frame (markHolderField), and the summaries keep
+// what a callee keeps of its receiver's and parameters' contents by the fields it
+// reads (noteContents). Marked whole, every field that can hold a reference read as
+// holding the frame's: `g = z.w` beside a `z.ex = a[:]` was refused, and so was a
+// callee or a method keeping it (dom75, sweeps/field-holder: 23 of 24 such rows).
+// Every other mark is the variable's whole.
+func (e *emitter) noteFrameHolder(base, path string, op []Node) {
 	if !e.isFrameVar(base) {
 		return
 	}
@@ -59914,6 +60241,16 @@ func (e *emitter) noteFrameHolder(base string, op []Node) {
 			e.noteSliceElemRefs(base, n.ast)
 		}
 		if r, ok := e.frameRefOf(n.ast); ok {
+			if path != "" {
+				e.markHolderField(base, path, r.origin)
+				return
+			}
+			if src, isName := e.exprIdent(e.unparenExpr(n.ast)); isName && e.copiesFields(src, base) {
+				for _, f := range slices.Sorted(maps.Keys(e.frameHolderFields[src])) {
+					e.markHolderField(base, f, e.frameHolderFields[src][f])
+				}
+				return
+			}
 			e.noteHolderRef(base, r)
 			return
 		}
@@ -60511,6 +60848,178 @@ func (e *emitter) holdsString(ct string, seen map[string]bool) bool {
 func (e *emitter) markHolder(name, origin string) {
 	e.frameHolder[name] = origin
 	delete(e.frameHolderPlain, name)
+	delete(e.frameHolderFields, name)
+}
+
+// holderFields is a holder's marks by field (frameHolderFields): each field path
+// marked, `ex` or `in.ex`, and the origin of the reference stored there.
+type holderFields map[string]string
+
+// pathLeaks is how a slot's contents leak through each field path (contPaths).
+type pathLeaks map[string]leak
+
+// markHolderField is markHolder for a mark made through a field of the holder, `z.ex
+// = a[:]` or `W{ex: a[:]}`: path is the field's (holderFieldPath), and a read of a
+// field that is neither a prefix of it nor under it is no read of what the mark
+// records (fieldHolder). A holder marked whole, before or after, stays whole: a field
+// mark never narrows one. The fields' map is replaced, never written in place, so a
+// snapshot of the marks (enterScope, loopHeadAt) keeps what it saw.
+func (e *emitter) markHolderField(name, path, origin string) {
+	if e.frameHolder[name] != "" && e.frameHolderFields[name] == nil {
+		e.markHolder(name, origin)
+		return
+	}
+	fields := maps.Clone(e.frameHolderFields[name])
+	if fields == nil {
+		fields = map[string]string{}
+	}
+	if fields[path] == "" {
+		fields[path] = origin
+	}
+	if e.frameHolder[name] == "" {
+		e.frameHolder[name] = origin
+	}
+	delete(e.frameHolderPlain, name)
+	e.frameHolderFields[name] = fields
+}
+
+// holderFieldPath is the field path a chain of steps from a local struct's name
+// selects, as markHolderField and fieldHolder spell it: each field the chain names,
+// joined by dots, down to the first step that is no field of a struct the struct
+// holds by value -- an index, a slice, a call, or a field that is an array, a pointer
+// or anything else that is no struct -- whose field ends the path. The chain is read
+// against the declared fields alone: a promoted field or a method, which another
+// struct's field may answer, is no path, nor is a chain that selects no field first,
+// and the name must be a local struct of no pointer. "" for all of those.
+func (e *emitter) holderFieldPath(name string, steps []Node) string {
+	var names []string
+	for _, st := range steps {
+		if st.sym != Selector {
+			break
+		}
+		names = append(names, e.soleIdent(st.ast))
+	}
+	return e.holderFieldNames(name, names)
+}
+
+// holderFieldNames is holderFieldPath of the fields a chain selects, by name.
+func (e *emitter) holderFieldNames(name string, names []string) string {
+	if !e.isFrameVar(name) {
+		return ""
+	}
+	ct, ok := e.varType(name)
+	if !ok || e.isPointer(ct) {
+		return ""
+	}
+	if _, isArr := e.arrays[name]; isArr {
+		return ""
+	}
+	cur := e.underlyingCType(ct)
+	var path []string
+	for _, fname := range names {
+		via, f, found := e.selectField(cur, fname)
+		if !found {
+			return ""
+		}
+		path = append(path, via...)
+		if f == nil {
+			break // promoted through an embedded pointer, which the path ends at
+		}
+		path = append(path, fname)
+		if f.dim.bound != "" || e.isPointer(f.ctype) {
+			break
+		}
+		next := e.underlyingCType(f.ctype)
+		if _, isStruct := e.structs[next]; !isStruct {
+			break
+		}
+		cur = next
+	}
+	return strings.Join(path, ".")
+}
+
+// selectField is the field fname selects in a value of struct type ct, as Go's
+// selector rule finds it: a field of ct's own, or the one promoted from the
+// shallowest depth its embedded fields reach it at, alone there. via is the
+// embedded fields the promotion goes through; f is the field, or nil where the way
+// to it goes through an embedded POINTER, which via then ends at -- what the field
+// is in is what that pointer points at, no storage of ct's. Not found for a name no
+// field of the depth it is first met at answers alone, a method among them.
+func (e *emitter) selectField(ct, fname string) (via []string, f *structField, found bool) {
+	type level struct {
+		ct  string
+		via []string
+		ptr bool // the way here went through an embedded pointer
+	}
+	cur := []level{{ct: ct}}
+	for depth := 0; depth < 8 && len(cur) != 0; depth++ {
+		var hits []level
+		var hitField *structField
+		var next []level
+		for _, l := range cur {
+			fields := e.structs[l.ct]
+			if i := slices.IndexFunc(fields, func(sf structField) bool { return sf.name == fname }); i >= 0 {
+				hits = append(hits, l)
+				hitField = &fields[i]
+			}
+			if _, isMethod := e.methodPtr[e.methodCName(l.ct, fname)]; isMethod {
+				hits = append(hits, l)
+			}
+			for _, sf := range fields {
+				if !sf.embedded || sf.dim.bound != "" {
+					continue
+				}
+				inner := e.underlyingCType(sf.ctype)
+				ptr := l.ptr
+				if e.isPointer(sf.ctype) {
+					inner, ptr = e.underlyingCType(e.elemType(sf.ctype)), true
+				}
+				if _, isStruct := e.structs[inner]; !isStruct {
+					continue
+				}
+				v := append(slices.Clone(l.via), sf.name)
+				if l.ptr {
+					v = l.via // the pointer the way went through ends the path
+				}
+				next = append(next, level{ct: inner, via: v, ptr: ptr})
+			}
+		}
+		switch {
+		case len(hits) > 1:
+			return nil, nil, false
+		case len(hits) == 1:
+			if hits[0].ptr {
+				return hits[0].via, nil, true
+			}
+			return hits[0].via, hitField, true
+		}
+		cur = next
+	}
+	return nil, nil, false
+}
+
+// fieldPathsMeet reports whether two field paths name storage one holds of the
+// other: one is the other, or a prefix of it by whole fields.
+func fieldPathsMeet(a, b string) bool {
+	return a == b || strings.HasPrefix(a, b+".") || strings.HasPrefix(b, a+".")
+}
+
+// fieldHolder is what a read of name's field path holds of this frame, where every
+// mark the holder has was made through a field of it (markHolderField): the origin
+// of a marked path the read meets, or "" where it meets none. decided is false where
+// the holder is marked whole, or not at all, or the path is "": the holder's own mark
+// answers then.
+func (e *emitter) fieldHolder(name, path string) (origin string, decided bool) {
+	fields := e.frameHolderFields[name]
+	if fields == nil || path == "" {
+		return "", false
+	}
+	for _, m := range slices.Sorted(maps.Keys(fields)) {
+		if fieldPathsMeet(m, path) {
+			return fields[m], true
+		}
+	}
+	return "", true
 }
 
 // noteHolderRef is noteFrameHolder for a reference already found: the local base,
@@ -60776,8 +61285,16 @@ func (e *emitter) carryInto(t assignTarget, declare bool, ctype string, c *carri
 	if len(t.chain) == 0 {
 		origin, elemRefs, _ = e.sliceElemOrigin(c.at.ast)
 	}
+	path := ""
+	if base == t.name && len(t.stars) == 0 && t.srcName == "" && t.deref == "" {
+		path = e.holderFieldPath(base, t.chain)
+	}
 	return func() {
-		e.noteHolderRef(base, c.r)
+		if path != "" && e.isFrameVar(base) {
+			e.markHolderField(base, path, c.r.origin) // a field of a local struct (markHolderField)
+		} else {
+			e.noteHolderRef(base, c.r)
+		}
 		e.noteStoredThrough(st, c.r)
 		if elemRefs && e.isSliceVar(base) && e.isFrameVar(base) {
 			e.markHolder(base, origin)
@@ -60841,6 +61358,8 @@ type recvRef struct {
 	expr    []int32 // for an opaque one, the receiver as an Expression of the source's tokens, or nil (see opaqueRecvExpr)
 	ask     []int32 // ... and the expression whose frameRefOf says what storage the receiver is, or nil (see opaqueRecvAsk)
 	askHeld bool    // ... whose contentsRef says it: the receiver is what an embedded pointer holds
+	self    bool    // the receiver is the root variable itself, whole: no step, no promotion, no pointer followed
+	at      string  // ... or the part of it the fields written and the promotion select, by its field path (holderFieldNames); "" where it is no such part
 }
 
 // recvStorage names the storage a method's receiver refers to when the method is
@@ -60866,6 +61385,26 @@ func (e *emitter) recvStorage(base string, steps []Node, path []string) recvRef 
 		}
 	}
 	r.storage, r.local, r.sure = e.chainStorage(base, steps)
+	r.self = len(steps) == 0 && len(path) == 0 && r.storage == base
+	if !r.self && r.storage == base {
+		var names []string
+		for _, st := range steps {
+			if st.sym != Selector {
+				names = nil
+				break
+			}
+			names = append(names, e.soleIdent(st.ast))
+		}
+		if len(names) == len(steps) {
+			names = append(names, path...)
+			// The part must be the whole way, every field a struct held by value:
+			// a path stopping short, at a pointer or an array, names storage the
+			// receiver is in, not the receiver.
+			if at := e.holderFieldNames(base, names); at != "" && len(strings.Split(at, ".")) == len(names) && e.partIsStruct(base, names) {
+				r.at = at
+			}
+		}
+	}
 	vt := ""
 	if len(steps) == 0 {
 		vt, _ = e.varType(base) // its own pointer, if any, storageBehind followed
@@ -60928,8 +61467,28 @@ func (e *emitter) checkRecvAt(cname string, r recvRef, args []Node) bool {
 	}
 	// What the receiver HOLDS, kept by a method that stores its contents -- `gs =
 	// c.d` -- is what the storage it is called on holds: that storage's own mark.
+	//
+	// Where the method keeps only fields of its receiver's contents (contentsScoped)
+	// and is called on a local marked by fields, those fields' marks answer: `z.keepW()`
+	// keeping z.w beside a `z.ex = a[:]` keeps nothing of the frame.
 	if e.recvContents[cname]&(leakGlobal|leakCog) != 0 && r.local {
-		if origin := e.frameHolder[r.storage]; origin != "" {
+		origin := e.frameHolder[r.storage]
+		paths, scoped := e.contentsScoped(cname, -1, leakGlobal|leakCog)
+		if !scoped && r.at != "" {
+			// All of a part's contents are the part's fields: the receiver reaches
+			// nothing of the struct outside it.
+			paths, scoped = []string{""}, true
+		}
+		if scoped && (r.self || r.at != "") && origin != "" {
+			origin = ""
+			for _, p := range paths {
+				if o := e.heldAt(r.storage, joinFieldPath(r.at, p)); o != "" {
+					origin = o
+					break
+				}
+			}
+		}
+		if origin != "" {
 			how := "stored where it outlives every frame"
 			if e.recvContents[cname]&leakGlobal == 0 {
 				how = "handed to another cog"
@@ -61399,7 +61958,7 @@ func (e *emitter) checkIfaceArgs(iface, method string, args []Node, spread bool)
 	}
 	e.checkCrossArgsIn(crosses, who, fixed)
 	e.checkIntoArgsIn(intos, who, fixed)
-	e.checkContentArgsIn(contents, who, fixed)
+	e.checkContentArgsIn("", contents, who, fixed)
 }
 
 // ifaceCallSummary unions the crossing summaries of the method named, over every
@@ -61588,7 +62147,7 @@ func (e *emitter) checkCrossArgs(cname string, args []Node, spread bool) {
 		}
 	}
 	e.checkCrossArgsIn(crosses, e.funcSourceName(cname), fixed)
-	e.checkContentArgsIn(e.crossContents[cname], e.funcSourceName(cname), fixed)
+	e.checkContentArgsIn(cname, e.crossContents[cname], e.funcSourceName(cname), fixed)
 	e.checkCallbackArgs(cname, e.funcSourceName(cname), args)
 }
 
@@ -62481,7 +63040,11 @@ func (e *emitter) checkForwardedIn(crosses, contents []leak, intos []uint32, who
 	}
 }
 
-func (e *emitter) checkContentArgsIn(contents []leak, who string, args []Node) {
+// cname, where the summary is a function's, lets an argument that is a local struct
+// or its address be asked by the fields the function keeps of its contents
+// (contentsScoped): `keepWf(&z)` keeping z.w beside a `z.ex = a[:]` keeps nothing of
+// the frame.
+func (e *emitter) checkContentArgsIn(cname string, contents []leak, who string, args []Node) {
 	for i, a := range args {
 		if i >= len(contents) || contents[i]&(leakCog|leakGlobal) == 0 {
 			continue
@@ -62489,6 +63052,26 @@ func (e *emitter) checkContentArgsIn(contents []leak, who string, args []Node) {
 		r, ok := e.contentsRef(a.ast)
 		if !ok {
 			continue
+		}
+		if x, at, isStruct := e.contentsStruct(a.ast); isStruct && cname != "" {
+			paths, scoped := e.contentsScoped(cname, i, leakCog|leakGlobal)
+			if !scoped && at != "" {
+				// All of a part's contents are the part's fields: what the callee is
+				// handed reaches nothing of the struct outside it.
+				paths, scoped = []string{""}, true
+			}
+			if scoped {
+				kept := false
+				for _, p := range paths {
+					if e.heldAt(x, joinFieldPath(at, p)) != "" {
+						kept = true
+						break
+					}
+				}
+				if !kept {
+					continue
+				}
+			}
 		}
 		why := "are stored where they outlive every frame"
 		if contents[i]&leakCog != 0 {
@@ -62498,6 +63081,165 @@ func (e *emitter) checkContentArgsIn(contents []leak, who string, args []Node) {
 			e.f.tok(a.Pos()).Position(), r.what, who, i+1, why, r.advice())
 		return
 	}
+}
+
+// noteContents records that the contents of cname's slot -- a parameter's, or the
+// receiver's at -1 -- leak as flags says, through the fields path names ("" all of
+// them), beside what recvContents and crossContents record of the same leak: every
+// write of those for a function summarised from its body writes here too, so a call
+// site may read its argument's fields against the paths (contentsScoped).
+func (e *emitter) noteContents(cname string, slot int, flags leak, path string) (grew bool) {
+	if flags == 0 {
+		return false
+	}
+	if path == "" {
+		if e.contWhole[cname] == nil {
+			e.contWhole[cname] = map[int]leak{}
+		}
+		grew = e.contWhole[cname][slot]&flags != flags
+		e.contWhole[cname][slot] |= flags
+		return grew
+	}
+	if e.contPaths[cname] == nil {
+		e.contPaths[cname] = map[int]pathLeaks{}
+	}
+	if e.contPaths[cname][slot] == nil {
+		e.contPaths[cname][slot] = pathLeaks{}
+	}
+	grew = e.contPaths[cname][slot][path]&flags != flags
+	e.contPaths[cname][slot][path] |= flags
+	return grew
+}
+
+// contentsScoped is the paths through which cname's slot's contents leak as want
+// says, sorted, and whether they are the whole answer: every such leak was recorded
+// through a field (noteContents), and what was recorded accounts for every flag the
+// summary has. Not where any was recorded for all the contents, nor for a summary
+// made otherwise -- a union of a type's functions, a wrapper's, one copied -- which
+// is read whole, as before the paths.
+func (e *emitter) contentsScoped(cname string, slot int, want leak) ([]string, bool) {
+	var union leak
+	if slot < 0 {
+		union = e.recvContents[cname]
+	} else if c := e.crossContents[cname]; slot < len(c) {
+		union = c[slot]
+	}
+	if union&want == 0 {
+		return nil, true
+	}
+	if e.contWhole[cname][slot]&want != 0 {
+		return nil, false
+	}
+	var paths []string
+	var acc leak
+	for p, f := range e.contPaths[cname][slot] {
+		if f&want != 0 {
+			paths = append(paths, p)
+			acc |= f
+		}
+	}
+	if acc&want != union&want {
+		return nil, false
+	}
+	slices.Sort(paths)
+	return paths, true
+}
+
+// holderPathOf is a path a summary records (held.path), the fields as written from
+// a parameter or the receiver, read against the local struct name it is handed: the
+// canonical field path holderFieldPath gives the same chain, "" where a field is
+// promoted or no field of the struct.
+func (e *emitter) holderPathOf(name, written string) string {
+	if written == "" {
+		return ""
+	}
+	return e.holderFieldNames(name, strings.Split(written, "."))
+}
+
+// heldAt is what local name holds of this frame at the fields a summary's path
+// names (held.path): the field marks' answer where the holder is marked by fields
+// and the path reads as its fields, the holder's own mark otherwise.
+func (e *emitter) heldAt(name, written string) string {
+	if o, decided := e.fieldHolder(name, e.holderPathOf(name, written)); decided {
+		return o
+	}
+	return e.frameHolder[name]
+}
+
+// contentsStruct is the local whose storage an argument's contents are, where the
+// argument names it plainly: its address, `&z`, the variable itself, `z`, or the
+// address of a part of it every field of the way to which is a struct held by value,
+// `&z.in`, whose field path is at. Not through a pointer, whose mark names one local
+// it may point at.
+func (e *emitter) contentsStruct(ast []int32) (x, at string, ok bool) {
+	ast = e.unparenExpr(ast)
+	if x, whole := e.addrOperand(ast); whole && x != "" {
+		if root, ok := e.addrOfRoot(ast); ok && root == x && e.isFrameVar(x) {
+			return x, "", true
+		}
+		return "", "", false
+	}
+	if x, ok := e.exprIdent(ast); ok && e.isFrameVar(x) {
+		if ct, isVar := e.varType(x); isVar && !e.isPointer(ct) {
+			return x, "", true
+		}
+		return "", "", false
+	}
+	if operand, isAddr := e.addrOperandFactor(ast); isAddr && operand.sym == Factor {
+		if base, steps, isChain := e.factorAccessChain(slices.Collect(it(operand.ast))); isChain && len(steps) != 0 && e.isFrameVar(base) {
+			var names []string
+			for _, st := range steps {
+				if st.sym != Selector {
+					return "", "", false
+				}
+				names = append(names, e.soleIdent(st.ast))
+			}
+			if at := e.holderFieldNames(base, names); at != "" && len(strings.Split(at, ".")) == len(names) && e.partIsStruct(base, names) {
+				return base, at, true
+			}
+		}
+	}
+	return "", "", false
+}
+
+// joinFieldPath is the field path p of a part at at: at's fields, then p's.
+func joinFieldPath(at, p string) string {
+	switch {
+	case at == "":
+		return p
+	case p == "":
+		return at
+	}
+	return at + "." + p
+}
+
+// partIsStruct reports whether the fields names selects from local name, as written,
+// each name a field of the struct before it held by value -- no promotion, no
+// pointer, no array -- end at a struct: a part whose own fields a callee's path
+// names.
+func (e *emitter) partIsStruct(name string, names []string) bool {
+	ct, ok := e.varType(name)
+	if !ok || e.isPointer(ct) {
+		return false
+	}
+	cur := e.underlyingCType(ct)
+	for _, fname := range names {
+		fields, isStruct := e.structs[cur]
+		if !isStruct {
+			return false
+		}
+		i := slices.IndexFunc(fields, func(f structField) bool { return f.name == fname })
+		if i < 0 {
+			return false
+		}
+		f := fields[i]
+		if f.dim.bound != "" || e.isPointer(f.ctype) {
+			return false
+		}
+		cur = e.underlyingCType(f.ctype)
+	}
+	_, isStruct := e.structs[cur]
+	return isStruct
 }
 
 // contentsRef is what the CONTENTS of a value reach of this frame: a slice's
@@ -62703,6 +63445,7 @@ type loopHead struct {
 	key     *int32
 	backed  map[string]int
 	holder  map[string]string
+	fields  map[string]holderFields
 	plain   map[string]bool
 	visible map[string]bool
 	header  map[string]bool
@@ -62711,7 +63454,7 @@ type loopHead struct {
 // loopHeadAt snapshots the marks at a loop's head, with the names visible there and
 // the names its own header declares.
 func (e *emitter) loopHeadAt(key *int32, header map[string]bool) loopHead {
-	return loopHead{key, maps.Clone(e.frameBacked), maps.Clone(e.frameHolder), maps.Clone(e.frameHolderPlain), e.visibleLocals(), header}
+	return loopHead{key, maps.Clone(e.frameBacked), maps.Clone(e.frameHolder), maps.Clone(e.frameHolderFields), maps.Clone(e.frameHolderPlain), e.visibleLocals(), header}
 }
 
 // applyLoopSeeds gives the variables the pass before found a loop's body to mark
@@ -62725,7 +63468,13 @@ func (e *emitter) applyLoopSeeds(key *int32, header bool) {
 		if m.backed {
 			e.markBacked(n, backedUnknown)
 		}
-		if m.holder != "" && e.frameHolder[n] == "" {
+		switch {
+		case m.holder == "":
+		case m.fields != nil:
+			for _, p := range slices.Sorted(maps.Keys(m.fields)) {
+				e.markHolderField(n, p, m.fields[p])
+			}
+		case e.frameHolder[n] == "" || e.frameHolderFields[n] != nil:
 			e.markHolder(n, m.holder)
 		}
 		if m.unplain {
@@ -62750,7 +63499,7 @@ func (e *emitter) noteLoopSeeds(h loopHead) {
 		}
 		m.header = h.header[n]
 		old := e.loopSeedsIn[h.key][n]
-		if m.backed && old.backed || m.holder != "" && old.holder != "" || m.unplain && old.unplain {
+		if m.backed && old.backed || m.holder != "" && holderMarkCovers(old, m) || m.unplain && old.unplain {
 			return
 		}
 		if e.loopSeedsOut[h.key] == nil {
@@ -62758,9 +63507,7 @@ func (e *emitter) noteLoopSeeds(h loopHead) {
 		}
 		w := e.loopSeedsOut[h.key][n]
 		w.backed = w.backed || m.backed
-		if w.holder == "" {
-			w.holder = m.holder
-		}
+		w = mergeHolderMark(w, m)
 		w.header = m.header
 		w.unplain = w.unplain || m.unplain
 		e.loopSeedsOut[h.key][n] = w
@@ -62770,9 +63517,13 @@ func (e *emitter) noteLoopSeeds(h loopHead) {
 			note(n, loopMark{backed: true})
 		}
 	}
+	// A holder marked at the head by fields, which the body marked whole or by a
+	// field more, is marked anew: the statements before that mark read the field on
+	// the body's next run.
 	for n, o := range e.frameHolder {
-		if o != "" && h.holder[n] == "" {
-			note(n, loopMark{holder: o})
+		m := loopMark{holder: o, fields: e.frameHolderFields[n]}
+		if o != "" && !holderMarkCovers(loopMark{holder: h.holder[n], fields: h.fields[n]}, m) {
+			note(n, m)
 		}
 	}
 	// A holder plain at the head that the body marked again: a string read out of
