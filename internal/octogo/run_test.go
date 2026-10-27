@@ -8390,6 +8390,58 @@ func main() {
 		panics: true,
 	},
 	{
+		// A function of a result may end in a panic, a terminating statement in Go.
+		// The host's compiler did not know that the runtime's panics do not return,
+		// warned that control reached the end of a non-void function, and failed the
+		// host build of every such program (dom76, its JSON decoder's kindName); the
+		// target's took it.
+		name: "a function of a result ending in a panic",
+		src: `const phase = "out of sync"
+
+type kindErr struct{ k int }
+
+func (e *kindErr) Error() string { return "bad kind" }
+
+var errKind kindErr
+
+func name(k int) string {
+	switch k {
+	case 0:
+		return "object"
+	case 1:
+		return "array"
+	}
+	panic(phase)
+}
+
+func sign(x int) int {
+	if x < 0 {
+		return -1
+	} else if x > 0 {
+		return 1
+	}
+	panic(&errKind)
+}
+
+func pick(x int) (n int, ok bool) {
+	if x == 0 {
+		panic("zero")
+	} else {
+		return x * 2, true
+	}
+}
+
+func main() {
+	println(name(0), name(1), sign(-5), sign(3))
+	v, ok := pick(4)
+	println(v, ok)
+	println(name(2))
+}
+`,
+		want:   "object array -1 1\n8 true\npanic: out of sync",
+		panics: true,
+	},
+	{
 		// A failed type assertion panics in Go's words (runtime.TypeAssertionError):
 		// the operand's static type, the dynamic type its table names, and the type
 		// asserted. It said "interface{} is not *U", naming neither what the value

@@ -10,6 +10,15 @@
 #include <stdlib.h>
 #include <time.h>
 
+/* The runtime's panics do not return: they halt the program, on the target as here.
+   Told so, the host's compiler reads a function of a result that ends in a panic --
+   a terminating statement in Go -- as the target's does, where it warned that control
+   reached the end of a non-void function and failed the host build of every such
+   program. The emitted C defines both where a program panics; a program that does
+   not declares them unused. */
+static void ogo_panic(const char* msg) __attribute__((noreturn));
+static void ogo_panic_end(void) __attribute__((noreturn));
+
 #ifdef OGO_UNBUFFERED
 /* OGO_UNBUFFERED writes stdout as it is printed, for a program the harness stops: one
    that waits for ever, as a deadlock does, is killed with its output in the pipe and
