@@ -143,6 +143,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   array of pointers into package storage, appended through a parameter, a result,
   an out parameter or a forwarded call. What the elements reach is what is kept:
   bytes nothing, and a pointer to a local is refused as before.
+- **A buffer rebound through a call statement after statement compiles in time**:
+  `t = put(t, ...)` written eight times in a function of a parameter t took the
+  compiler more than a hundred seconds, and forty -- a MIDI track built in a
+  buffer -- never finished, in every release. The lifetime summaries followed the
+  calls a name holds in every order they could be taken in; what each value reaches
+  is kept now, sixty such statements compile in a tenth of a second, and a view of
+  a local handed back through them is refused as before.
 
 ## v0.59.0
 

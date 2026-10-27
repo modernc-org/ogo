@@ -1141,7 +1141,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   passes through a call is a gate there, not a new edge kind.** **WHAT A CALL HANDS
   BACK IS ASKED ONCE**: **A new way to call is a row there, and a new kind of
   parameter -- packed, received, bound -- is asked what it HOLDS.** **A walk over
-  what names hold carries its path**.
+  what names hold carries its path**; **A walk whose answer is a set is kept by
+  what it answers, not by the path it took: a path through the calls a rebound
+  name holds was walked in every order of them** (dom74).
 - **A WALK ASKS WHAT ITS VALUE CAN HOLD**: **A walk for what reaches the frame asks
   first whether the value can hold a reference: a number reaches nothing, and
   walking it costs what the walk's branching costs.**

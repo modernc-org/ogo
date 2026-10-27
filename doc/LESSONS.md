@@ -3816,6 +3816,27 @@ and not for its slices.** Then the program's own: `AppendTo(nil)` panicked, appe
 not growing a slice (DIFFERENCES.md), and the DNS server's Serve outgrew the cog's
 registers on the board and was split. On the board it prints Go's 121 lines. A
 round with a silent fault: the count stays 0.
+**dom74, a polyphonic synthesizer** (2026-10-27): a Standard MIDI File's track
+built in a buffer and played through a byte-at-a-time MIDI parser into six voices
+of two oscillators on wrapping phases, ADSR envelopes, a state-variable filter in
+int64 products, voice stealing, a pedal, pitch bend and an arpeggiator on MIDI
+clock, Q15 samples panned into a soft clip and sent in blocks over a buffered
+channel to the DAC's cog. Its first build never ended. The track's builder, `t =
+ev(t, ...)` some forty times over a package buffer, sent the lifetime summaries'
+walk from each argument (viaEdges) through the calls t holds -- all forty, a
+binding being a held call -- and from each of their arguments t again, eight
+levels down: forty to the eighth paths, each skipping only the calls on itself.
+In a function of a parameter t, eight such statements took more than a hundred
+seconds, in every release; the walks that had blown up before (math.FMA's
+chains, `control(l.rx, ...)`) were each cut at the shape that showed it, a
+scalar argument, a call on the path. An edge's gates are a SET -- it holds where
+each gate does, in any order and however often (gatesHold) -- so what a value
+reaches below a call is a function of the value and the levels left, and is kept:
+by the name, for a value that is one, the forty arguments `t` being one walk. Sixty
+statements compile in a tenth of a second; of 3871 probe programs none changed
+verdict but dom74, and no program's C changed. **A walk whose answer is a set is
+kept by what it answers, not by the path it took: a path through the calls a
+rebound name holds was walked in every order of them.**
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
