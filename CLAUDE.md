@@ -101,6 +101,9 @@ silent fault puts the count back to 0. Each round's account is in
   array of a defined array type typed by its extents, `%T` of it wrong), two false
   refusals fixed (a callee's spread into append taken to keep the slice; copy
   between the two typings) -- 0
+- dom74 (2026-10-27), a polyphonic synthesizer (a MIDI track, six voices, a DAC
+  cog): clean, one loud fault fixed (the lifetime summaries' walk through the calls
+  a rebound buffer holds never ended) -- 1
 
 ## Language feature policy (read before assuming something is excluded)
 

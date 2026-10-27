@@ -3843,7 +3843,14 @@ by the name, for a value that is one, the forty arguments `t` being one walk. Si
 statements compile in a tenth of a second; of 3871 probe programs none changed
 verdict but dom74, and no program's C changed. **A walk whose answer is a set is
 kept by what it answers, not by the path it took: a path through the calls a
-rebound name holds was walked in every order of them.**
+rebound name holds was walked in every order of them.** On the board it prints
+Go's 73 lines. Its 400 mutants on the host: 347 print what Go prints, 15 panic as
+Go does, 34 are refused alike; of the four that differ, three deadlock, which
+OctoGo does not report (DIFFERENCES.md), each having printed Go's every line
+before it, and one is a printf of a voice it steals writing its line up to an
+index of -1, which DIFFERENCES.md lists too. On the board all 362 that Go ends
+print Go's output. No fuzzer part changed since dom73. A clean round, the first
+since dom68: the count is 1.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
