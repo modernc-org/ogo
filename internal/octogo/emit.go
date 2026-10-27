@@ -13192,6 +13192,13 @@ func (e *emitter) litParamNames(lit Node) (funcInfo, bool) {
 	return fi, true
 }
 
+// heldCallsT is what heldCallsPos answers of an expression: the calls it holds and
+// the position of each one's several results it is.
+type heldCallsT struct {
+	calls [][]int32
+	pos   []int
+}
+
 // collectFuncCross seeds one function's summary and records its call edges; see
 // collectCrossParams.
 func (e *emitter) collectFuncCross(fi funcInfo) {
@@ -14373,7 +14380,23 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	// heldCallsPos is heldCalls with, for each call, the position of its several
 	// results a binding took, `k, err := f(buf)`, or -1 for the whole call
 	// (summaryHolds).
+	// What an expression holds is asked of the same expression again and again by
+	// viaEdges, once for each argument it walks from, and the holds do not change
+	// once collected: kept by the expression, `t = ev(t, ...)` forty times asked the
+	// forty bindings of t for every argument's walk, seven seconds of the compile.
+	type exprKey struct {
+		at *int32
+		n  int
+	}
+	heldMemo := map[exprKey]heldCallsT{}
 	heldCallsPos := func(v []int32) (out [][]int32, pos []int) {
+		if len(v) == 0 {
+			return nil, nil
+		}
+		k := exprKey{&v[0], len(v)}
+		if m, ok := heldMemo[k]; ok {
+			return m.calls, m.pos
+		}
 		resolve(e.summaryReach(v), func(n string, contents bool) {
 			if !contents && strings.HasPrefix(n, "call@") {
 				out = append(out, e.heldCallValues[n])
@@ -14384,6 +14407,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				pos = append(pos, p)
 			}
 		})
+		heldMemo[k] = heldCallsT{out, pos}
 		return out, pos
 	}
 	heldCalls := func(v []int32) [][]int32 {
@@ -14597,142 +14621,236 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	//
 	// ret says the edges are a return's (retEdges), where the receiver reaching the
 	// argument is an edge from < 0 of its own; elsewhere it is a recvEdge.
-	viaEdges := func(edge crossEdge, a []int32, ret bool) (out []crossEdge) {
-		// reached records what reaches the argument through the calls gates: the
-		// caller's parameters, as edges of their own, and its RECEIVER, as a recvEdge
-		// -- `keep(id(m))` in a method kept nothing of m. elem says what reaches it is
-		// read out of the calls' result, its contents (resModeOf).
-		reached := func(hs []held, gates []viaGate, elem bool) {
-			if elem {
-				hs = asElem(hs)
-			}
-			r := reachOf(hs)
-			for _, i := range r.vals {
-				g := edge
-				g.from, g.via = i, gates
-				out = append(out, g)
-			}
-			for _, i := range r.conts {
-				g := edge
-				g.from, g.via, g.contents = i, gates, true
-				out = append(out, g)
-			}
-			if r.recvVal && ret {
-				g := edge
-				g.from, g.via = -1, gates
-				out = append(out, g)
-			} else if r.recvVal {
-				e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: edge.callee, to: edge.to, argOwner: edge.argOwner, via: gates})
-			}
-			if r.recvCont && !ret {
-				e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: edge.callee, to: edge.to, contents: true, argOwner: edge.argOwner, via: gates})
+	// A hit is what a walk from an argument finds: a parameter of this function or
+	// its receiver, as a value or as contents, and the calls the value went through
+	// on the way, the gates. An edge holds where every gate does, in any order and
+	// however often one repeats (gatesHold), so a hit is kept by its SET of gates.
+	type hit struct {
+		kind  uint8 // hitVal, hitCont, hitRecvVal or hitRecvCont
+		from  int
+		gates []viaGate
+	}
+	const (
+		hitVal = iota
+		hitCont
+		hitRecvVal
+		hitRecvCont
+	)
+	gateSetKey := func(gs []viaGate) string {
+		set := make([]string, 0, len(gs))
+		for _, g := range gs {
+			set = append(set, fmt.Sprintf("%s/%d", g.callee, g.to))
+		}
+		slices.Sort(set)
+		return strings.Join(slices.Compact(set), " ")
+	}
+	type hitKey struct {
+		kind  uint8
+		from  int
+		gates string
+	}
+	dedupHits := func(hs []hit) []hit {
+		seen := map[hitKey]bool{}
+		out := hs[:0]
+		for _, h := range hs {
+			k := hitKey{h.kind, h.from, gateSetKey(h.gates)}
+			if !seen[k] {
+				seen[k] = true
+				out = append(out, h)
 			}
 		}
-		var walk func(a []int32, via []viaGate, path []*int32, elem bool)
-		// holdsNothing reports whether an argument the pass types is a number or a
-		// bool, which can hold no reference and so reaches nothing (a uintptr is
-		// still walked). Walked, the names a chain of calls rebinds, `pm2, c =
-		// add64(pm2, zm2, 0)`, were followed through every call each one holds, a
-		// branch per argument at each of the eight levels: math.FMA's dozen such
-		// statements ran the compiler out of memory, and eight of `p1, p2 = g(p1,
-		// z2)` took it to 3.8 GB.
-		//
-		// The callee's parameter says so first, what is handed it being of its type
-		// whatever the expression, `mul64(xm<<10, ym<<11)`; outside a variadic pack,
-		// and otherwise what the pass types the argument as.
-		holdsNothing := func(callee string, j int, n Node) bool {
-			scalar := func(ct string) bool {
-				switch u := e.underlyingCType(ct); {
-				case u == "uintptr_t":
-					return false
-				case isIntCType(u), u == "float", u == "double", u == cF64, u == cBool:
-					return true
-				}
+		return out
+	}
+	// reachHits is what a value reaching hs carries of the parameters and the
+	// receiver; elem says it is read out of the calls' result, its contents
+	// (resModeOf).
+	reachHits := func(hs []held, elem bool) (out []hit) {
+		if elem {
+			hs = asElem(hs)
+		}
+		r := reachOf(hs)
+		for _, i := range r.vals {
+			out = append(out, hit{kind: hitVal, from: i})
+		}
+		for _, i := range r.conts {
+			out = append(out, hit{kind: hitCont, from: i})
+		}
+		if r.recvVal {
+			out = append(out, hit{kind: hitRecvVal, from: -1})
+		}
+		if r.recvCont {
+			out = append(out, hit{kind: hitRecvCont, from: -1})
+		}
+		return out
+	}
+	gated := func(g viaGate, hs []hit) []hit {
+		out := make([]hit, len(hs))
+		for i, h := range hs {
+			h.gates = append([]viaGate{g}, h.gates...)
+			out[i] = h
+		}
+		return out
+	}
+	// holdsNothing reports whether an argument the pass types is a number or a
+	// bool, which can hold no reference and so reaches nothing (a uintptr is still
+	// walked). Walked, the names a chain of calls rebinds, `pm2, c = add64(pm2, zm2,
+	// 0)`, were followed through every call each one holds, a branch per argument
+	// at each of the eight levels: math.FMA's dozen such statements ran the compiler
+	// out of memory, and eight of `p1, p2 = g(p1, z2)` took it to 3.8 GB.
+	//
+	// The callee's parameter says so first, what is handed it being of its type
+	// whatever the expression, `mul64(xm<<10, ym<<11)`; outside a variadic pack, and
+	// otherwise what the pass types the argument as.
+	holdsNothing := func(callee string, j int, n Node) bool {
+		scalar := func(ct string) bool {
+			switch u := e.underlyingCType(ct); {
+			case u == "uintptr_t":
 				return false
+			case isIntCType(u), u == "float", u == "double", u == cF64, u == cBool:
+				return true
 			}
-			if ps := e.funcParams[callee]; j < len(ps) {
-				if at := e.packAt(callee); at < 0 || j < at {
-					return scalar(ps[j])
-				}
-			}
-			cur, ok := exprCur(n)
-			return ok && !cur.slice && len(cur.dims) == 0 && cur.elem == "" && scalar(cur.ctype)
+			return false
 		}
-		// through is one call c's callees and arguments, with how the value read
-		// after it reaches the argument (m, a resMode per callee; nil for the whole
-		// result): gated by each callee, and on into the arguments' own calls.
-		through := func(c []int32, pos int, via []viaGate, inner []*int32, elem bool, m func(string) resMode) {
-			for _, vc := range callsOfExpr(c) {
-				vc.result = pos + 1
-				for _, callee := range vc.callees {
-					mode := resWhole
-					if m != nil {
-						mode = m(callee)
+		if ps := e.funcParams[callee]; j < len(ps) {
+			if at := e.packAt(callee); at < 0 || j < at {
+				return scalar(ps[j])
+			}
+		}
+		cur, ok := exprCur(n)
+		return ok && !cur.slice && len(cur.dims) == 0 && cur.elem == "" && scalar(cur.ctype)
+	}
+	// walkHits is what an argument reaches through the calls it is or holds, with
+	// budget levels of them left: each call's callees and arguments, gated by the
+	// callee, and on into the arguments' own calls. It is a function of the value
+	// alone -- of the NAME, for a value that is one -- and is kept: walked again for
+	// each argument of each call, and through every order of the calls a rebound
+	// name holds, `t = ev(t, ...)` written eight times in a function of a parameter
+	// t took the compiler past a hundred seconds, and forty in a MIDI track's
+	// builder never ended (dom74). A call already on the way is not skipped, as it
+	// was when each walk followed one path, `l.rx, l.request = control(l.rx, 64,
+	// l.request)` coming back to itself for 25 seconds: the budget ends the walk,
+	// and what a cycle finds again is a set of gates found before.
+	type walkKey struct {
+		at     *int32
+		n      int
+		name   string
+		elem   bool
+		budget int
+	}
+	walkMemo := map[walkKey][]hit{}
+	var walkHits func(a []int32, elem bool, budget int) []hit
+	// throughHits is one call c's callees and arguments, with how the value read
+	// after it reaches the argument (m, a resMode per callee; nil for the whole
+	// result).
+	throughHits := func(c []int32, pos int, elem bool, budget int, m func(string) resMode) (out []hit) {
+		for _, vc := range callsOfExpr(c) {
+			vc.result = pos + 1
+			for _, callee := range vc.callees {
+				mode := resWhole
+				if m != nil {
+					mode = m(callee)
+				}
+				gc := summaryOf(vc, callee)
+				for _, el := range [2]bool{false, true} {
+					switch {
+					case el && mode == resWhole, !el && mode == resContents:
+						continue
 					}
-					gc := summaryOf(vc, callee)
-					for _, el := range [2]bool{false, true} {
-						switch {
-						case el && mode == resWhole, !el && mode == resContents:
+					el = el || elem
+					for jj, ia := range vc.args {
+						if holdsNothing(callee, jj, ia) {
 							continue
 						}
-						el = el || elem
-						for jj, ia := range vc.args {
-							if holdsNothing(callee, jj, ia) {
-								continue
-							}
-							gates := append(slices.Clone(via), viaGate{gc, jj})
-							reached(e.summaryReach(ia.ast), gates, el)
-							walk(ia.ast, gates, inner, el) // `keep(trim(pass(v)))`
-						}
-						if vc.recv != nil {
-							reached(vc.recv, append(slices.Clone(via), viaGate{gc, -1}), el) // `keep(m.Self())`
-						}
-						if vc.recvCall != nil {
-							// `keep(id(b).Self())`: the receiver is that call's result.
-							gates := append(slices.Clone(via), viaGate{gc, -1})
-							walk(vc.recvCall, gates, inner, el)
-							if vc.recvSteps != 0 {
-								walk(vc.recvCall, gates, inner, true)
-							}
+						g := viaGate{gc, jj}
+						out = append(out, gated(g, reachHits(e.summaryReach(ia.ast), el))...)
+						out = append(out, gated(g, walkHits(ia.ast, el, budget-1))...) // `keep(trim(pass(v)))`
+					}
+					if vc.recv != nil {
+						out = append(out, gated(viaGate{gc, -1}, reachHits(vc.recv, el))...) // `keep(m.Self())`
+					}
+					if vc.recvCall != nil {
+						// `keep(id(b).Self())`: the receiver is that call's result.
+						g := viaGate{gc, -1}
+						out = append(out, gated(g, walkHits(vc.recvCall, el, budget-1))...)
+						if vc.recvSteps != 0 {
+							out = append(out, gated(g, walkHits(vc.recvCall, true, budget-1))...)
 						}
 					}
 				}
 			}
 		}
-		walk = func(a []int32, via []viaGate, path []*int32, elem bool) {
-			if len(via) > 8 {
-				return // a nest of calls this deep is not written
+		return out
+	}
+	walkHits = func(a []int32, elem bool, budget int) []hit {
+		if budget < 1 || len(a) == 0 {
+			return nil // a nest of calls this deep is not written
+		}
+		k := walkKey{at: &a[0], n: len(a), elem: elem, budget: budget}
+		if name, ok := e.exprIdent(a); ok {
+			k = walkKey{name: name, elem: elem, budget: budget}
+		}
+		if hs, ok := walkMemo[k]; ok {
+			return hs
+		}
+		walkMemo[k] = nil // a value reached again inside its own walk adds nothing new
+		var out []hit
+		direct := e.callExprsIn(a)
+		held, heldPos := heldCallsPos(a)
+		for i, c := range append(direct, held...) {
+			if len(c) == 0 {
+				continue
 			}
-			direct := e.callExprsIn(a)
-			held, heldPos := heldCallsPos(a)
-			for k, c := range append(direct, held...) {
-				// A call already on this path is not entered again: a name assigned a
-				// call's result HOLDS that call, so following the call's own
-				// arguments through what they hold came back to the call itself,
-				// `l.rx, l.request = control(l.rx, 64, l.request)`, and with a branch
-				// per argument at each of the eight levels the walk took 25 seconds
-				// for that statement and ran out of memory on two of them.
-				if len(c) == 0 || slices.Contains(path, &c[0]) {
-					continue
-				}
-				pos := -1
-				if k >= len(direct) {
-					pos = heldPos[k-len(direct)]
-				}
-				through(c, pos, via, append(slices.Clone(path), &c[0]), elem, nil)
+			pos := -1
+			if i >= len(direct) {
+				pos = heldPos[i-len(direct)]
 			}
-			// A call's result with steps after it, `keep(idH(h).c)`, written or held:
-			// the call, with what a read through its result reaches -- its contents,
-			// where the result points at what was handed back (resModeOf).
-			for _, x := range append([][]int32{a}, heldCalls(a)...) {
-				call, rest, addr, ok := e.callStepsShape(x)
-				if !ok || len(call) == 0 || slices.Contains(path, &call[0]) {
-					continue
-				}
-				through(call, -1, via, append(slices.Clone(path), &call[0]), elem, func(callee string) resMode { return e.resModeOf(callee, rest, addr) })
+			out = append(out, throughHits(c, pos, elem, budget, nil)...)
+		}
+		// A call's result with steps after it, `keep(idH(h).c)`, written or held:
+		// the call, with what a read through its result reaches -- its contents,
+		// where the result points at what was handed back (resModeOf).
+		for _, x := range append([][]int32{a}, heldCalls(a)...) {
+			call, rest, addr, ok := e.callStepsShape(x)
+			if !ok || len(call) == 0 {
+				continue
+			}
+			out = append(out, throughHits(call, -1, elem, budget, func(callee string) resMode { return e.resModeOf(callee, rest, addr) })...)
+		}
+		out = dedupHits(out)
+		walkMemo[k] = out
+		return out
+	}
+	// viaEdges is an argument that is a CALL's result, `keep(pass(v))` or
+	// `x := pass(v); keep(x)`: the caller's parameter it passed there reaches the
+	// argument where the inner callee hands it back, which edge.via gates.
+	//
+	// ret says the edges are a return's (retEdges), where the receiver reaching the
+	// argument is an edge from < 0 of its own; elsewhere it is a recvEdge.
+	viaEdges := func(edge crossEdge, a []int32, ret bool) (out []crossEdge) {
+		if len(params) == 0 && recvName == "" {
+			// What the walk finds is a parameter or the receiver reaching the
+			// argument, and there is neither.
+			return nil
+		}
+		for _, h := range walkHits(a, false, 9) {
+			g := edge
+			g.via = h.gates
+			switch {
+			case h.kind == hitVal:
+				g.from = h.from
+				out = append(out, g)
+			case h.kind == hitCont:
+				g.from, g.contents = h.from, true
+				out = append(out, g)
+			case h.kind == hitRecvVal && ret:
+				g.from = -1
+				out = append(out, g)
+			case h.kind == hitRecvVal:
+				e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: edge.callee, to: edge.to, argOwner: edge.argOwner, via: h.gates})
+			case h.kind == hitRecvCont && !ret:
+				e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: edge.callee, to: edge.to, contents: true, argOwner: edge.argOwner, via: h.gates})
 			}
 		}
-		walk(a, nil, nil, false)
 		return out
 	}
 	// derivedCall records, for each callee of c, an edge from what reaches each

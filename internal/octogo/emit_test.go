@@ -6193,6 +6193,49 @@ func main() {
 // TestEmitCAppendSpreadRefusals pins what `append(s, xs...)` will not compile. The
 // spread was accepted and its ellipsis IGNORED until 2026-08-08, so these are the
 // first checks the form has ever had.
+// TestEmitCRebindChainTime holds the lifetime summaries' walk through the calls a
+// rebound name holds to a time a program of its size takes: `t = put(t, ...)`
+// written eight times in a function of a parameter t took the compiler past a
+// hundred seconds, walking every order of the eight calls t holds, and forty in a
+// MIDI track's builder never ended (dom74). A view of a local handed back through
+// the chain is refused still.
+func TestEmitCRebindChainTime(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("func put(t []byte, v ...byte) []byte { return append(t, v...) }\n\nfunc build(t []byte) []byte {\n")
+	for i := 0; i < 60; i++ {
+		b.WriteString("\tt = put(t, " + strconv.Itoa(i%100) + ", " + strconv.Itoa((i+1)%100) + ")\n")
+	}
+	b.WriteString("\treturn t\n}\n\nvar back [128]byte\n\nvar gt []byte\n\n")
+	for _, test := range []struct {
+		name, body, want string
+	}{
+		{"a package buffer", "func main() {\n\tgt = build(back[:0])\n\tprintln(len(gt))\n}\n", ""},
+		{"a local buffer kept", "func run() {\n\tvar loc [128]byte\n\tgt = build(loc[:0])\n}\n\nfunc main() {\n\trun()\n\tprintln(len(gt))\n}\n", "local loc"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := b.String() + test.body
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			start := time.Now()
+			err = EmitC(pkg, io.Discard, Checked())
+			if d := time.Since(start); d > 20*time.Second {
+				t.Errorf("EmitC took %v", d)
+			}
+			switch {
+			case test.want == "" && err != nil:
+				t.Errorf("EmitC: unexpected refusal: %v", err)
+			case test.want != "" && err == nil:
+				t.Errorf("EmitC: accepted a view of a local kept through the chain")
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCAppendSpreadRefusals(t *testing.T) {
 	for _, test := range []struct {
 		name string

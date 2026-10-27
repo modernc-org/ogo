@@ -27344,6 +27344,48 @@ func main() {
 		want: "[]main.IP []main.Row [][3]main.Row\n2 10 3 4 6\n",
 	},
 	{
+		// A message built by rebinding a buffer through a helper, statement after
+		// statement: the lifetime summaries walked every order of the calls the name
+		// holds, and a dozen such statements did not compile in any time a user
+		// waits (dom74's MIDI track, TestEmitCRebindChainTime).
+		name: "a buffer rebound through a helper a dozen times",
+		src: `func put(t []byte, v ...byte) []byte { return append(t, v...) }
+
+func vlq(t []byte, v uint32) []byte {
+	if v >= 0x80 {
+		t = put(t, byte(v>>7)|0x80)
+	}
+	return put(t, byte(v&0x7f))
+}
+
+func build(t []byte, ch byte) []byte {
+	t = vlq(t, 0)
+	t = put(t, 0x90|ch, 60, 100)
+	t = vlq(t, 0)
+	t = put(t, 64, 90)
+	t = vlq(t, 200)
+	t = put(t, 0x80|ch, 60, 0)
+	t = vlq(t, 0)
+	t = put(t, 64, 0)
+	t = vlq(t, 96)
+	t = put(t, 0xff, 0x2f, 0)
+	t = vlq(t, 0)
+	t = put(t, 0xb0|ch, 123, 0)
+	return t
+}
+
+var track [64]byte
+
+func main() {
+	var loc [64]byte
+	a := build(loc[:0], 1)
+	b := build(track[:0], 2)
+	println(len(a), a[2], a[8], len(b), b[1], b[len(b)-2])
+}
+`,
+		want: "23 60 72 23 146 123\n",
+	},
+	{
 		// The error of a call of several results beside a view of a local buffer,
 		// returned: through a method on a field, an interface whose methods hand back
 		// nothing in the error, one of them forwarding to another's `return a.gen(dst,
