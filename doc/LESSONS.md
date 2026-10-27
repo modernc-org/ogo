@@ -3814,8 +3814,15 @@ extents stood for two Go types. **A name a resolution keeps for one question is
 asked by every question of the type: the element's name was kept for its methods
 and not for its slices.** Then the program's own: `AppendTo(nil)` panicked, append
 not growing a slice (DIFFERENCES.md), and the DNS server's Serve outgrew the cog's
-registers on the board and was split. On the board it prints Go's 121 lines. A
-round with a silent fault: the count stays 0.
+registers on the board and was split. On the board it prints Go's 121 lines. Its
+400 mutants on the host: 337 print what Go prints, 10 panic as Go does, 49 are
+refused alike; of the four that differ, two are a print and an append past its
+capacity that DIFFERENCES.md lists, and two never acknowledge a FIN, so every
+segment after it bounces through the cable's cog to the end of the run -- Go's
+twin takes 0.4 s, the host's shim, its channel a rendezvous between threads, 21 s,
+past run.py's limit, and given the time both print Go's every byte. On the board
+all 346 that Go ends print Go's output, those two among them. A round with a
+silent fault: the count stays 0.
 **dom74, a polyphonic synthesizer** (2026-10-27): a Standard MIDI File's track
 built in a buffer and played through a byte-at-a-time MIDI parser into six voices
 of two oscillators on wrapping phases, ADSR envelopes, a state-variable filter in
