@@ -3923,6 +3923,51 @@ when run again: it panics in the middle of a line, `utf8:` before the message, a
 the harness, cutting at a panic that begins a line, held the board's message to
 Go's trace; it cuts where the panic begins now, as the host's comparison does. No
 fuzzer part changed since dom75. A clean round: the count is 3.
+**THE MARKS BY FIELD** (2026-10-27, on a branch until v1.0.0, the user's call).
+dom75's listed refusal, and dom72's o09 with it: a local struct given a view of the
+frame in one field was marked whole, so every field read out of it that can hold a
+reference was taken to hold the view, and the summaries kept what a callee keeps of
+its receiver's and its parameters' contents whole. A mark made through a field of a
+local struct -- `z.ex = a[:]`, a list assignment's `z.ex, z.w = a[:], &pkg`, `W{ex:
+a[:]}`, a copy of a struct so marked -- is a mark of that field now
+(markHolderField), by its canonical path: the fields as Go's selector finds them, a
+promoted one through the embedded structs it is promoted from, ending at a pointer
+or an array. A read of a field the path neither prefixes nor extends reads nothing
+of the frame; every other mark is the variable's whole, as before, and a field mark
+never narrows one. The block merge, the loop seeds and a goto's carry the fields,
+and a field the body marks that the head did not is a new mark: `for { gex = z.ex;
+z.ex = a[:] }` after a `z.w = &b[0]` is refused on the second pass, which a head
+marked already had hidden. The summaries record each leak of contents with the
+fields it was read through (noteContents), beside the flags every other rule reads,
+and a call site reads its argument's or receiver's fields against them only where
+the record accounts for every flag (contentsScoped); a summary made any other way --
+a union of a type's functions, a wrapper's -- is read whole. Building it opened two
+holes, each found before the next step. An edge handing on a part, `keepInf(&z.in)`
+in a method of z, was read as handing on z, the summaries reading `&z.in` as z's
+value: the callee's fields, an In's, were taken for W's, and a view in z.in.ex went
+out unrefused (18 rows, in a build taking every edge for exact). The callee's fields
+pass through an edge only where what it hands on is the name itself (exact); a
+part's leak is kept under the part's fields. And a promoted method's edge was exact,
+its fields an embedded struct's, harmless only because a copy edge kept the embedded
+field; it is no exact edge now. **A path a summary keeps is of the storage the edge
+hands on: a part handed on, or a promoted method's receiver, has another struct's
+fields.** A path new to a summary changes the fixed point as a new flag does, or a
+caller's caller reads a record that missed it: **a fixed point over sets is changed
+by a set's growth, not only by a flag's.** sweeps/field-marks is 2301 rows: seven
+ways to give a field the view, five orders (straight, a block, a loop, a loop with
+another field marked before it, a goto back), five literals and a shadowing name,
+against 56 keeps, and five calls of a promotion an outer field shadows. None that
+keeps the view compiles, at any step; of the 1686 that keep nothing of the frame,
+all refused before, 1439 build and print Go's output, and 247 stay refused by design
+-- through a pointer to the struct, a part or an alias a wrapper passes on through a
+local, a deferred call in a loop, a whole assignment. A build dropping a part's
+fields from a call site's read makes 13 rows unsound: the rows reach the code.
+sweeps/field-holder is 32 of 32, string-view 59 of 59, and dom75 with its extra
+bytes a local array builds and prints Go's 106 lines. None of the 3879 probe
+programs changes verdict, nor any of 875 refused mutants; the corpus's C is the same
+but for the two new run cases; p2-11's and obeam's binaries are byte-identical; 489
+of the rows built anew, and dom75's spelling, run on the board, print Go's output,
+two of them when a load the loader lost was run again.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
@@ -4802,12 +4847,11 @@ local of an if's block whose view a parameter keeps past the if, `if len(key) > 
 s := Sum256(key); key = s[:] }` (the block rule asks blocks, not loops, and that
 block runs once while the parameter lives; dom71, sweeps/param-block r01); a callee
 keeping the constant string field of a struct that holds a view of the frame in
-another field, `keep(&h)` for an `h := H{buf: a[:], name: "kept"}` (the summaries
-give a string field no provenance of its own; dom72, sweeps/string-view o09), and
-with it any field that can hold a reference, kept out of a struct that holds a view
-of the frame in another -- `g = z.w`, `store(z.w)`, `z.keep()` for a z.w that is a
-package variable's address (the holder marks are per variable, the summaries keep a
-receiver's or a parameter's holdings whole; dom75, sweeps/field-holder, 23 rows); a
+another field, `keep(&h)` for an `h := H{buf: a[:], name: "kept"}` (dom72,
+sweeps/string-view o09), and with it any field that can hold a reference, kept out
+of a struct that holds a view of the frame in another -- `g = z.w`, `store(z.w)`,
+`z.keep()` for a z.w that is a package variable's address (dom75,
+sweeps/field-holder, 23 rows) -- both by field since THE MARKS BY FIELD; a
 Builder passed by value, `count(sb)` for a `func count(b Builder)`, "cannot use sb
 as Builder value in argument to count: it is a struct" (a pointer is the spelling
 that works); an

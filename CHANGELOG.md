@@ -18,6 +18,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **A field kept out of a local struct whose other field views the frame builds**:
+  a struct given a view of its function's storage in one field, `z.ex = a[:]` or
+  `W{ex: a[:]}`, holds it in that field alone, and what a callee keeps of its
+  receiver or its parameters is followed field by field. `g = z.w` beside a `z.ex =
+  a[:]` was refused, "z.w, which holds a pointer into local a", for a z.w holding a
+  package variable's address, and so was a method or a function keeping z.w,
+  handing it on to another, called on a part of z or through an embedded struct, a
+  copy of z read the same way, and a callee keeping a constant string field beside
+  a buffer -- a gzip writer whose Extra viewed a local array, and whose Close handed
+  its Writer to a compressor kept in a package variable. The field holding the view
+  is refused wherever it goes, as before; a struct reached through a pointer, or
+  given a view by a whole assignment, is followed whole, as before.
+
 ### Fixed
 
 - **An empty array of structs as a struct literal's field builds on the host**:

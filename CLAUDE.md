@@ -1164,7 +1164,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   source, never as the slice it spreads** (dom73). **A cost a comment calls rare
   is swept before it is believed: the per-variable mark was to refuse one program,
   and it refuses every field kept out of the holder** (dom75, sweeps/field-holder;
-  listed).
+  by field since THE MARKS BY FIELD). **A path a summary keeps is of the storage
+  the edge hands on: a part handed on, or a promoted method's receiver, has another
+  struct's fields.** **A fixed point over sets is changed by a set's growth, not
+  only by a flag's.**
 - **A PARENTHESISED HEAD IS A ROW OF EVERY SCAN**: **A new scan reads heads through
   them, and a new shape the emitter reads through parentheses is a row in each
   scan.**
