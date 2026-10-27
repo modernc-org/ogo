@@ -253,9 +253,9 @@ installer differs):
 
 An example that imports no `p2` runs this way too, which is how `_examples/vacuum`
 can be stepped through in the debugger: copy its `main.ogo` into such a folder as
-`main.go`, put `package main` and `import "fmt"` at its top, and replace each
-`printf(` with `fmt.Printf(` — what the test suite does to it. Then `ogo run` the
-original on the board. An example that imports `p2` drives pins and cogs and runs
+`main.go`, put `package main` and `import "fmt"` at its top and `var printf =
+fmt.Printf` at its end, and Go prints what the P2 prints — the test suite holds
+the two to the same bytes. Then `ogo run` the original on the board. An example that imports `p2` drives pins and cogs and runs
 only on a P2. For the language itself, the [Tour of Go](https://go.dev/tour/) runs
 in the browser.
 
