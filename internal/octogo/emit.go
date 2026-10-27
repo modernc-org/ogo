@@ -2489,7 +2489,7 @@ func (e *emitter) emitGo(nodes []Node) {
 		if site.ifaceMethod != "" {
 			elem, at = "", ifaceM.vararg-1
 			if at >= 0 && at < len(params) {
-				elem = sliceElemFromCName(e.underlyingCType(params[at]))
+				elem = e.sliceElemFromCName(e.underlyingCType(params[at]))
 			}
 		}
 		if at >= 0 {
@@ -5630,10 +5630,23 @@ func sliceTypedefDef(elem string) string {
 // becomes "_ptr", so []*Point -> ogo_slice_Point_ptr stays a valid C identifier.
 func sanitizeElem(elem string) string { return strings.ReplaceAll(elem, "*", "_ptr") }
 
-// sliceElemFromCName recovers the element C type from a slice type name -- the
-// inverse of sliceCName ("ogo_slice_int" -> "int", "ogo_slice_Point_ptr" ->
-// "Point*").
-func sliceElemFromCName(ct string) string {
+// sliceElemFromCName recovers the element C type from a slice type name: the
+// element needSlice recorded for it, or, for a name none was recorded for, the
+// inverse of sliceCName's spelling ("ogo_slice_int" -> "int",
+// "ogo_slice_Point_ptr" -> "Point*"). The spelling is no inverse where an element's
+// own name has "_ptr" in it -- a slice of slices of pointers, `[][]*int`, is
+// ogo_slice_ogo_slice_int_ptr, which it read as a slice of `ogo_slice_int*` -- and
+// an append to one wrote C naming a typedef nobody declared (dom77).
+func (e *emitter) sliceElemFromCName(ct string) string {
+	if el, ok := e.sliceElemByName[ct]; ok {
+		return el
+	}
+	return sliceElemFromSpelling(ct)
+}
+
+// sliceElemFromSpelling is sliceCName's spelling read back, for a slice name no
+// element was recorded for.
+func sliceElemFromSpelling(ct string) string {
 	return strings.ReplaceAll(strings.TrimPrefix(ct, sliceTypePrefix), "_ptr", "*")
 }
 
@@ -10689,7 +10702,7 @@ func (e *emitter) collectVarDeclTypes(ast []int32) {
 					// A slice is read through its element registry as well as its
 					// type: `len(xs)`, `xs[0]`, `xs[1:]` above `var xs []int` ask it.
 					if e.isSliceCType(ct) {
-						e.globalSliceVars[e.globalC(nm)] = sliceElemFromCName(ct)
+						e.globalSliceVars[e.globalC(nm)] = e.sliceElemFromCName(ct)
 					}
 				}
 			}
@@ -10729,7 +10742,7 @@ func (e *emitter) collectVarDeclTypes(ast []int32) {
 						if nm != "_" {
 							e.globals[e.globalC(nm)] = resTypes[i]
 							if e.isSliceCType(resTypes[i]) {
-								e.globalSliceVars[e.globalC(nm)] = sliceElemFromCName(resTypes[i])
+								e.globalSliceVars[e.globalC(nm)] = e.sliceElemFromCName(resTypes[i])
 							}
 						}
 					}
@@ -10978,7 +10991,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			e.globals[gn] = ct
 			e.bindFuncValue(names[0], initExpr)
 			if e.isSliceCType(ct) {
-				e.globalSliceVars[gn] = sliceElemFromCName(ct)
+				e.globalSliceVars[gn] = e.sliceElemFromCName(ct)
 			}
 			if e.staticInitOK(initExpr) {
 				e.emit("static " + ct + " " + gn + " = ")
@@ -11150,7 +11163,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			// elements written into the header's three fields, with a pointer made
 			// from 1.
 			if u := e.underlyingCType(ctype); initExpr != nil && e.isSliceCType(u) {
-				elem := sliceElemFromCName(u)
+				elem := e.sliceElemFromCName(u)
 				if me, lenAST, capAST, isMake := e.makeSliceInit(initExpr); isMake {
 					if me != elem {
 						e.fail("make element type %q does not match the declared slice element type %q", me, elem)
@@ -24664,7 +24677,7 @@ func (e *emitter) emitVarSpec(names []string, typeAST []int32, initExprs [][]int
 		// variable was accepted where the "[]int" spelling of the same two lines
 		// was refused.
 		if u := e.underlyingCType(ctype); initExpr != nil && e.isSliceCType(u) {
-			e.sliceVars[nm] = sliceElemFromCName(u)
+			e.sliceVars[nm] = e.sliceElemFromCName(u)
 			if e.initViewsFrame(initExpr) {
 				e.markBacked(nm, backedUnknown)
 			}
@@ -25706,7 +25719,7 @@ func (e *emitter) emitPositionalValues(values []*Node, elemCType string) {
 					name, ok := e.hoistElidedSliceLit(elemCType, *v)
 					if !ok {
 						e.fail("a type-elided slice literal is not supported here yet; write its type, []%s{...}",
-							e.goTypeName(sliceElemFromCName(u)))
+							e.goTypeName(e.sliceElemFromCName(u)))
 						return
 					}
 					base = name
@@ -26737,13 +26750,13 @@ func (e *emitter) hoistElidedSliceLit(sliceCType string, lit Node) (string, bool
 	}
 	if e.pkgScope {
 		// A static object of the program, as a written `[]int{1, 2}` is there.
-		return e.pkgSliceLitVar(sliceElemFromCName(u), sliceCType, lit)
+		return e.pkgSliceLitVar(e.sliceElemFromCName(u), sliceCType, lit)
 	}
 	values, length, ok := e.litPositions(lit)
 	if !ok {
 		return "", false
 	}
-	elem := sliceElemFromCName(u)
+	elem := e.sliceElemFromCName(u)
 	e.needSlice(elem)
 	name := e.newTmp()
 	saved := e.indent
@@ -27188,7 +27201,7 @@ func (e *emitter) namedSliceType(typeAST []int32) (cname, elem string, ok bool) 
 	// header's own C type, which is what a variable of it is declared with.
 	if e.aliasLits[mn] {
 		if t := e.unaliased(mn); e.isSliceCType(t) {
-			return t, sliceElemFromCName(t), true
+			return t, e.sliceElemFromCName(t), true
 		}
 		return "", "", false
 	}
@@ -27201,7 +27214,7 @@ func (e *emitter) namedSliceType(typeAST []int32) (cname, elem string, ok bool) 
 	if u = e.underlyingCType(u); !e.isSliceCType(u) {
 		return "", "", false
 	}
-	return mn, sliceElemFromCName(u), true
+	return mn, e.sliceElemFromCName(u), true
 }
 
 // makeSliceCName is the C type a `make` names: a DEFINED slice type's own name,
@@ -27624,7 +27637,7 @@ func (e *emitter) emitVarList(names []string, typeAST []int32, inits [][]int32) 
 		if elem, ok := e.sliceType(typeAST); ok {
 			e.sliceVars[nm] = elem
 		} else if u := e.underlyingCType(ctype); e.isSliceCType(u) {
-			e.sliceVars[nm] = sliceElemFromCName(u)
+			e.sliceVars[nm] = e.sliceElemFromCName(u)
 		}
 		e.locals[nm] = ctype
 		if _, isSlice := e.sliceVars[nm]; isSlice && views {
@@ -27661,7 +27674,7 @@ func (e *emitter) emitPackageVarList(names []string, typeAST []int32, inits [][]
 		gn := e.globalC(nm)
 		e.globals[gn] = ctype
 		if e.isSliceCType(ctype) {
-			e.globalSliceVars[gn] = sliceElemFromCName(ctype)
+			e.globalSliceVars[gn] = e.sliceElemFromCName(ctype)
 		}
 		// A package variable of interface type is zero until package init, where the
 		// two words are written -- an address is not a C constant expression, so it
@@ -27741,7 +27754,7 @@ func (e *emitter) emitPackageDestructure(names []string, rhs []int32) {
 		}
 		e.globals[gn] = resTypes[i]
 		if e.isSliceCType(resTypes[i]) {
-			e.globalSliceVars[gn] = sliceElemFromCName(resTypes[i])
+			e.globalSliceVars[gn] = e.sliceElemFromCName(resTypes[i])
 		}
 		e.emit("static " + resTypes[i] + " " + gn + e.staticZeroC(resTypes[i]) + ";\n")
 	}
@@ -28290,7 +28303,7 @@ func (e *emitter) byteSliceTypeElem(ct string) (string, bool) {
 	if !e.isSliceCType(ut) {
 		return "", false
 	}
-	switch elem := sliceElemFromCName(ut); elem {
+	switch elem := e.sliceElemFromCName(ut); elem {
 	case "uint8_t", "int32_t":
 		return elem, true
 	}
@@ -31571,7 +31584,7 @@ func (e *emitter) emitChainSlice(cur accessCur, prefix string, low, high, max []
 	if src.cname == cString {
 		e.usesString = true
 	} else {
-		e.needSlice(sliceElemFromCName(src.cname))
+		e.needSlice(e.sliceElemFromCName(src.cname))
 	}
 	if last {
 		// The end of the chain: nothing after it needs a base, so the header goes
@@ -31955,7 +31968,7 @@ func (e *emitter) callTargetBase(base string, steps []Node) (name string, rest [
 		name = e.hoistResult(text, ct, steps[j-1].Pos())
 		e.locals[name] = ct
 		if isSlice {
-			e.sliceVars[name] = sliceElemFromCName(u)
+			e.sliceVars[name] = e.sliceElemFromCName(u)
 		}
 		return name, steps[j:], true
 	}
@@ -32204,7 +32217,7 @@ func (e *emitter) emitParenChain(kids []Node) bool {
 	tmp := e.hoist(ct, func() { e.emitExprNode(kids[1]) })
 	e.locals[tmp] = ct
 	if u := e.underlyingCType(ct); e.isSliceCType(u) {
-		e.sliceVars[tmp] = sliceElemFromCName(u)
+		e.sliceVars[tmp] = e.sliceElemFromCName(u)
 	}
 	// plainOrSlice, not a bare ctype: a slice's element and its slice flag are what
 	// an INDEX step reads, and without them `(sl)[0]` typed nothing.
@@ -32643,7 +32656,7 @@ func (e *emitter) bindDeref(name string) string {
 	tmp := e.hoist(pt, func() { e.emit("(*" + e.nilCheckedC(e.varRef(name), ct) + ")") })
 	e.locals[tmp] = pt
 	if u := e.underlyingCType(pt); e.isSliceCType(u) {
-		e.sliceVars[tmp] = sliceElemFromCName(u)
+		e.sliceVars[tmp] = e.sliceElemFromCName(u)
 	}
 	origin, backed := e.pointeeMarks(name)
 	if origin != "" {
@@ -32723,7 +32736,7 @@ func (e *emitter) asDerefName(name string, fn func(tmp string)) {
 	}()
 	e.locals[tmp] = pt
 	if u := e.underlyingCType(pt); e.isSliceCType(u) {
-		e.sliceVars[tmp] = sliceElemFromCName(u)
+		e.sliceVars[tmp] = e.sliceElemFromCName(u)
 	}
 	origin, backed := e.pointeeMarks(name)
 	if origin != "" {
@@ -33600,7 +33613,7 @@ func (e *emitter) emitHelperSliceExpr(cname, ptr, baseLen, capExpr string, low, 
 		e.needPanic()
 	}
 	e.resliceCalled = true
-	switch elem := sliceElemFromCName(cname); {
+	switch elem := e.sliceElemFromCName(cname); {
 	case cname == cString:
 		e.usesResliceStr = true
 		e.emit("ogo_reslice_str(")
@@ -42952,7 +42965,7 @@ func (e *emitter) appendParts(callSuffix []int32) (elem string, args []Node, ok 
 		e.fail("append's first argument must be a slice variable or slice field yet")
 		return "", nil, false
 	}
-	elem = sliceElemFromCName(u)
+	elem = e.sliceElemFromCName(u)
 	e.needSlice(elem)
 	// `append(b, []byte(s)...)` is `append(b, s...)`: the conversion's bytes are the
 	// string's, and Go's compiler makes no slice of them (stringSliceConvOf).
@@ -42996,7 +43009,7 @@ func (e *emitter) spreadAppendArg(elem string, args []Node) (isStr, ok bool) {
 	// where Go takes them, and the same representation here.
 	ut := e.underlyingCType(ct)
 	switch {
-	case e.isSliceCType(ut) && sliceElemFromCName(ut) == elem:
+	case e.isSliceCType(ut) && e.sliceElemFromCName(ut) == elem:
 		return false, true
 	case ut == cString && elem == "uint8_t":
 		return true, true
@@ -43276,7 +43289,7 @@ func (e *emitter) emitCopy(callSuffix []int32) {
 	// program -- and was "copy's arguments must both be slices" (found by the
 	// fuzzer, 2026-09-20).
 	dstU, srcU := e.underlyingCType(dstCT), e.underlyingCType(srcCT)
-	if dok && sok && srcU == cString && e.isSliceCType(dstU) && sliceElemFromCName(dstU) == "uint8_t" {
+	if dok && sok && srcU == cString && e.isSliceCType(dstU) && e.sliceElemFromCName(dstU) == "uint8_t" {
 		e.needSlice("uint8_t")
 		e.usesCopyStr = true
 		e.includes["string.h"] = true
@@ -43296,7 +43309,7 @@ func (e *emitter) emitCopy(callSuffix []int32) {
 			e.goTypeName(dstCT), e.goTypeName(srcCT))
 		return
 	}
-	elem := sliceElemFromCName(dstU)
+	elem := e.sliceElemFromCName(dstU)
 	e.checkCopyElems(args[0], args[1])
 	e.needSlice(elem)
 	e.copyElems[elem] = true
@@ -43326,7 +43339,7 @@ func (e *emitter) emitClear(callSuffix []int32) {
 		e.fail("clear is only supported on a slice yet")
 		return
 	}
-	elem := sliceElemFromCName(u)
+	elem := e.sliceElemFromCName(u)
 	e.needSlice(elem)
 	e.clearElems[elem] = true
 	e.includes["string.h"] = true
@@ -43797,7 +43810,7 @@ func (e *emitter) formatCallsMethod(ct string, seen map[string]bool) bool {
 		// declares (ifaceHeldPrintC).
 		return true
 	case e.isSliceCType(u):
-		return e.formatCallsMethod(sliceElemFromCName(u), seen)
+		return e.formatCallsMethod(e.sliceElemFromCName(u), seen)
 	}
 	if a, isArr := e.namedArrays[u]; isArr {
 		return e.formatCallsMethod(a.elem, seen)
@@ -44549,7 +44562,7 @@ func (e *emitter) typeNameForT(ct string) string {
 		return "*" + e.typeNameForT(strings.TrimSuffix(ct, "*"))
 	}
 	if e.isSliceCType(ct) {
-		return "[]" + e.typeNameForT(sliceElemFromCName(ct))
+		return "[]" + e.typeNameForT(e.sliceElemFromCName(ct))
 	}
 	if name, ok := e.typeDisplay[ct]; ok {
 		return name
@@ -44593,7 +44606,7 @@ func (e *emitter) typeNameForT(ct string) string {
 		var ps []string
 		for i, t := range params {
 			if at, ok := e.funcTypeVariadic[ct]; ok && i == at && e.isSliceCType(t) {
-				ps = append(ps, "..."+e.typeNameForT(sliceElemFromCName(t)))
+				ps = append(ps, "..."+e.typeNameForT(e.sliceElemFromCName(t)))
 				continue
 			}
 			ps = append(ps, e.typeNameForT(t))
@@ -44695,7 +44708,7 @@ func stringerVerb(verb byte) bool {
 func (e *emitter) emitStringerElems(idx int, arg Node, verb byte, value func()) bool {
 	elem, bound := "", ""
 	if ct, ok := e.printfArgType(idx, arg); ok && e.isSliceCType(ct) {
-		elem = sliceElemFromCName(ct)
+		elem = e.sliceElemFromCName(ct)
 	} else if a, isArr := e.printArrayShape(idx, arg); isArr && len(a.inner) == 0 {
 		elem, bound = a.elem, a.bound
 	} else {
@@ -45005,7 +45018,7 @@ func (e *emitter) printValueC(expr, ct string, methods bool, plus string) (code,
 		return "if (" + expr + ") { printf(\"0x%x\", (unsigned)(uintptr_t)(" + expr + ")); } else { printf(\"<nil>\"); }", ""
 	case e.isSliceCType(u):
 		i := e.newTmp()
-		inner, why := e.printValueC("("+expr+").ptr["+i+"]", sliceElemFromCName(u), methods, plus)
+		inner, why := e.printValueC("("+expr+").ptr["+i+"]", e.sliceElemFromCName(u), methods, plus)
 		if why != "" {
 			return "", why
 		}
@@ -45150,7 +45163,7 @@ func (e *emitter) emitStructsSpecVerb(item printfItem, idx int, arg Node, ct str
 	var elem, bound string
 	switch {
 	case known && e.isSliceCType(e.underlyingCType(ct)):
-		elem = sliceElemFromCName(e.underlyingCType(ct))
+		elem = e.sliceElemFromCName(e.underlyingCType(ct))
 	case !known:
 		a, isArr := e.printArrayShape(idx, arg)
 		if !isArr || len(a.inner) != 0 || !e.printAddressable(arg) {
@@ -45276,7 +45289,7 @@ func (e *emitter) specValueRefusal(ct string, methods bool, verb byte) string {
 	case e.isPrintStruct(u):
 		return e.structSpecRefusal(e.underlyingCType(u), verb)
 	case e.isSliceCType(u):
-		return e.specValueRefusal(sliceElemFromCName(u), methods, verb)
+		return e.specValueRefusal(e.sliceElemFromCName(u), methods, verb)
 	case e.namedArrays[u].bound != "":
 		return e.specValueRefusal(e.namedArrays[u].elem, methods, verb)
 	}
@@ -45329,9 +45342,9 @@ func (e *emitter) emitValueSpec(item printfItem, plus bool, ct, expr string, wro
 				item.verb = 't'
 			}
 		}
-	case e.isSliceCType(u) && byteForm(item.verb) && e.underlyingCType(sliceElemFromCName(u)) == "uint8_t":
+	case e.isSliceCType(u) && byteForm(item.verb) && e.underlyingCType(e.sliceElemFromCName(u)) == "uint8_t":
 		// A byte slice under %s, %x, %X and %q is one text, as at the top.
-		if sliceElemFromCName(u) != "uint8_t" {
+		if e.sliceElemFromCName(u) != "uint8_t" {
 			return noSpec("a slice of a defined byte type is printed byte by byte here")
 		}
 		return e.emitScalarVerb(item, sliceCName("uint8_t"), func() { e.emit(expr) }, wrong, noSpec)
@@ -45349,7 +45362,7 @@ func (e *emitter) emitValueSpec(item printfItem, plus bool, ct, expr string, wro
 		e.indent++
 		e.ind()
 		e.emit("if (" + i + ") { putchar(' '); }\n")
-		ok := e.emitValueSpec(item, plus, sliceElemFromCName(u), "("+expr+").ptr["+i+"]", wrong, noSpec)
+		ok := e.emitValueSpec(item, plus, e.sliceElemFromCName(u), "("+expr+").ptr["+i+"]", wrong, noSpec)
 		e.indent--
 		e.ind()
 		e.emit("}\n")
@@ -45482,7 +45495,7 @@ func (e *emitter) emitStructPrintVerb(idx int, arg Node, plus bool, value func()
 	}
 	elem, bound := "", ""
 	if e.isSliceCType(ct) {
-		elem = sliceElemFromCName(ct)
+		elem = e.sliceElemFromCName(ct)
 	} else if a, isArr := e.printArrayShape(idx, arg); isArr && len(a.inner) == 0 {
 		elem, bound = a.elem, a.bound
 	}
@@ -45533,7 +45546,7 @@ func (e *emitter) printAddressable(arg Node) bool {
 // isByteSliceCType reports whether a C type is the header of a []byte, which the
 // byte verbs (%x, %q, %s) take beside a string.
 func (e *emitter) isByteSliceCType(ct string) bool {
-	return e.isSliceCType(ct) && sliceElemFromCName(ct) == "uint8_t"
+	return e.isSliceCType(ct) && e.sliceElemFromCName(ct) == "uint8_t"
 }
 
 // emitBytesVerb calls one of the byte helpers on a string or a byte slice.
@@ -45958,7 +45971,7 @@ func (e *emitter) defaultVerb(idx int, arg Node, ct string, known bool) (byte, b
 	elem := ct
 	switch {
 	case known && e.isSliceCType(e.underlyingCType(ct)):
-		elem = sliceElemFromCName(e.underlyingCType(ct))
+		elem = e.sliceElemFromCName(e.underlyingCType(ct))
 	case !known:
 		a, isArr := e.printArrayShape(idx, arg)
 		if !isArr || len(a.inner) != 0 {
@@ -45989,7 +46002,7 @@ func (e *emitter) intsToPrint(idx int, arg Node, ct string) bool {
 		return true
 	}
 	if pct, ok := e.printfArgType(idx, arg); ok && e.isSliceCType(e.underlyingCType(pct)) {
-		return isIntCType(e.underlyingCType(sliceElemFromCName(e.underlyingCType(pct))))
+		return isIntCType(e.underlyingCType(e.sliceElemFromCName(e.underlyingCType(pct))))
 	}
 	if a, isArr := e.printArrayShape(idx, arg); isArr && len(a.inner) == 0 {
 		return isIntCType(e.underlyingCType(a.elem))
@@ -46009,7 +46022,7 @@ func (e *emitter) emitElementwiseVerb(item printfItem, idx int, arg Node, value 
 	verb := item.verb
 	elem, bound := "", ""
 	if ct, known := e.printfArgType(idx, arg); known && e.isSliceCType(e.underlyingCType(ct)) {
-		elem = sliceElemFromCName(e.underlyingCType(ct))
+		elem = e.sliceElemFromCName(e.underlyingCType(ct))
 	} else if a, isArr := e.printArrayShape(idx, arg); isArr && len(a.inner) == 0 {
 		elem, bound = a.elem, a.bound
 	} else if isArr {
@@ -46524,7 +46537,7 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 			return
 		}
 		if e.isSliceCType(ct) {
-			e.emitPrintSlice(newline, sliceElemFromCName(ct), func() { e.emitReplayArg(idx, arg) })
+			e.emitPrintSlice(newline, e.sliceElemFromCName(ct), func() { e.emitReplayArg(idx, arg) })
 			return
 		}
 	}
@@ -48915,7 +48928,7 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 	// what makes `d[i]` and len(d) work is this entry, and the name above is what
 	// makes `d.sum()` work. Both are wanted.
 	if u := e.underlyingCType(ct); e.isSliceCType(u) {
-		e.sliceVars[name] = sliceElemFromCName(u)
+		e.sliceVars[name] = e.sliceElemFromCName(u)
 		// A slice copied from another views the same storage, so it inherits where
 		// that storage lives; otherwise returning the copy would dodge the check.
 		if e.initViewsFrame(initExpr) {
@@ -51652,7 +51665,7 @@ func (e *emitter) variadicPack(cname string) (elem string, at int) {
 	if i >= len(sliceParams) || sliceParams[i] == "" {
 		return "", -1
 	}
-	return sliceElemFromCName(sliceParams[i]), i
+	return e.sliceElemFromCName(sliceParams[i]), i
 }
 
 // indirectFuncArg binds an argument of function type, handed to a call made
@@ -51691,7 +51704,7 @@ func (e *emitter) callVariadic(cname, ftype string, params []string) (string, in
 	if !ok || at >= len(params) {
 		return "", -1
 	}
-	return sliceElemFromCName(e.underlyingCType(params[at])), at
+	return e.sliceElemFromCName(e.underlyingCType(params[at])), at
 }
 
 // spreadCall reports whether a call wrote "f(xs...)", handing an existing slice to
@@ -52313,7 +52326,7 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 	// `Sum(xs ...int)` handed the ints over where the slice header goes, and neither
 	// compiler took it.
 	if at := e.callVararg - 1; at >= 0 && varAt < 0 && at < len(params) {
-		varElem, varAt = sliceElemFromCName(e.underlyingCType(params[at])), at
+		varElem, varAt = e.sliceElemFromCName(e.underlyingCType(params[at])), at
 	}
 	e.callVararg = 0
 	args := e.callArgExprs(callSuffix)
@@ -53089,7 +53102,7 @@ func (e *emitter) sliceElem(name string) (string, bool) {
 	// registries above, which are filled where a slice type is written out, but its
 	// representation says what it is.
 	if ct, ok := e.varReprType(name); ok && e.isSliceCType(ct) {
-		return sliceElemFromCName(ct), true
+		return e.sliceElemFromCName(ct), true
 	}
 	return "", false
 }
@@ -55015,7 +55028,7 @@ func (e *emitter) goArrayTypeName(a arrDim) string {
 // to name a type the reader wrote rather than the one emitted for it.
 func (e *emitter) goTypeName(ct string) string {
 	if e.isSliceCType(ct) {
-		return "[]" + e.goTypeName(sliceElemFromCName(ct))
+		return "[]" + e.goTypeName(e.sliceElemFromCName(ct))
 	}
 	if ct == cUnsafePtr {
 		return "unsafe.Pointer"
@@ -62637,7 +62650,7 @@ func (e *emitter) contentsRef(ast []int32) (frameRef, bool) {
 		u := e.underlyingCType(ct)
 		el, known := e.sliceElemByName[u]
 		if !known {
-			el = sliceElemFromCName(u)
+			el = e.sliceElemFromCName(u)
 		}
 		if !e.carriesReference(el) && !e.holdsString(el, map[string]bool{}) {
 			return frameRef{}, false

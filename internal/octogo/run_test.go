@@ -36109,6 +36109,33 @@ func main() {
 		want: "5 0 3 0 0 true 5 0\n",
 	},
 	{
+		// A slice type's element was read back off its C name, every "_ptr" a star:
+		// `[][]*int` is ogo_slice_ogo_slice_int_ptr, read as a slice of
+		// `ogo_slice_int*`, and an append to one wrote C naming a typedef nobody
+		// declared; a type named my_ptr was "cannot index" (dom77).
+		name: "slices of slices of pointers, and a type named like a pointer",
+		src: `type my_ptr int
+
+var a, b = 1, 2
+
+var ps = [3]*int{&a, &b, &a}
+
+func main() {
+	var pp [2][]*int
+	l := pp[:0]
+	l = append(l, ps[:2])
+	l = append(l, ps[1:])
+	xs := []my_ptr{1, 2}
+	xs = append(xs[:1], 5)
+	var ys [2][]my_ptr
+	m := ys[:0]
+	m = append(m, xs)
+	println(len(l), *l[1][0], *l[0][1], len(xs), xs[1], len(m), m[0][1])
+}
+`,
+		want: "2 2 2 2 5 1 5\n",
+	},
+	{
 		name: "indexes, slice bounds and make lengths of 64 bits",
 		src: `var xs = [5]int{10, 11, 12, 13, 14}
 

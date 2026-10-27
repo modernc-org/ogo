@@ -252,7 +252,7 @@ func (e *emitter) funcTypesHeld(ct string, seen map[string]bool, each func(strin
 	case strings.HasSuffix(ct, "*"):
 		e.funcTypesHeld(strings.TrimSuffix(ct, "*"), seen, each)
 	case e.isSliceCType(ct):
-		e.funcTypesHeld(sliceElemFromCName(ct), seen, each)
+		e.funcTypesHeld(e.sliceElemFromCName(ct), seen, each)
 	case e.isChanCType(ct):
 		e.funcTypesHeld(e.chanElemOfCType(ct), seen, each)
 	}

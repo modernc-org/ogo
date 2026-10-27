@@ -53,6 +53,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A slice of slices of pointers, and a type named like a pointer, build**: an
+  append to a `[][]*int` wrote C naming a typedef nobody declared,
+  `ogo_slice_int**`, which both compilers refused, and a `[][]my_ptr` for a `type
+  my_ptr int` was "cannot index": a slice type's element was read back off its C
+  name with every "_ptr" taken for a star. It is the element the type was made
+  with now. (A `[][]*int` and a `[]*[]int` in one program still share a C name,
+  and that program does not build.)
 - **An empty array of structs as a struct literal's field builds on the host**:
   `W{&pkg, [2]In{}}` for an `arr [2]In` was written `{0}`, which the host's
   compiler warns leaves the elements short of braces, so no such program built
