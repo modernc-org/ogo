@@ -27304,6 +27304,46 @@ func main() {
 		want: "9 50 4 7 53\n2 20 30\n",
 	},
 	{
+		// A struct's array of a DEFINED array type, `addrs [4]IP`, is laid out as
+		// [4][4]uint8, and a slice of it is an []IP: it was an [][4]uint8, which %T
+		// printed and copy into an []IP refused (dom73's DNS cache,
+		// sweeps/defined-row). A row of a [2][3]Row is a [3]Row.
+		name: "a slice of a struct's array of a defined array type",
+		src: `type IP [4]byte
+
+func (ip IP) sum() int { return int(ip[0]) + int(ip[1]) + int(ip[2]) + int(ip[3]) }
+
+type Row [2]int16
+
+type ent struct {
+	addrs [4]IP
+	grid  [2][3]Row
+	na    int
+}
+
+var cache ent
+
+func get(out []IP) int {
+	c := &cache
+	return copy(out, c.addrs[:c.na])
+}
+
+func main() {
+	cache.addrs[1] = IP{1, 2, 3, 4}
+	cache.na = 2
+	cache.grid[1][2] = Row{5, 6}
+	var out [4]IP
+	n := get(out[:])
+	s := cache.addrs[:2]
+	var t []IP = cache.addrs[1:]
+	r := cache.grid[1][:]
+	printf("%T %T %T\n", s, r, cache.grid[:])
+	println(n, out[1].sum(), len(t), t[0][3], r[2][1])
+}
+`,
+		want: "[]main.IP []main.Row [][3]main.Row\n2 10 3 4 6\n",
+	},
+	{
 		// The error of a call of several results beside a view of a local buffer,
 		// returned: through a method on a field, an interface whose methods hand back
 		// nothing in the error, one of them forwarding to another's `return a.gen(dst,

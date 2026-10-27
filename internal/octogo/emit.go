@@ -29166,17 +29166,41 @@ func (e *emitter) arrayTypedef(a arrDim) string {
 	if a.name != "" {
 		return a.name
 	}
-	name := "ogo_arr"
-	for _, b := range a.bounds() {
-		name += "_" + cTypeIdent(b)
+	// An array of a DEFINED array type is minted over that type, `typedef Row
+	// ogo_arr_3_Row[3]` for a [3]Row: minted by its extents alone it was the
+	// [3][2]int16 it is laid out as, one typedef for two Go types, and %T of a
+	// slice of it said `[][3][2]int16`.
+	bounds, elem := a.bounds(), a.elem
+	if a.elemName != "" && a.elemDims > 0 && a.elemDims < len(bounds) {
+		bounds, elem = bounds[:len(bounds)-a.elemDims], a.elemName
 	}
-	name += "_" + cTypeIdent(a.elem)
+	name, suffix := "ogo_arr", ""
+	for _, b := range bounds {
+		name += "_" + cTypeIdent(b)
+		suffix += "[" + b + "]"
+	}
+	name += "_" + cTypeIdent(elem)
 	if _, seen := e.namedArrays[name]; !seen {
 		e.namedArrays[name] = a
 		e.typeNames[name] = true
-		e.addTypedef(name, "typedef "+a.elem+" "+name+a.declSuffix()+";\n", a.elem)
+		e.addTypedef(name, "typedef "+elem+" "+name+suffix+";\n", elem)
 	}
 	return name
+}
+
+// arrayDimNameForT spells an array as Go's %T does: its extents, and its element by
+// the DEFINED name the element has, where it has one -- a `[2]Row` is `[2]main.Row`,
+// not the [2][3]int16 it is laid out as.
+func (e *emitter) arrayDimNameForT(a arrDim) string {
+	bounds, elem := a.bounds(), e.typeNameForT(a.elem)
+	if a.elemName != "" && a.elemDims > 0 && a.elemDims < len(bounds) {
+		bounds, elem = bounds[:len(bounds)-a.elemDims], e.typeNameForT(a.elemName)
+	}
+	s := ""
+	for _, b := range bounds {
+		s += "[" + b + "]"
+	}
+	return s + elem
 }
 
 // arrayPtrCType reports the array a C pointer type points at, `ogo_arr_3_int*` ->
@@ -31106,7 +31130,7 @@ func (e *emitter) accessSliceElem(cur accessCur) string {
 	if len(cur.dims) < 2 {
 		return cur.elem
 	}
-	return e.arrayTypedef(arrDim{elem: cur.elem, bound: cur.dims[1], inner: cur.dims[2:]})
+	return e.sliceElemOfArray(curArrDim(cur))
 }
 
 // accessSliceSource describes what a slice step slices -- sliceableVar's form for a
@@ -32872,6 +32896,13 @@ type sliceSource struct{ cname, ptr, baseLen, baseCap string }
 func (e *emitter) sliceElemOfArray(a arrDim) string {
 	if a.dims() == 1 {
 		return a.elem
+	}
+	// A row that is a DEFINED array type is that type: a `[4]IP`, laid out as
+	// [4][4]uint8, slices to an []IP. Named by its extents, `c.addrs[:n]` of a
+	// struct's `[4]IP` field was an [][4]uint8, and `copy(out, c.addrs[:n])` into
+	// an []IP was refused as two types.
+	if r := a.row(); r.name != "" {
+		return r.name
 	}
 	return e.arrayTypedef(a.row())
 }
@@ -44331,17 +44362,8 @@ func (e *emitter) arrayTypeNameForT(ast []int32) (string, bool) {
 		return e.typeNameForT(a.name), true
 	}
 	// An array of a defined array type is resolved to all its extents, and the
-	// element's name says how many of them it accounts for: a `[2]Row` is `[2]main.Row`
-	// to %T, not the [2][3]int16 it is laid out as.
-	bounds, elem := a.bounds(), e.typeNameForT(a.elem)
-	if a.elemName != "" && a.elemDims > 0 && a.elemDims < len(bounds) {
-		bounds, elem = bounds[:len(bounds)-a.elemDims], e.typeNameForT(a.elemName)
-	}
-	s := ""
-	for _, b := range bounds {
-		s += "[" + b + "]"
-	}
-	return s + elem, true
+	// element's name says how many of them it accounts for.
+	return e.arrayDimNameForT(a), true
 }
 
 // typeNameForT spells a type as Go's %T does: a type the program declares carries
@@ -44372,11 +44394,7 @@ func (e *emitter) typeNameForT(ct string) string {
 		for _, fld := range e.structs[ct] {
 			t := e.typeNameForT(fld.ctype)
 			if fld.dim.bound != "" {
-				b := ""
-				for _, x := range fld.dim.bounds() {
-					b += "[" + x + "]"
-				}
-				t = b + e.typeNameForT(fld.dim.elem)
+				t = e.arrayDimNameForT(fld.dim)
 			}
 			if fld.embedded {
 				fs = append(fs, t)
@@ -44399,11 +44417,7 @@ func (e *emitter) typeNameForT(ct string) string {
 		return "chan " + e.typeNameForT(e.chanElemOfCType(ct))
 	}
 	if a, ok := e.namedArrays[ct]; ok {
-		s := ""
-		for _, b := range a.bounds() {
-			s += "[" + b + "]"
-		}
-		return s + e.typeNameForT(a.elem)
+		return e.arrayDimNameForT(a)
 	}
 	if params, isFunc := e.funcTypeParams[ct]; isFunc {
 		var ps []string
