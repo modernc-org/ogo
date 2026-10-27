@@ -3888,6 +3888,41 @@ of them only when run again: they panic before their first line, and the harness
 waiting for as many lines as Go printed, stopped two seconds into a load that takes
 longer at this size; it waits for the panic now. No fuzzer part changed since
 dom74. A clean round: the count is 2.
+**dom76, configuration and telemetry over JSON-RPC on a serial line** (2026-10-27):
+encoding/json's scanner ported whole -- its step functions as values in a field, the
+parse stack over the scanner's own array -- with Valid, Compact, Indent and
+HTMLEscape over buffers the caller hands them, the encoder's appendString and its
+safe-set tables, and the decoder's scanWhile, rescanLiteral, skip and unquoteBytes,
+surrogate pairs and all; values bound by hand where Go reflects, through targets
+behind two interfaces, with Go's type errors and the field's path; strconv's
+ParseInt and ParseUint, and ParseFloat's exact paths and its multiprecision decimal
+for float64 and float32, ported; unicode/utf8 ported; a server answering single
+calls, batches and notifications through a table of method expressions and modules
+behind an interface; COBS frames with a CRC-16 over buffered channels, a line that
+spoils frames both ways, a client cog that retransmits, the server answering a frame
+sent twice from what it kept. Its first build was not refused, and its host build
+failed: decode.go's kindName ends in `panic(phasePanicMsg)`, a terminating statement,
+and the host's compiler, not told that the runtime's panics do not return, warned
+that control reached the end of a function of a result. The target's compiler took
+it, and every program with such a function failed the host build in every release --
+TestEmitCRun fails on a warning, so no run case had one. The host shim declares
+ogo_panic and ogo_panic_end noreturn now, the emitted C as it was.
+**What the target's runtime does, the host's compiler is told: a panic it took for a
+call that returns made every function of a result ending in one a form nothing
+tested.** The one Go spelling it could not keep, `ParseInt(string(item), 10, 64)`,
+is refused as specs.go says -- Go copies the conversion too, onto the heap past 32
+bytes -- and was written as a copy into storage the decoder owns. Host and board
+print Go's 500 lines, the first build of each once the shim knew.
+Its 400 mutants on the host: 315 print what Go prints, 22 panic as Go does, 47 are
+refused alike; of the 16 that differ, 12 deadlock, which DIFFERENCES.md lists, each
+having printed Go's lines before Go's report, 3 append past a slice's capacity
+(DIFFERENCES.md) after Go's lines, and one converts 1e26 to int64, a value Go's spec
+leaves to the implementation -- the twin built for amd64 prints what OctoGo prints,
+the 386 one another. On the board all 332 that Go ends print Go's output, one only
+when run again: it panics in the middle of a line, `utf8:` before the message, and
+the harness, cutting at a panic that begins a line, held the board's message to
+Go's trace; it cuts where the panic begins now, as the host's comparison does. No
+fuzzer part changed since dom75. A clean round: the count is 3.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

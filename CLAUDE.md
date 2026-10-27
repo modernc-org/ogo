@@ -108,6 +108,10 @@ silent fault puts the count back to 0. Each round's account is in
   readers ported, an LZ77 and Huffman encoder, a flash cog, a logger cog): clean,
   one false refusal listed (a field kept out of a struct holding a view of the
   frame in another) -- 2
+- dom76 (2026-10-27), configuration and telemetry over JSON-RPC (encoding/json's
+  scanner, strconv's parsers and utf8 ported, COBS frames over a spoiling line, a
+  retransmitting client cog): clean, one loud host fault fixed (the host shim did
+  not say a panic does not return) -- 3
 
 ## Language feature policy (read before assuming something is excluded)
 
@@ -966,8 +970,11 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **The target's build of every program the probes left behind is a probe of its
   own**; **A probe's program is a target-build test too, and the warnings are
   read.** **A form the host's compiler refuses is a form nothing tests, and is run
-  on the board by hand.** **The fuzzer's board sweep finds what the host oracle
-  cannot: a spelling only the target's typing rule reads wrong.**
+  on the board by hand.** **What the target's runtime does, the host's compiler is
+  told: a panic it took for a call that returns made every function of a result
+  ending in one a form nothing tested** (dom76). **The fuzzer's board sweep finds
+  what the host oracle cannot: a spelling only the target's typing rule reads
+  wrong.**
 - **When a new refusal fails an old test, ask Go about the test's program before
   doubting the refusal.** **A false refusal fixed in the checker is a program the
   emitter is handed next**. **A new summary rule is run over every program the
