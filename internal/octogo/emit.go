@@ -17421,13 +17421,20 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 	if lit, isLit := e.summaryLit(ast); isLit {
 		return e.summaryLitReach(lit)
 	}
-	if args, _, isAppend := e.appendCallArgs(ast); isAppend {
+	if args, spread, isAppend := e.appendCallArgs(ast); isAppend {
 		for i, a := range args {
-			if i == 0 {
+			switch {
+			case i == 0:
 				out = append(out, e.summaryReach(a.ast)...)
-				continue
+			case spread && i == len(args)-1:
+				// `append(s, v...)` copies v's ELEMENTS, as copy does its source's:
+				// what they reach, never v's backing. Read as v itself, `w.b =
+				// append(w.b, v...)` in a callee refused every caller handing it a
+				// view of a local array of bytes.
+				out = append(out, asElem(e.summaryReach(a.ast))...)
+			default:
+				out = append(out, asPart(e.summaryReach(a.ast))...)
 			}
-			out = append(out, asPart(e.summaryReach(a.ast))...)
 		}
 		return out
 	}

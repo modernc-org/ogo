@@ -27263,6 +27263,47 @@ func main() {
 		want: "pe 0\n",
 	},
 	{
+		// A callee appending its parameter's elements, `w.b = append(w.b, v...)`:
+		// what is kept is what the elements reach, the bytes of a local array
+		// nothing, pointers into package storage that storage. Read as v itself,
+		// every caller handing it a view of a local array was refused (dom73's DHCP
+		// options, sweeps/append-spread).
+		name: "a callee appending the elements of a view of a local array",
+		src: `type W struct{ b []byte }
+
+func (w *W) add(code byte, v ...byte) {
+	w.b = append(w.b, code, byte(len(v)))
+	w.b = append(w.b, v...)
+}
+
+func (w *W) addIP(code byte, ip [4]byte) { w.add(code, ip[:]...) }
+
+var back [16]byte
+
+var gp []*int
+
+var gpb [4]*int
+
+var gx = [2]int{10, 20}
+
+func keep(v []*int) { gp = append(gp, v...) }
+
+func main() {
+	w := W{back[:0]}
+	w.addIP(50, [4]byte{10, 0, 0, 7})
+	w.add(53, 1)
+	println(len(w.b), w.b[0], w.b[1], w.b[5], w.b[6])
+	var loc [2]*int
+	loc[0], loc[1] = &gx[1], &gx[0]
+	gp = gpb[:0]
+	keep(loc[:])
+	*gp[1] = 30
+	println(len(gp), *gp[0], gx[0])
+}
+`,
+		want: "9 50 4 7 53\n2 20 30\n",
+	},
+	{
 		// The error of a call of several results beside a view of a local buffer,
 		// returned: through a method on a field, an interface whose methods hand back
 		// nothing in the error, one of them forwarding to another's `return a.gen(dst,

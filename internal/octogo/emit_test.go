@@ -13800,6 +13800,97 @@ func main() {
 }
 `,
 		},
+		// A callee's `append(dst, v...)` keeps what v's ELEMENTS reach, never v's
+		// backing: the bytes of a local array, or pointers into package storage,
+		// go anywhere (dom73, sweeps/append-spread).
+		{
+			name: "a callee spreading a view of a local array of bytes into its receiver",
+			src: `type W struct{ b []byte }
+
+func (w *W) add(v ...byte) { w.b = append(w.b, v...) }
+
+func (w *W) addIP(ip [4]byte) { w.add(ip[:]...) }
+
+var back [64]byte
+
+var gw W
+
+func main() {
+	gw.b = back[:0]
+	gw.addIP([4]byte{1, 2, 3, 4})
+	println(len(gw.b))
+}
+`,
+		},
+		{
+			name: "a callee spreading a local array of pointers into package storage",
+			src: `var back [4]*int
+
+var gp []*int
+
+var gx [2]int
+
+func add(v []*int) { gp = append(gp, v...) }
+
+func run() {
+	var loc [2]*int
+	loc[0], loc[1] = &gx[0], &gx[1]
+	gp = back[:0]
+	add(loc[:])
+}
+
+func main() {
+	run()
+	println(len(gp))
+}
+`,
+		},
+		{
+			name: "a callee spreading a literal of pointers to a local",
+			src: `var back [4]*int
+
+var gp []*int
+
+func add(v []*int) { gp = append(gp, v...) }
+
+func run() {
+	x := 1
+	gp = back[:0]
+	add([]*int{&x})
+}
+
+func main() {
+	run()
+	println(len(gp))
+}
+`,
+			want: "pointer into local x",
+		},
+		{
+			name: "a callee spreading views of a local array",
+			src: `type W struct{ vs [][]byte }
+
+func (w *W) add(v ...[]byte) { w.vs = append(w.vs, v...) }
+
+var back [4][]byte
+
+var gw W
+
+func run() {
+	var loc [3]byte
+	var a [2][]byte
+	a[0] = loc[:]
+	gw.vs = back[:0]
+	gw.add(a[:]...)
+}
+
+func main() {
+	run()
+	println(len(gw.vs))
+}
+`,
+			want: "pointer into local loc",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
