@@ -104,6 +104,10 @@ silent fault puts the count back to 0. Each round's account is in
 - dom74 (2026-10-27), a polyphonic synthesizer (a MIDI track, six voices, a DAC
   cog): clean, one loud fault fixed (the lifetime summaries' walk through the calls
   a rebound buffer holds never ended) -- 1
+- dom75 (2026-10-27), compressed assets in flash (Go's flate, zlib and gzip
+  readers ported, an LZ77 and Huffman encoder, a flash cog, a logger cog): clean,
+  one false refusal listed (a field kept out of a struct holding a view of the
+  frame in another) -- 2
 
 ## Language feature policy (read before assuming something is excluded)
 
@@ -1136,7 +1140,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   whether it can carry one: a string a Builder hands out was followed only where
   `sb.String()` stood written** (dom72). **What a spread keeps is what its
   elements reach: append's last argument under `...` is read as copy reads its
-  source, never as the slice it spreads** (dom73).
+  source, never as the slice it spreads** (dom73). **A cost a comment calls rare
+  is swept before it is believed: the per-variable mark was to refuse one program,
+  and it refuses every field kept out of the holder** (dom75, sweeps/field-holder;
+  listed).
 - **A PARENTHESISED HEAD IS A ROW OF EVERY SCAN**: **A new scan reads heads through
   them, and a new shape the emitter reads through parentheses is a row in each
   scan.**

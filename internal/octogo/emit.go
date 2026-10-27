@@ -59891,9 +59891,11 @@ func (e *emitter) frameRefIn(exprs []Node) (Node, frameRef, bool) {
 //
 // The mark is per variable and is never cleared, which is what keeps it sound with no
 // per-field tracking: a struct with two fields, one holding a frame reference and one
-// not, must stay marked. The cost is a refusal of the program that overwrites the
-// only such field with package-level storage and then crosses -- rare, and the fix is
-// to use the package-level storage from the start.
+// not, must stay marked. The cost is not rare: every field that can hold a reference
+// reads as holding the frame's, so keeping a package variable's address out of such
+// a struct, `g = z.w` beside a `z.ex = a[:]`, is refused, and so is a callee or a
+// method keeping it, the summaries keeping what a receiver or a parameter holds whole
+// (dom75, sweeps/field-holder: 23 of 24 such rows refused; listed).
 func (e *emitter) noteFrameHolder(base string, op []Node) {
 	if !e.isFrameVar(base) {
 		return

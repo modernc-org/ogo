@@ -3851,6 +3851,43 @@ before it, and one is a printf of a voice it steals writing its line up to an
 index of -1, which DIFFERENCES.md lists too. On the board all 362 that Go ends
 print Go's output. No fuzzer part changed since dom73. A clean round, the first
 since dom68: the count is 1.
+**dom75, compressed assets in a firmware's flash** (2026-10-27): compress/flate's
+decoder ported over storage the caller hands it -- its goto-driven huffmanBlock,
+its step functions as method expressions, `*f = decompressor{...}` reading the
+fields it keeps, the overflow tables cut from a pool where Go makes them -- behind
+zlib's reader with a preset dictionary and gzip's with an embedded Header, Latin-1
+names, FEXTRA, FHCRC and members read one at a time; io's ReadFull and CopyBuffer
+and a bufio reader over one that trickles bytes and now and then none; the
+firmware's own encoder, LZ77 over hash chains with a lazy step, Huffman lengths
+limited as JPEG's Annex K.3 does, each block stored, fixed or dynamic as it costs
+least; a flash cog streaming a gzip archive page by page over a buffered channel,
+once with a page its ECC check spoils, and a logger cog compressing its log while
+the archive is read; streams Go's compress packages wrote, decoded, and the one it
+writes, decoded by Go's; bit flips, cuts and eleven blocks built by hand to break
+each rule the decoder checks. Its first build was refused twice. The compressor, a
+package variable, keeps the Writer it is handed, so a local Sink would have
+dangled: right. And `gw.Close()` of a local writer whose Extra viewed a local
+array, the compressor keeping gw.w, a package Sink: false. The holder marks are per
+variable, and a summary keeps what a receiver or a parameter holds whole, so a field
+that can hold a reference, read out of a struct with a view of the frame in
+another field and kept, is refused -- `g = z.w` for a z.w that is `&pkg` as much as
+a method keeping it (sweeps/field-holder, 32 rows: the 8 that keep the view or the
+struct are refused as they must be, and 23 of the 24 that keep only the other field
+are refused too, in every release; the one taken is a constant string read out of
+a literal's holder, frameHolderPlain). dom72's string-view o09 is one of its rows.
+noteFrameHolder's comment had priced the per-variable mark at one rare program,
+which overwrites the field it marked and then hands the struct on. **A cost a
+comment calls rare is swept before it is believed: the per-variable mark was to
+refuse one program, and it refuses every field kept out of the holder.** Listed;
+the extra bytes are a package array. Host and board print Go's 106 lines, the
+first build of each. Its 400 mutants on the host: 329 print what Go prints, 30
+panic as Go does, 40 are refused alike, and the one that differs is a printf
+argument dividing by zero after the arguments before it printed, which
+DIFFERENCES.md lists. On the board all 357 that Go ends print Go's output -- seven
+of them only when run again: they panic before their first line, and the harness,
+waiting for as many lines as Go printed, stopped two seconds into a load that takes
+longer at this size; it waits for the panic now. No fuzzer part changed since
+dom74. A clean round: the count is 2.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
@@ -4731,7 +4768,11 @@ s := Sum256(key); key = s[:] }` (the block rule asks blocks, not loops, and that
 block runs once while the parameter lives; dom71, sweeps/param-block r01); a callee
 keeping the constant string field of a struct that holds a view of the frame in
 another field, `keep(&h)` for an `h := H{buf: a[:], name: "kept"}` (the summaries
-give a string field no provenance of its own; dom72, sweeps/string-view o09); a
+give a string field no provenance of its own; dom72, sweeps/string-view o09), and
+with it any field that can hold a reference, kept out of a struct that holds a view
+of the frame in another -- `g = z.w`, `store(z.w)`, `z.keep()` for a z.w that is a
+package variable's address (the holder marks are per variable, the summaries keep a
+receiver's or a parameter's holdings whole; dom75, sweeps/field-holder, 23 rows); a
 Builder passed by value, `count(sb)` for a `func count(b Builder)`, "cannot use sb
 as Builder value in argument to count: it is a struct" (a pointer is the spelling
 that works); an
