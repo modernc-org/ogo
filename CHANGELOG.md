@@ -18,6 +18,39 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **A []byte a method hands back builds where a callee keeps its bytes**: `b :=
+  bt.Marshal(frame[:0])` for a bt holding views of the frame, passed on to a
+  callee keeping what b's elements reach, was refused, "b, whose contents hold a
+  pointer into a slice literal's backing array": the contents of a slice of bytes
+  or numbers reach nothing, whatever marks the slice carries.
+
+### Behaviour changes
+
+- **A view of a view a callee keeps is refused**: `func keep(b []byte) { g =
+  b[1:][:2] }`, called with a slice of a local array, kept that array past its
+  frame -- `2 0` printed where Go prints `2 2` -- and so did `b[:3][1:]`, a
+  three-index step, three steps, `(b[1:])[:2]`, the same through a pointer to an
+  array, and the view handed back, `return b[1:][:2]`, as protowire's
+  ConsumeBytes does: the summaries read a slice step after another as the
+  parameter's contents, not as a view of its backing. And a slice step after a
+  slice expression in parentheses, `g = (a[:])[1:]` in the function that declares
+  a, was no view of the frame at all. Each is refused now, as `b[1:]` was, in every
+  release.
+- **What a call hands back HOLDS is asked where the result is bound**: `b :=
+  get(s); gk = b[0]`, for a `get` handing back a slice s whose elements point at
+  the caller's locals, kept a local's address past the frame -- `231` printed where
+  Go prints `7` -- and so did `var b = ...`, `b = ...`, a reslice or a copy of b, a
+  callee keeping b, `spread(frame[:0], s)` appending s onto a buffer, and a field
+  read through a call's result, `idH(&h).s`: a binding asked the call nothing of
+  what its elements reach. And a method handing back what its receiver holds,
+  `return h.s`, `return h.s[:1]`, `return append(b, h.s...)`, by pointer or by
+  value, or through another method or a function, was summarised as handing back
+  nothing, so `gk = h.get()[0]` kept the address too. Each is refused now where
+  what is handed back holds a reference to the frame, as `gk = h.s[0]` is, in every
+  release.
+
 ### Fixed
 
 - **An empty array of structs as a struct literal's field builds on the host**:

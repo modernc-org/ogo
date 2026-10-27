@@ -371,3 +371,137 @@ func main() { f() }
 		})
 	}
 }
+
+// TestEmitCResliceViews is a view of a view: `b[1:][:2]`, `b[:3][1:]`, a three-index
+// step, three steps, and a value in parentheses resliced, `(a[:])[1:]`. The summaries
+// read a chain of more than one slice step as the parameter's CONTENTS, not a view
+// of its backing, so a callee keeping or handing back such a view of what it was
+// handed kept nothing of the caller's -- protowire's ConsumeBytes, `return
+// b[n:][:m]`, returned a view of a local array unrefused (dom77) -- and a slice step
+// after parentheses holding a slice expression was no view of the frame to the
+// caller's own rules. The controls keep a view of package storage.
+func TestEmitCResliceViews(t *testing.T) {
+	const head = `var g []byte
+
+var gp [4]byte
+
+var gh struct{ f []byte }
+
+var gl [][]byte
+
+func keep(b []byte)    { g = b[1:][:2] }
+func keepF(b []byte)   { gh.f = b[:3][1:] }
+func keep3(b []byte)   { g = b[1:3:4][:1] }
+func keepP(b []byte)   { g = (b[1:])[:2] }
+func keepA(b *[4]byte) { g = b[1:][:2] }
+func keepL(b []byte)   { gl = append(gl, b[1:][1:]) }
+func view(b []byte) []byte { return b[1:][:2] }
+func consume(b []byte) ([]byte, int) { return b[1:][:2], 3 }
+
+`
+	for _, test := range []struct {
+		name, run string
+		refuse    bool
+	}{
+		{"a callee keeping a view of a view", "keep(a[:])", true},
+		{"in a field", "keepF(a[:])", true},
+		{"of a three-index step", "keep3(a[:])", true},
+		{"of a view in parentheses", "keepP(a[:])", true},
+		{"through a pointer to the array", "keepA(&a)", true},
+		{"appended", "keepL(a[:])", true},
+		{"handed back", "g = view(a[:])", true},
+		{"handed back beside a number", "v, _ := consume(a[:])\n\tg = v", true},
+		{"the caller's own, resliced", "g = a[:][1:][:2]", true},
+		{"the caller's own, in parentheses", "g = (a[:])[1:]", true},
+		{"the caller's own, in parentheses twice", "g = ((a[:])[1:])[:2]", true},
+		{"package storage kept by the callee", "keep(gp[:])", false},
+		{"package storage handed back", "g = view(gp[:])", false},
+		{"package storage in parentheses", "g = (gp[:])[1:]", false},
+		{"a view kept locally", "v := view(a[:])\n\t_ = v[0]", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := head + "func run() {\n\tvar a [4]byte\n\t_ = a[0]\n\t" + test.run + "\n}\n\nfunc main() { run() }\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.refuse && err == nil:
+				t.Errorf("a reference to this frame left it:\n%s", src)
+			case test.refuse && !strings.Contains(err.Error(), "outlive") && !strings.Contains(err.Error(), "package scope"):
+				t.Errorf("refused, but not for its lifetime: %v", err)
+			case !test.refuse && err != nil:
+				t.Errorf("refused: %v\n%s", err, src)
+			}
+		})
+	}
+}
+
+// TestEmitCResultContents is what a call's result HOLDS: a slice handed back
+// whose elements point at the caller's local. A binding asked the call nothing of
+// what its elements reach -- `b := get(s); gk = b[0]` for a get handing back s
+// kept a local's address -- and a method handing back what its receiver holds,
+// `return h.s`, was summarised as handing back nothing (dom77). The controls hand
+// back a view of package storage.
+func TestEmitCResultContents(t *testing.T) {
+	const head = `var gk *int
+
+var gx, gy = 70, 80
+
+var gps = [2]*int{&gx, &gy}
+
+type H struct{ s []*int }
+
+func get(s []*int) []*int            { return s }
+func spread(b, s []*int) []*int      { return append(b, s...) }
+func (h *H) recv() []*int            { return h.s }
+func (h *H) recvSpread(b []*int) []*int { return append(b, h.s...) }
+func (h *H) viaRecv() []*int         { return h.recv() }
+func (h H) byValue() []*int          { return h.s }
+func (h *H) viaGet() []*int          { return get(h.s) }
+func idH(h *H) *H                    { return h }
+func keepC(b []*int)                 { gk = b[0] }
+
+`
+	const local = "\tx, y := 7, 8\n\ts := []*int{&x, &y}\n\tvar frame [4]*int\n\th := H{s: s}\n\t_, _ = frame, h\n"
+	const pkg = "\ts := gps[:]\n\tvar frame [4]*int\n\th := H{s: s}\n\t_, _ = frame, h\n"
+	for _, test := range []struct {
+		name, setup, run string
+		refuse           bool
+	}{
+		{"a function's result bound", local, "b := get(s)\n\tgk = b[0]", true},
+		{"a function's result assigned", local, "var b []*int\n\tb = get(s)\n\tgk = b[0]", true},
+		{"a function's spread bound", local, "b := spread(frame[:0], s)\n\tgk = b[0]", true},
+		{"a method's result bound", local, "b := h.recv()\n\tgk = b[0]", true},
+		{"a method's result indexed", local, "gk = h.recv()[0]", true},
+		{"a method's spread bound", local, "b := h.recvSpread(frame[:0])\n\tgk = b[0]", true},
+		{"a method calling a method", local, "b := h.viaRecv()\n\tgk = b[0]", true},
+		{"a value receiver's method", local, "b := h.byValue()\n\tgk = b[0]", true},
+		{"a method handing its holdings to a function", local, "b := h.viaGet()\n\tgk = b[0]", true},
+		{"a field of a call's result", local, "b := idH(&h).s\n\tgk = b[0]", true},
+		{"a method's result kept by a callee", local, "keepC(h.recv())", true},
+		{"package storage bound", pkg, "b := get(s)\n\tgk = b[0]", false},
+		{"package storage through a method", pkg, "b := h.recv()\n\tgk = b[0]", false},
+		{"package storage through a value receiver", pkg, "b := h.byValue()\n\tgk = b[0]", false},
+		{"package storage through a call's result", pkg, "b := idH(&h).s\n\tgk = b[0]", false},
+		{"a local result kept locally", local, "b := h.recv()\n\t_ = *b[0]", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := head + "func run() {\n" + test.setup + "\t" + test.run + "\n}\n\nfunc main() { run() }\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.refuse && err == nil:
+				t.Errorf("a reference to this frame left it:\n%s", src)
+			case test.refuse && !strings.Contains(err.Error(), "outlive") && !strings.Contains(err.Error(), "package scope"):
+				t.Errorf("refused, but not for its lifetime: %v", err)
+			case !test.refuse && err != nil:
+				t.Errorf("refused: %v\n%s", err, src)
+			}
+		})
+	}
+}
