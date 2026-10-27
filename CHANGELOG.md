@@ -16,7 +16,14 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
-## Unreleased
+## v1.0.0-rc.1
+
+The first release candidate for v1.0. Three rounds in a row -- each a new domain
+program written as Go, and its 400 mutants run against Go on the host and on a
+P2-EDGE -- found no silent fault. From here `master` takes fixes only. v1.0.0
+follows when a candidate has passed three more such rounds and two weeks in public
+with no silent fault found; a silent fault found is fixed in the next candidate,
+and both counts start again.
 
 ### Behaviour changes
 

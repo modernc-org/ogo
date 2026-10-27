@@ -112,6 +112,20 @@ silent fault puts the count back to 0. Each round's account is in
   scanner, strconv's parsers and utf8 ported, COBS frames over a spoiling line, a
   retransmitting client cog): clean, one loud host fault fixed (the host shim did
   not say a panic does not return) -- 3
+- **v1.0.0-rc.1** (2026-10-27), tagged after dom76: rounds against it count from
+  0 of 3, and its two weeks in public from its release
+
+**From a release candidate to v1.0** (the user's call, 2026-10-27, after an
+outside review read three clean rounds as the start of a stabilization, not its
+end): a release candidate freezes `master` to fixes -- of silent and loud faults,
+and of a false refusal whose fix is local; a redesign waits on a branch until
+v1.0.0 is tagged, the per-field lifetime marks (dom75's listed refusal) among
+them. The rounds go on against `master` as it stands. v1.0.0 is tagged when a
+candidate has passed three more clean rounds and two weeks in public with no
+silent fault found; a silent fault is fixed, the fix is the next candidate, and
+both counts start again. Each candidate and v1.0.0 publish their validation with
+their notes: the commit, the host suite's and `make board`'s results, p2-11's on
+the board, obeam's builds, the rounds since the last.
 
 ## Language feature policy (read before assuming something is excluded)
 
