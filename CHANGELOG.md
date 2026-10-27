@@ -16,6 +16,16 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **An empty array of structs as a struct literal's field builds on the host**:
+  `W{&pkg, [2]In{}}` for an `arr [2]In` was written `{0}`, which the host's
+  compiler warns leaves the elements short of braces, so no such program built
+  under the host shim the tests run on; the target took it. It is written out in
+  full now, as an array given fewer elements than its length is.
+
 ## v1.0.0-rc.1
 
 The first release candidate for v1.0. Three rounds in a row -- each a new domain

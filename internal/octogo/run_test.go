@@ -36080,6 +36080,35 @@ func main() {
 		want: "4 0 10 0 5 true 0 p\n2 0 9 6 0 c 0\n",
 	},
 	{
+		// The empty literal of an array of structs, inside another literal's braces,
+		// was written "{0}", which the host's compiler warns is short of braces: no
+		// such program built on the host.
+		name: "an empty array of structs as a struct literal's field",
+		src: `type In struct {
+	ex []byte
+	n  int
+}
+
+type W struct {
+	w   *int
+	arr [2]In
+}
+
+var pkg = 5
+
+var gw = W{&pkg, [2]In{}}
+
+func main() {
+	z := W{w: &pkg, arr: [2]In{}}
+	y := W{&pkg, [2]In{}}
+	ws := [2]W{{&pkg, [2]In{}}}
+	z.arr[1].n = 3
+	println(*z.w, len(z.arr[0].ex), z.arr[1].n, y.arr[0].n, ws[0].arr[1].n, ws[1].w == nil, *gw.w, gw.arr[1].n)
+}
+`,
+		want: "5 0 3 0 0 true 5 0\n",
+	},
+	{
 		name: "indexes, slice bounds and make lengths of 64 bits",
 		src: `var xs = [5]int{10, 11, 12, 13, 14}
 

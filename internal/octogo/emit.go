@@ -25880,9 +25880,12 @@ func (e *emitter) emitArrayValues(values []*Node, a arrDim) {
 // ROWS is padded whatever its element, the target refusing a static one given fewer
 // rows than its length, "Internal compiler error, expected initializer list" -- a
 // font of `[1000][7]byte` with sixteen glyphs. None is padded where the literal
-// gives no value at all: "{0}" zeroes it whole.
+// gives no value at all and stands alone: "{0}" zeroes it whole. Inside another
+// literal's braces, `W{&pkg, [2]In{}}`, that 0 is the first element's first scalar
+// and leaves the element short of braces, which the host's compiler warns of
+// (-Wmissing-braces): no such program built on the host, so it is written out too.
 func (e *emitter) padLocalAggregates(values []*Node, a arrDim) []*Node {
-	if len(values) == 0 || a.dims() == 1 && e.zeroInitC(a.elem) != "{0}" && !e.isIfaceCType(a.elem) {
+	if len(values) == 0 && e.litDepth == 0 || a.dims() == 1 && e.zeroInitC(a.elem) != "{0}" && !e.isIfaceCType(a.elem) {
 		return values
 	}
 	n, err := strconv.Atoi(a.bound)
