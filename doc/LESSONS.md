@@ -3784,6 +3784,38 @@ print, and so `ogo run`'s and `ogo test`'s readings (their help says so now). Wi
 the names printed by `%q`, in Go and here alike, the board prints all 92 lines of
 Go's output; board.sh names a mutant whose Go output holds the sequence now,
 rather than calling it a difference. A round with silent faults: the count stays 0.
+**dom73, the network side of a sensor node** (2026-10-27): three hosts on an
+Ethernet hub whose cable is a cog that delivers, drops, doubles or corrupts each
+frame by an LCG's draw, and one stack for all three, written as Go's net package
+and a small embedded stack are -- ARP with a cache holding what waits for an
+answer, IPv4 fragmenting at an MTU of 256 and reassembling, ICMP echo and port
+unreachable, UDP sockets as slots of the stack, TCP with retransmission, backoff
+and go-back-N over sequence numbers that wrap; a DHCP client probing its offer by
+ARP and declining the address a display holds, a resolver through compression
+pointers, CNAMEs, NXDOMAIN and a cache with TTLs, *OpError and *DNSError built in
+the error's own bytes. Its first build was refused twice, both false. A DHCP
+message's options, `w.add(code, ip[:]...)` into a method doing `w.b = append(w.b,
+v...)`, were "a slice backed by local ip ... stored in the receiver w": the
+summaries read every argument of append after the first as kept, which an element
+is and a spread is not -- a spread is copied, as copy's source is, and what is kept
+is what its elements reach (sweeps/append-spread, 162 rows, the 90 valid ones
+refused in every release, none of the 72 that keep a local let through before or
+after). **What a spread keeps is what its elements reach: append's last argument
+under `...` is read as copy reads its source, never as the slice it spreads.** And
+`copy(addrs, c.addrs[:c.na])` out of a cache entry's `addrs [4]IP` was two types:
+an array of a defined array type is laid out by its extents, `uint8_t
+addrs[4][4]`, and its element's name, kept since 2026-08-18 for a method on
+`pool[1]`, was not asked by a slice step, which named the row by its extents --
+an [][4]uint8, which `%T` printed where Go prints `[]main.IP`, in every release
+(sweeps/defined-row, 111 rows: 17 printed a wrong type, 24 were C the host's
+compiler refuses, 21 were refused). A row minted for a slice of a `[2][3]Row` is
+minted over Row now, `typedef Row ogo_arr_3_Row[3]`, where one typedef of the
+extents stood for two Go types. **A name a resolution keeps for one question is
+asked by every question of the type: the element's name was kept for its methods
+and not for its slices.** Then the program's own: `AppendTo(nil)` panicked, append
+not growing a slice (DIFFERENCES.md), and the DNS server's Serve outgrew the cog's
+registers on the board and was split. On the board it prints Go's 121 lines. A
+round with a silent fault: the count stays 0.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

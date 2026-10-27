@@ -96,6 +96,11 @@ silent fault puts the count back to 0. Each round's account is in
   that holds a pointer), two loud C refusals fixed (a by-value struct named like a
   member, on the board; an array of Builders), one listed (a callee keeping a
   string field beside a buffer) -- 0
+- dom73 (2026-10-27), the network side of a sensor node (ARP, IPv4 fragments,
+  DHCP, DNS, TCP over a cable that loses frames): silent (a slice of a struct's
+  array of a defined array type typed by its extents, `%T` of it wrong), two false
+  refusals fixed (a callee's spread into append taken to keep the slice; copy
+  between the two typings) -- 0
 
 ## Language feature policy (read before assuming something is excluded)
 
@@ -971,10 +976,12 @@ section. A new finding goes there; the rule it leaves goes here too.
 
 **Rows: what a rule is asked of**
 
-- **A DEFINED TYPE OVER U IS A ROW**. **A PACKAGE BOUNDARY IS A ROW**: **A boundary
-  sweep crosses two packages and three**; **Every row swept in one package is swept
-  across the boundary too, with the qualified spelling in every position**; **A row
-  swept in one package is swept with the qualified spelling**.
+- **A DEFINED TYPE OVER U IS A ROW**: **A name a resolution keeps for one question
+  is asked by every question of the type: the element's name was kept for its
+  methods and not for its slices** (dom73). **A PACKAGE BOUNDARY IS A ROW**: **A
+  boundary sweep crosses two packages and three**; **Every row swept in one package
+  is swept across the boundary too, with the qualified spelling in every
+  position**; **A row swept in one package is swept with the qualified spelling**.
 - **A C NAME IS A ROW**. **NIL IS A ROW**. **A VARIADIC CALL IS A ROW**. **A FUNCTION
   VALUE'S CALL IS A ROW**. **AN ARRAY RESULT IS A ROW**. **PRINTING A VALUE IS A
   ROW**. **A CALL'S RESULTS FORWARDED WHOLE ARE A ROW**. **A DEFERRED OR STARTED
@@ -1124,7 +1131,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   holds: a pointer stored into it is reached only by a target that goes through
   it.** **A value that may be a reference is asked at every gate that asks a type
   whether it can carry one: a string a Builder hands out was followed only where
-  `sb.String()` stood written** (dom72).
+  `sb.String()` stood written** (dom72). **What a spread keeps is what its
+  elements reach: append's last argument under `...` is read as copy reads its
+  source, never as the slice it spreads** (dom73).
 - **A PARENTHESISED HEAD IS A ROW OF EVERY SCAN**: **A new scan reads heads through
   them, and a new shape the emitter reads through parentheses is a row in each
   scan.**

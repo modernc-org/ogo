@@ -127,6 +127,22 @@ shipped section tells a reader on that version that they have behaviour they do 
   the array was followed. Each is refused now. And an array of Builders, `var bs
   [2]Builder`, where nothing else named the type, was "the C compiler refused the C
   ogo wrote": the Builder's helpers named types no C declared.
+- **A slice of an array of a defined array type is a slice of that type**: for a
+  struct's `addrs [4]IP` over `type IP [4]byte`, `c.addrs[:n]` was an `[][4]uint8`
+  -- `%T` printed that where Go prints `[]main.IP`, in every release -- so `copy(out,
+  c.addrs[:n])` into an `[]IP` was refused as two types, and so were `var t []IP =
+  c.addrs[1:]`, passing it to an `[]IP` parameter and a method of an element; a
+  chain through a pointer, an element of an array of structs and a row of a two
+  dimensional field, `gs.grid[1][:]`, the same. A row of an array of a defined type,
+  `m[:]` of a `[2][3]Row`, is a `[][3]main.Row` now, where it was `[][3][2]int16`.
+- **A callee appending its parameter's elements keeps what they reach, not the
+  parameter**: `w.b = append(w.b, v...)` in a method was taken to keep v's backing,
+  so every caller handing it a view of a local array -- `w.add(ip[:]...)` for a
+  `[4]byte`, the options of a DHCP message -- was refused, "cannot pass a slice
+  backed by local ip to add: it is stored in the receiver w"; and so was a local
+  array of pointers into package storage, appended through a parameter, a result,
+  an out parameter or a forwarded call. What the elements reach is what is kept:
+  bytes nothing, and a pointer to a local is refused as before.
 
 ## v0.59.0
 
