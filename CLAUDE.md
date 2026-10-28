@@ -118,8 +118,9 @@ silent fault puts the count back to 0. Each round's account is in
   (protowire and encoding/base64 ported, a producer cog framing batches onto
   base64 lines): silent (a callee's view of a view of its parameter kept past the
   frame; what a call hands back holds, asked nowhere it is bound), one false
-  refusal fixed (a []byte's contents held to a holder's marks), one loud fault
-  fixed (a slice of slices of pointers named a typedef nobody declared), two
+  refusal fixed (a []byte's contents held to a holder's marks), a loud fault
+  fixed (a slice of slices of pointers named a typedef nobody declared, and two
+  element types were one C name), two
   listed (a store two pointers past a receiver; a slice literal's backing dated
   to the inner block it is read in) -- 0
 

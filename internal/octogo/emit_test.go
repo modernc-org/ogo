@@ -23267,3 +23267,25 @@ func TestEmitCChainedRebindings(t *testing.T) {
 		t.Fatal("the compile of sixteen chained rebindings took more than 30 seconds")
 	}
 }
+
+// TestSanitizeElem is sanitizeElem one to one, and sliceElemFromSpelling its
+// inverse: an element's star and an "_ptr" it spells itself were one spelling, so
+// `[][]*int` and `[]*[]int`, and `[]*Point` and a `[]Point_ptr`, were one slice
+// name, which both C compilers refused (dom77).
+func TestSanitizeElem(t *testing.T) {
+	elems := []string{
+		"int", "int*", "int**", "Point*", "Point_ptr", "Point_ptr*", "Point**", "Point_ptrx",
+		"ogo_slice_int*", "ogo_slice_int_ptr", "ogo_slice_int_ptr*", "ogo_slice_int_ptrx", "my_ptr_ptr", "uint8_t",
+	}
+	seen := map[string]string{}
+	for _, el := range elems {
+		name := sliceCName(el)
+		if other, ok := seen[name]; ok {
+			t.Errorf("%q and %q are both %s", other, el, name)
+		}
+		seen[name] = el
+		if got := sliceElemFromSpelling(name); got != el {
+			t.Errorf("%s read back is %q, not %q", name, got, el)
+		}
+	}
+}

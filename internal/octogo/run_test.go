@@ -36136,6 +36136,48 @@ func main() {
 		want: "2 2 2 2 5 1 5\n",
 	},
 	{
+		// An element's "*" is "_ptr" in a C name, and so was an "_ptr" the element
+		// spelled itself: `[][]*int` and `[]*[]int` were one slice name, `[]*Point`
+		// and `[]Point_ptr` another, their channels and appends with them, and
+		// `**Point` and `*Point_ptr` one nil guard -- both C compilers refused the
+		// two typedefs (dom77). An element's own "_ptr" is "_ptrx" now.
+		name: "two element types once spelled as one C name",
+		src: `type Point struct{ x int }
+
+type Point_ptr int
+
+var p = Point{3}
+
+var gp = &p
+
+func main() {
+	x, y := 1, 2
+	var as [3][]*int
+	a := append(as[:0], []*int{&x}, []*int{&y, &x})
+	var bs [1]*[]int
+	b := bs[:0]
+	s := []int{7, 8, 9}
+	b = append(b, &s)
+	a = append(a, []*int{&y})
+	var pa [2]*Point
+	ps := append(pa[:0], &p)
+	ps = append(ps, &p)
+	var qa [3]Point_ptr
+	qs := append(qa[:0], 4, 5)
+	qs = append(qs, 6)
+	ch := make(chan *Point, 1)
+	cq := make(chan Point_ptr, 1)
+	ch <- &p
+	cq <- 7
+	var pp **Point = &gp
+	var q Point_ptr = 8
+	pq := &q
+	println(len(a), *a[2][0], len(b), (*b[0])[1], len(ps), ps[1].x, len(qs), qs[2], (<-ch).x, <-cq, (*pp).x, *pq)
+}
+`,
+		want: "3 2 1 8 2 3 3 6 3 7 3 8\n",
+	},
+	{
 		name: "indexes, slice bounds and make lengths of 64 bits",
 		src: `var xs = [5]int{10, 11, 12, 13, 14}
 

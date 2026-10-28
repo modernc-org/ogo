@@ -3950,8 +3950,9 @@ caller's own rule. **A rule read off one step is asked of a chain of them: a vie
 a view is the view, at any length.** sweeps/reslice, 396 rows: 123 unsound before,
 none after. Its controls met a loud fault: an append to a `[][]*int` wrote C naming a
 typedef nobody declared, a slice's element read back off its C name with every
-"_ptr" taken for a star; it is the element the name was made with now (a `[][]*int`
-and a `[]*[]int` in one program still share a name, listed). And asking the contents
+"_ptr" taken for a star; it is the element the name was made with now, and an
+"_ptr" an element spells itself is "_ptrx" in a name, so that a `[][]*int` and a
+`[]*[]int` in one program, or a `[]*Point` and a `[]Point_ptr`, are two names. And asking the contents
 rule its row found a second silent fault: what a call hands back HOLDS was asked
 nowhere a result is bound -- `b := get(s); gk = b[0]`, for a get handing back a slice
 of pointers to the caller's locals, kept a local's address, `231` for Go's `7` -- and a
@@ -4863,8 +4864,7 @@ read in an inner block, dated to that block, `rm.unmarshal(e, &a)` in a range ov
 array of slice literals with rm declared before the loop, and `r.set(xs[i])` in a
 loop (dom77); a field read of a value holding a pointer to a local, written out or
 handed back by a method, for a `P{h: &h}` (the marks are one level; dom77,
-sweeps/result-contents, 9 rows); a `[][]*int` and a `[]*[]int` in one program, one C
-name to both, which both C compilers refuse (dom77); a
+sweeps/result-contents, 9 rows); a
 Builder passed by value, `count(sb)` for a `func count(b Builder)`, "cannot use sb
 as Builder value in argument to count: it is a struct" (a pointer is the spelling
 that works); an

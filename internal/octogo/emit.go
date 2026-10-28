@@ -5627,14 +5627,22 @@ func sliceTypedefDef(elem string) string {
 }
 
 // sanitizeElem turns a C element type into an identifier fragment: a pointer's "*"
-// becomes "_ptr", so []*Point -> ogo_slice_Point_ptr stays a valid C identifier.
-func sanitizeElem(elem string) string { return strings.ReplaceAll(elem, "*", "_ptr") }
+// becomes "_ptr", so []*Point -> ogo_slice_Point_ptr stays a valid C identifier,
+// and an "_ptr" the element spells itself becomes "_ptrx", so that it is not read
+// as a star. Without it two elements were one name: `[][]*int`'s,
+// ogo_slice_int_ptr, and `[]*[]int`'s, ogo_slice_int*, and so were `[]*Point`'s
+// and a `type Point_ptr`'s, and both C compilers refused the two typedefs (dom77).
+// A star in a C type is followed by nothing but a star, so no "_ptr" a star makes
+// is followed by an x.
+func sanitizeElem(elem string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(elem, "_ptr", "_ptrx"), "*", "_ptr")
+}
 
 // sliceElemFromCName recovers the element C type from a slice type name: the
 // element needSlice recorded for it, or, for a name none was recorded for, the
 // inverse of sliceCName's spelling ("ogo_slice_int" -> "int",
-// "ogo_slice_Point_ptr" -> "Point*"). The spelling is no inverse where an element's
-// own name has "_ptr" in it -- a slice of slices of pointers, `[][]*int`, is
+// "ogo_slice_Point_ptr" -> "Point*"). The spelling was no inverse where an element's
+// own name has "_ptr" in it -- a slice of slices of pointers, `[][]*int`, was
 // ogo_slice_ogo_slice_int_ptr, which it read as a slice of `ogo_slice_int*` -- and
 // an append to one wrote C naming a typedef nobody declared (dom77).
 func (e *emitter) sliceElemFromCName(ct string) string {
@@ -5645,9 +5653,26 @@ func (e *emitter) sliceElemFromCName(ct string) string {
 }
 
 // sliceElemFromSpelling is sliceCName's spelling read back, for a slice name no
-// element was recorded for.
+// element was recorded for: an "_ptrx" is the element's own "_ptr", any other
+// "_ptr" a star (sanitizeElem).
 func sliceElemFromSpelling(ct string) string {
-	return strings.ReplaceAll(strings.TrimPrefix(ct, sliceTypePrefix), "_ptr", "*")
+	s := strings.TrimPrefix(ct, sliceTypePrefix)
+	var b strings.Builder
+	for {
+		i := strings.Index(s, "_ptr")
+		if i < 0 {
+			b.WriteString(s)
+			return b.String()
+		}
+		b.WriteString(s[:i])
+		s = s[i+len("_ptr"):]
+		if rest, own := strings.CutPrefix(s, "x"); own {
+			b.WriteString("_ptr")
+			s = rest
+			continue
+		}
+		b.WriteByte('*')
+	}
 }
 
 // appendCName, tryappendCName and appendokCName name the per-element append
