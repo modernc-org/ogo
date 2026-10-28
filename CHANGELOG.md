@@ -61,6 +61,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A wrong answer, silent, measured on a P2-EDGE: a function that only hands a
+  struct on left the stack higher at every call**: `func (t Time) Minute() int {
+  return int(t.abs()%3600) / 60 }`, as Go's time package writes it, or any
+  function passing a struct parameter on to a call and keeping nothing of its own,
+  took a copy of the struct on the stack for the call and never gave it back, the
+  C backend giving such a function no frame to give it back by. A loop of such
+  calls ran the stack past the end of Hub RAM and the program stopped, printing
+  nothing more and no panic: a cron search over Go's time died after 10835 passes.
+  A struct over four longs, or with a member that is not a long -- an int64, a
+  float64, a byte, a nested struct -- is copied so. The backend gives such a
+  function a frame now (internal/functions.c.diff, carried ahead of upstream). In
+  every release checked since v0.40.0.
 - **A Swap of a local slice's elements builds**: `func (s *byKey) Swap(i, j int) {
   s.r[i], s.r[j] = s.r[j], s.r[i] }`, called on a local slice of pointers, or of
   structs holding a string, directly or through an interface as sort.Sort calls

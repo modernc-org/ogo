@@ -7,6 +7,46 @@ adoption and on the board, and the faults each cleared or carried. CLAUDE.md kee
 the procedure, the latest entry and the facts that still stand; the next
 regeneration's record goes here, at the top, and replaces the entry CLAUDE.md keeps.
 
+**Backend regenerated 2026-10-28 at the same pin, spin2cpp `b5993a84`, with a fourth
+fix of its own** (inside flexprop `v7.7.0`; ccgo v4.36.1, libc v1.77.1):
+`internal/functions.c.diff`'s second hunk, for a silent fault of every function that
+hands a struct on. A struct argument the target passes by reference to a copy -- one
+over four longs, or with a member that is not a long: an int64, a float64, a byte, a
+nested struct -- is copied into memory AstFuncTempMemory takes on the stack at the top
+of the function, and it did not mark the function as using alloca, the flag by which
+NeedFramePointer gives a function a frame and NeverInline keeps the inliner off it. A
+function needing no frame of its own -- one that only passes a struct on, `return
+int(t.abs()%3600) / 60` as Go's time package writes Time.Minute -- took the copy, `mov
+arg01, ptra; add ptra, #16`, and returned without giving it back, and so did an
+inlined copy in its caller's loop: a loop of such calls ran the stack past the end of
+Hub RAM and the program stopped printing, with no panic. dom78's mutants found it: a
+cron search died after 10835 passes, a local's address climbing 32 bytes a pass to
+0x7d430. Upstream's own Test/Expect/stest184.pasm had pinned the leak
+(doc/struct-argument-copy-frameless.c). In every release checked, v0.40.0 among them,
+and under the backend before 2026-10-25's regeneration. Measured natively before
+adoption, the pin with the three carried diffs against the same with the hunk:
+spin2cpp's `make test_offline` fails the 15 goldens SplitLocalStructs changes either
+way, and the hunk changes one more, stest184, which now saves and restores a frame; of
+1546 programs (the run cases, seeds 1-400, doc/, the domain programs dom59-dom78) 5
+build differently, and on a P2-EDGE each prints what it printed; a scan of the
+listings for a function moving ptra up with no frame finds 15 before -- dom78's Time
+accessors, and three thunks the emitter writes to call a value method through an
+interface, one of them promoted -- and none after
+(build/probes/sweeps/frameless-copy's leakscan.py); the reproducer loses 16000 bytes
+over 1000 calls before and none after; sweeps/frameless-copy, 72 rows (eight types,
+nine ways to hand a value on), has 18 dying on the board before -- among them every
+call through an interface of a value method, whose thunk the emitter writes frameless,
+`return T_Get(*(T*)r)` -- and 2 more leaking less than the stack holds, the listings
+30 such functions, and after the hunk none, every row printing Go's output but one, a
+fault of the emitter's of its own (a struct embedding an array type, fixed after).
+Each builder's turn changed its own target only (the fold expanded and hashed after
+each), and the five scripts/flexcc lists are the native build's but for
+doc/switch-case-span-overflow.c, which the linux transpiles' qsort never finishes, and
+doc/register-limit-crash.c, which crashes the backend in every build, natively too,
+before the change as after. p2-11's and obeam's thirteen binaries are byte-identical,
+and dom78's 345 mutants that Go ends print Go's output on the board. Host suite and
+`make board` (1053 passing, seed 6 outgrowing a cog as before) green.
+
 **Backend regenerated 2026-10-25 at the same pin, spin2cpp `b5993a84`, with a third
 fix of its own** (inside flexprop `v7.7.0`; ccgo v4.36.1, libc v1.77.1):
 `internal/outasm.c.diff`'s second hunk, SplitLocalStructs, for a cost, not a fault. A

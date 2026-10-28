@@ -18145,6 +18145,9 @@ func x__AstFuncTempMemory(tls *libc.TLS, cc *CC, siz uint32) (r uintptr) {
 		return libc.UintptrFromInt32(0)
 	}
 	val = x__NewAST(tls, cc, int32(_AST_ALLOCA), cc.x__ast_type_ptr_void, x__AstInteger(tls, cc, libc.Int64FromUint32(siz)))
+	// the memory is given back where the function returns, which a function
+	// without a frame does not do
+	libc.SetBitFieldPtr32Uint32(cc.x__curfunc+1248, libc.Uint32FromInt32(1), 15, 0x8000)
 	ptr = x__AstTempLocalVariable(tls, cc, __ccgo_ts+31768, libc.UintptrFromInt32(0))
 	val = x__AstAssign(tls, cc, ptr, val)
 	val = x__NewAST(tls, cc, int32(_AST_STMTLIST), val, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbody)

@@ -492,46 +492,46 @@ inputs, and never hand-edit the outputs.
    `freopen`, and the `ungetc`/`abort` todo-stub redirects — that libc lacks or
    stubs for both darwin arches).
 
-   > **Backend regenerated 2026-10-25 at the same pin, spin2cpp `b5993a84`, with a third
+   > **Backend regenerated 2026-10-28 at the same pin, spin2cpp `b5993a84`, with a fourth
    > fix of its own** (inside flexprop `v7.7.0`; ccgo v4.36.1, libc v1.77.1):
-   > `internal/outasm.c.diff`'s second hunk, SplitLocalStructs, for a cost, not a fault. A
-   > local of several longs held in registers -- a struct, a slice or string header, a
-   > 64-bit value -- is a base register with a subregister a long past the first, and
-   > RenameSubregs keeps its longs in consecutive registers; ReuseLocalRegisters gives no
-   > subregister back, so every such local held its registers to the end of its function,
-   > and every slice a function passed to a call, a temporary of its own, held three. A
-   > Go-shaped main outgrew the cog's 480: dom63's and dom65's had to be split
-   > (doc/complit-arg-registers.c, the limit's reproducer since 2026-09-25, 210
-   > registers). The hunk splits such a local, before the function's first
-   > optimization, into one local a long wherever nothing reads its longs as a block --
-   > its register's address taken for an indexed access (an IMM_COG_LABEL of its name),
-   > inline assembly, an instruction after a SETQ -- and ReuseLocalRegisters then treats
-   > them as it treats an int's. Measured natively before adoption, b5993a84 with the
-   > three carried diffs against the same with the hunk: forty slice arguments of every
-   > spelling took 120 registers and take none, their longs moved straight into the
-   > argument registers (build/probes/regs); the reproducer builds in 21, dom65's unsplit
-   > main takes 9 for 117. spin2cpp's `make test_offline`: 15 of its asm goldens changed,
-   > each read -- nine only reserve no register for a local the optimizer had already
-   > removed, six shorter and right, two of them making functions identical that the
-   > backend then merges -- and 552 of 552 pass on the updated goldens. Of 1503 programs
-   > (the run cases, seeds 1-400, doc/) 1165 build differently, 44 that did not build now
-   > do, and on a P2-EDGE every one prints what the old backend's build printed (the run
-   > cases and seeds held to the host's run of the same C, the reproducers to the old
-   > backend's own run; build/probes/s2c/boardcmp.py): a test's elapsed time aside, the
-   > held faults' lines read registers nothing wrote both ways, and two loads lost to the
-   > loader matched rerun. doc/register-limit-crash.c, the backend's crash past its
-   > register limit, no longer reached the limit in its shape of thirty struct locals; it
-   > is a hundred local arrays indexed in place now, which the hunk leaves together, and
-   > crashes both ways. Each builder's turn changed its own target only (the fold
+   > `internal/functions.c.diff`'s second hunk, for a silent fault of every function that
+   > hands a struct on. A struct argument the target passes by reference to a copy -- one
+   > over four longs, or with a member that is not a long: an int64, a float64, a byte, a
+   > nested struct -- is copied into memory AstFuncTempMemory takes on the stack at the
+   > top of the function, and it did not mark the function as using alloca, the flag by
+   > which NeedFramePointer gives a function a frame and NeverInline keeps the inliner
+   > off it. A function needing no frame of its own -- one that only passes a struct on,
+   > `return int(t.abs()%3600) / 60` as Go's time package writes Time.Minute -- took the
+   > copy, `mov arg01, ptra; add ptra, #16`, and returned without giving it back, and so
+   > did an inlined copy in its caller's loop: a loop of such calls ran the stack past
+   > the end of Hub RAM and the program stopped printing, with no panic. dom78's mutants
+   > found it: a cron search died after 10835 passes, a local's address climbing 32 bytes
+   > a pass to 0x7d430. Upstream's own Test/Expect/stest184.pasm had pinned the leak
+   > (doc/struct-argument-copy-frameless.c). In every release checked, v0.40.0 among
+   > them, and under the backend before 2026-10-25's regeneration. Measured natively
+   > before adoption, the pin with the three carried diffs against the same with the
+   > hunk: spin2cpp's `make test_offline` fails the 15 goldens SplitLocalStructs changes
+   > either way, and the hunk changes one more, stest184, which now saves and restores a
+   > frame; of 1546 programs (the run cases, seeds 1-400, doc/, the domain programs
+   > dom59-dom78) 5 build differently, and on a P2-EDGE each prints what it printed; a
+   > scan of the listings for a function moving ptra up with no frame finds 15 before --
+   > dom78's Time accessors, and three thunks the emitter writes to call a value method
+   > through an interface, one of them promoted -- and none after
+   > (build/probes/sweeps/frameless-copy's leakscan.py); the reproducer loses 16000 bytes
+   > over 1000 calls before and none after; sweeps/frameless-copy, 72 rows (eight types,
+   > nine ways to hand a value on), has 18 dying on the board before -- among them every
+   > call through an interface of a value method, whose thunk the emitter writes
+   > frameless, `return T_Get(*(T*)r)` -- and 2 more leaking less than the stack holds,
+   > the listings 30 such functions, and after the hunk none, every row printing Go's
+   > output but one, a fault of the emitter's of its own (a struct embedding an array
+   > type, fixed after). Each builder's turn changed its own target only (the fold
    > expanded and hashed after each), and the five scripts/flexcc lists are the native
    > build's but for doc/switch-case-span-overflow.c, which the linux transpiles' qsort
-   > never finishes, before the change as after. Programs come out smaller where they fit
-   > before -- p2-11's 390 KB main 2.4 KB, obeam's checked VM 3.8 KB -- but a marked
-   > function now small enough to inline is inlined: obeam's unchecked VM, its arena sized
-   > to the room its checks leave, outgrew Hub RAM by 3 KB with its marks, so a build
-   > outgrowing the hub is built plainer as one outgrowing the cog is (compileMarked,
-   > outgrewHub), and it builds unmarked 3.4 KB smaller than before. p2-11's 72 tests
-   > pass on the board; host suite and `make board` (1031 passing, seed 6 outgrowing a cog as before) green.
+   > never finishes, and doc/register-limit-crash.c, which crashes the backend in every
+   > build, natively too, before the change as after. p2-11's and obeam's thirteen
+   > binaries are byte-identical, and dom78's 345 mutants that Go ends print Go's output
+   > on the board. Host suite and `make board` (1053 passing, seed 6 outgrowing a cog as
+   > before) green.
    >
    > Every regeneration's record, this one included, is in `doc/REGEN-HISTORY.md`,
    > newest first; the next one goes there and replaces the entry above. What still

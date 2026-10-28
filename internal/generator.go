@@ -39,14 +39,16 @@ const (
 	// sit on spin2cpp's master for longer than that -- which is what spin2cppRef,
 	// below, is for.
 	//
-	// All five committed backends were regenerated against this pair on 2026-10-14
+	// All five committed backends were regenerated against this pair on 2026-10-28
 	// with ccgo v4.36.1 and libc v1.77.1, go.mod's (flexprop at v7.7.0, spin2cpp at
 	// spin2cppRef, the four spin2cppDiffs applied). scripts/flexcc built for each of
 	// the five platforms compiles the doc/ reproducers and a scripts/dumpcorpus.sh
 	// dump of the run cases and fuzzer seeds 1-400 to one and the same
 	// scripts/cccorpus.sh list -- windows/amd64's taken under wine -- and that list
-	// is a native build's of the same tree. The regeneration before, 2026-10-13, was
-	// at the same pin without functions.c.diff and outasm.c.diff; the one before it,
+	// is a native build's of the same tree. The regenerations before, 2026-10-25 and
+	// 2026-10-14, were at the same pin without functions.c.diff's second hunk, and
+	// the one of 2026-10-14 without outasm.c.diff's second hunk either; 2026-10-13's
+	// without functions.c.diff and outasm.c.diff; the one before it,
 	// 2026-10-08, at 1d709b25 with optimize_ir.c.diff's two hunks; 2026-10-02's at
 	// eb263961 with its first hunk alone; and 2026-09-21's, ccgo v4.34.6's, with no
 	// fix carried.
@@ -191,7 +193,16 @@ var (
 	// (doc/complit-arg-registers.c). SplitLocalStructs splits such a local into one
 	// local a long where nothing reads its longs as a block -- its address taken for
 	// an indexed access, inline assembly, a SETQ burst -- and the optimizer reuses
-	// their registers as it reuses a scalar's.
+	// their registers as it reuses a scalar's. functions.c.diff's second hunk, since
+	// 2026-10-28, is a silent fault: a struct argument the target passes by reference
+	// to a copy -- one over four longs, or with a member that is not a long -- is
+	// copied into memory AstFuncTempMemory takes on the stack, and it did not mark
+	// the function as one using alloca, by which the backend gives a function a frame
+	// and the inliner leaves it alone. A function needing no frame of its own, one
+	// that only hands a struct on, `return int(t.abs()%3600) / 60` as Go's time
+	// writes Minute, left the stack higher by the copy at every call, and a loop of
+	// such calls ran the stack past the end of Hub RAM; so did an inlined copy in its
+	// caller's loop (doc/struct-argument-copy-frameless.c; found by dom78's mutants).
 	spin2cppDiffs = []string{"mcpp_main.c.diff", "optimize_ir.c.diff", "functions.c.diff", "outasm.c.diff"}
 	target        = fmt.Sprintf("%s/%s", goos, goarch)
 )
