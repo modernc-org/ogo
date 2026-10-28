@@ -56142,6 +56142,51 @@ func main() {
 		want: "3 5 7 6 6 2\n2 9 4\n",
 	},
 	{
+		// An integer constant whose expression passes through a float, `const p int
+		// = 0.29 * 100`, is the integer Go computes exactly. The integer fold did not
+		// read the float, and the constant was written as its expression, which C
+		// computed in doubles: 28 on the host for Go's 29, 9199999999999998976 for
+		// 9.2e18, and an int64 past a double's range, time's absoluteToInternal,
+		// refused by the host's compiler and taken by the target's (dom78).
+		name: "integer constants computed through a float",
+		src: `type Duration int64
+
+const (
+	k6 int      = 0.29 * 100
+	kd Duration = 1.5 * 1e9
+	ke int64    = 9.2 * 1e18
+	kg uint64   = 1.8446744073709551e19 / 2
+	kj int64    = (-292277022399 - 1) * 365.2425 * 86400
+	kn int64    = -9.2233720368547758e18
+	z0 uint64   = 1.8446744073709551615e19
+	q1 uint32   = 4.294967295e9
+	b0 int8     = -1.28e2
+	r1 int      = 0.1 * 3 * 10
+)
+
+const (
+	i0 int = iota * 0.5 * 2
+	i1
+	i2
+)
+
+type Big uint64
+
+const bg Big = 1.25 * (1 << 62)
+
+func main() {
+	const lk int = 0.29 * 100
+	println(k6, kd, ke, kg, kj, kn)
+	println(z0, q1, b0, r1, i1, i2, bg, lk)
+	var a [lk]byte
+	a[28] = 1
+	x := int64(3)
+	println(len(a), a[28], kj/86400, x*ke/9, uint64(x)+z0/4)
+}
+`,
+		want: "29 1500000000 9200000000000000000 9223372036854775500 -9223371966579724800 -9223372036854775800\n18446744073709551615 4294967295 -128 3 1 2 5764607523034234880 29\n29 1 -106751990353932 1017028436254494264 4611686018427387906\n",
+	},
+	{
 		// A whole float constant, `const K = 2.0`, where Go wants an integer: an
 		// array's length, a literal's key, len of an array type written with it, a
 		// case beside an integer tag. The key was refused by the emitter, the

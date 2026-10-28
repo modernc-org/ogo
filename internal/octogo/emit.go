@@ -11660,6 +11660,21 @@ func (e *emitter) evalConst(name, ownType string, hasType bool, initExpr []int32
 	ev.val, ev.hasVal = e.foldConstVal(initExpr)
 	ev.untyped = !hasType && e.exprUntyped(initExpr)
 	ev.intVal, ev.hasInt = e.constIntValueIn(initExpr, ctype)
+	// An integer constant whose expression passes through a float, `const p int =
+	// 0.29 * 100`, is the integer Go computes exactly, which the integer fold does
+	// not reach: the constant was written out as its expression, which C computes
+	// in doubles -- 28 on the host for Go's 29, and `(zeroYear - 1) * 365.2425 *
+	// 86400` an int64 past a double's range, which the host's compiler refused and
+	// the target's took (dom78).
+	if _, isInt := cIntWidths[e.underlyingCType(ctype)]; isInt && !ev.hasInt && ev.hasVal {
+		if iv := constant.ToInt(ev.val); iv.Kind() == constant.Int {
+			if x, exact := constant.Int64Val(iv); exact {
+				ev.intVal, ev.hasInt = x, true
+			} else if x, exact := constant.Uint64Val(iv); exact {
+				ev.intVal, ev.hasInt = int64(x), true
+			}
+		}
+	}
 	_, ev.isHuge = e.hugeConstVal(initExpr)
 	ev.strVal, ev.hasStr = e.foldConstString(initExpr)
 	if e.underlyingCType(ctype) == cBool {

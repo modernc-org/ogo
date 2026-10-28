@@ -53,6 +53,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An integer constant computed through a float is the integer Go computes**:
+  `const p int = 0.29 * 100` was written as its expression, which C computed in
+  doubles -- 28 on the host where Go prints 29 -- and on a P2-EDGE, whose double
+  has 32 bits, `const k int64 = 9.2 * 1e18` printed -2147483648 and a `uint32` of
+  4.294967295e9 printed 2147483648, the build giving no warning; Go 1.20's
+  `absoluteToInternal`, `(absoluteZeroYear - internalYear) * 365.2425 *
+  secondsPerDay`, was refused by the host's compiler, and `iota * 0.5 * 2` by the
+  target's. Each is folded exactly now, as a variable's value and an expression
+  in a function were, in every release checked since v0.50.0.
 - **A slice of slices of pointers, and a type named like a pointer, build**: an
   append to a `[][]*int` wrote C naming a typedef nobody declared,
   `ogo_slice_int**`, which both compilers refused, and a `[][]my_ptr` for a `type
