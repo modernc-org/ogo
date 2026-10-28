@@ -1,0 +1,71 @@
+// COMPILE
+// len and cap of a package array are constants wherever the array is declared: Go's
+// package declarations are in no order, and every type and constant is resolved
+// before any variable, so a bound or a constant naming a variable declared below
+// it, or naming any variable from a type, met one with no type recorded yet --
+// "non-constant array bound", "len is not a constant" (dom80's `var stepErrs
+// [len(plan)]StepError` above its `var plan [nSteps]Step`). A type's bound is read
+// so only where every type the variable's type reaches is resolved before it: types
+// are resolved in source order, and Step here is above the types naming plan.
+
+const (
+	nA     = 3
+	nSteps = nA + 2
+)
+
+type Step struct {
+	Kind int
+	Freq float64
+	Arr  [2]int8
+}
+
+type StepError struct {
+	Step int
+	Err  error
+}
+
+var stepErrs [len(plan)]StepError
+
+const nPlan = len(plan) + cap(plan)
+
+type Errs [len(plan)]int
+
+type Holder struct {
+	errs [len(plan) * 2]int8
+}
+
+var plan [nSteps]Step
+
+// From a literal, a conversion, a pointer, a field, an element, one of two names.
+var (
+	b1 [len(lit)]int
+	b2 [len(conv)]int
+	b3 [len(pa)]int
+	b4 [len(fr.body)]int
+	b5 [len(grid[1])]int
+	b6 [len(q)]int
+)
+
+type Row [4]int
+
+var (
+	lit  = [...]int{1, 2, 3}
+	conv = Row{1}
+	pa   *[6]int
+	fr   struct{ body [7]byte }
+	grid [2][9]int
+	p, q [3]int8
+)
+
+// A shift by one is a constant shift: 1 << 12 >> 10.
+var u8 uint8 = 1 << len(msg) >> 10
+
+var msg [12]byte
+
+func main() {
+	var e Errs
+	var h Holder
+	println(len(stepErrs), nPlan, len(e), len(h.errs), len(plan))
+	println(len(b1), len(b2), len(b3), len(b4), len(b5), len(b6), u8)
+	println(lit[0], conv[0], pa == nil, fr.body[0], grid[1][8], p[0], q[2], msg[0])
+}

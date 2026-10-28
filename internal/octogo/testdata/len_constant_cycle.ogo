@@ -1,0 +1,45 @@
+// len of a package array declared later is a constant (see
+// len_constant_declared_later.ogo), but not where reading the array's type runs
+// into a declaration being resolved: Go reports a cycle there, through any type the
+// array's type reaches -- a pointer, a slice, a field the length does not read.
+// Read when it reached a type not yet resolved, each of these was taken.
+
+// ERROR len is not a constant
+const n1 = len(plan1)
+
+var plan1 [4]S1
+
+type S1 struct{ v [n1]int }
+
+// ERROR len is not a constant
+const n2 = len(tbl2)
+
+var tbl2 [3]*L2
+
+type L2 struct{ v [n2]int }
+
+// ERROR len is not a constant
+const n3 = len(tbl3)
+
+var tbl3 [3][]L3
+
+type L3 struct{ v [n3]int }
+
+// ERROR len is not a constant
+const n4 = len(t4.a)
+
+var t4 T4
+
+type T4 struct {
+	a [3]int
+	b [n4]byte
+}
+
+// ERROR non-constant array bound
+type E5 [len(plan5)]int
+
+var plan5 [3]E5
+
+func main() {
+	println(len(plan1), len(tbl2), len(tbl3), t4.a[0], len(plan5))
+}

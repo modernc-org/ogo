@@ -30741,6 +30741,10 @@ type VarSpecNode struct {
 	// names is resolved first (demandVars).
 	file *File
 	node Node
+
+	// reading is set while specVarTypeAt reads the spec's type ahead of its
+	// resolution, against two specs whose lengths name each other.
+	reading bool
 }
 
 func (f *File) declareVarSpec(s *Scope, n Node) (names []Token, r *VarSpecNode) {
@@ -33560,7 +33564,9 @@ func (f *File) headStepsType(s *Scope, id Token, steps []Node, calls bool) (type
 	case *VarDeclaration:
 		var ok bool
 		if t, ok = f.varTypeAt(d); !ok {
-			return typeAt{}, false
+			if t, ok = f.specVarTypeAt(s, id, d); !ok {
+				return typeAt{}, false
+			}
 		}
 	default:
 		// Another package's variable, `geo.Table`.
@@ -33742,6 +33748,123 @@ func (f *File) varTypeAt(d *VarDeclaration) (typeAt, bool) {
 		return typeAt{&FunctionType{Signature: d.funcSig}, d.declScope, wf}, true
 	}
 	return typeAt{}, false
+}
+
+// specVarTypeAt is varTypeAt for a package variable not resolved yet. Go's package
+// declarations are in no order, and every type and constant is resolved before any
+// variable, so `var errs [len(plan)]E` above a `var plan [8]Step`, and a `type E
+// [len(plan)]int` or a `const n = len(plan)` anywhere, met a plan with no type
+// recorded: "non-constant array bound" and "len is not a constant" (dom80). The type
+// is read off the declaration as varSpec will resolve it -- the type written, or the
+// literal or conversion the name is initialized from -- and nothing is recorded:
+// what the read reports of the spec itself varSpec reports again when it resolves
+// it, a type too large to report twice among it, and what it reports of another
+// declaration it resolved on the way is kept, that one being resolved for good. A
+// spec being read answers nothing, so declarations whose lengths name each other
+// end; and the type is read only when every type it reaches is settled
+// (specTypeSettled), Go reporting a cycle where one is not.
+func (f *File) specVarTypeAt(s *Scope, id Token, d *VarDeclaration) (typeAt, bool) {
+	vs := d.VarSpec
+	if vs == nil || vs.file == nil || vs.gate != unvisited || vs.reading || vs.file.varSpecsDone[vs.node.Pos()] {
+		return typeAt{}, false
+	}
+	sc, _ := s.find2(id.Src())
+	if sc == nil || sc.Kind != PackageScope {
+		return typeAt{}, false
+	}
+	wf := vs.file
+	vs.reading = true
+	n0, large := len(wf.errList), maps.Clone(wf.tooLarge)
+	from, to := wf.tok(vs.node.Pos()).Position(), wf.tok(vs.node.End()).Position()
+	defer func() {
+		vs.reading = false
+		kept := wf.errList[:n0]
+		for _, e := range wf.errList[n0:] {
+			if e.Pos.Filename != from.Filename || e.Pos.Offset < from.Offset || e.Pos.Offset > to.Offset {
+				kept = append(kept, e)
+			}
+		}
+		wf.errList, wf.tooLarge = kept, large
+	}()
+	var names []Token
+	for c := range it(vs.node.ast) {
+		switch c.sym {
+		case IdentifierList:
+			names = wf.identifierList(sc, c)
+		case Type:
+			if tn := wf.typ(sc, c); tn != nil && specTypeSettled(sc, tn, map[*TypeDeclaration]bool{}) {
+				return typeAt{tn, sc, wf}, true
+			}
+			return typeAt{}, false
+		case ExpressionList:
+			exprs := expressionListItems(c)
+			if len(exprs) != len(names) {
+				return typeAt{}, false
+			}
+			for i, nm := range names {
+				if nm != d.Token() {
+					continue
+				}
+				if t, ok := wf.litOrConvType(sc, exprs[i]); ok && specTypeSettled(sc, t.tn, map[*TypeDeclaration]bool{}) {
+					return t, true
+				}
+				return typeAt{}, false
+			}
+		}
+	}
+	return typeAt{}, false
+}
+
+// specTypeSettled reports whether every type of this package tn reaches is resolved
+// already, walking each to what it reaches in turn: its TypeNode recorded, which
+// typeSpecBody sets once the type's body is. A type still being resolved is a cycle
+// Go reports -- `const n = len(plan)` for a `var plan [4]S` and a `type S struct{
+// v [n]int }`, through a pointer, a slice or a field the length does not read as
+// well -- and a type not resolved yet is left unread. A function or an interface
+// type, which a length is not read through in practice, answers false as well.
+func specTypeSettled(sc *Scope, tn TypeNode, seen map[*TypeDeclaration]bool) bool {
+	switch x := tn.(type) {
+	case *TypeNodeIdent:
+		if x.Qualifier.IsValid() {
+			return true // another package's, resolved before this one is
+		}
+		switch d := sc.find(x.Name.Src()).(type) {
+		case *PredeclaredType:
+			return true
+		case *TypeDeclaration:
+			if seen[d] {
+				return true
+			}
+			seen[d] = true
+			return d.TypeSpec != nil && d.TypeSpec.TypeNode != nil && specTypeSettled(sc, d.TypeSpec.TypeNode, seen)
+		}
+	case *TypeNodeArray:
+		return specTypeSettled(sc, x.TypeNode, seen)
+	case *TypeNodeSlice:
+		return specTypeSettled(sc, x.TypeNode, seen)
+	case *TypeNodePointer:
+		return specTypeSettled(sc, x.TypeNode, seen)
+	case *TypeNodeChan:
+		return specTypeSettled(sc, x.TypeNode, seen)
+	case *TypeNodeStruct:
+		for _, field := range x.Fields {
+			if field.TypeNode != nil {
+				if !specTypeSettled(sc, field.TypeNode, seen) {
+					return false
+				}
+				continue
+			}
+			name, isEmb := embeddedFieldName(field)
+			if !isEmb {
+				return false
+			}
+			if !field.EmbeddedPkg.IsValid() && !specTypeSettled(sc, &TypeNodeIdent{Name: name}, seen) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // predeclaredTypeAt is the predeclared type of kind k, as the universe declares it.

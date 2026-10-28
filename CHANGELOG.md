@@ -16,6 +16,20 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Language
+
+- **len and cap of a package array declared below are constants**: `var stepErrs
+  [len(plan)]StepError` above a `var plan [8]Step` was refused, "non-constant
+  array bound", and so were `const n = len(plan)` above it and a type's or a
+  field's bound naming plan anywhere, "len is not a constant": Go's package
+  declarations are in no order. Where reading the array's type runs into a
+  declaration still being resolved -- `const n = len(plan)` for a `var plan [4]S`
+  and a `type S struct{ v [n]int }` -- Go reports a cycle, and the program is
+  refused as before. A type naming such an array whose element type is declared
+  below the type is still refused.
+
 ## v1.0.0-rc.2
 
 The second release candidate for v1.0. Both rounds run against rc.1 found silent
