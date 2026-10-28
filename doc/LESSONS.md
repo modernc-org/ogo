@@ -3972,6 +3972,98 @@ alike, and the one that differs appends past a slice's capacity (DIFFERENCES.md)
 after Go's lines. On the board all 366 that Go ends print Go's output. No fuzzer
 part changed since dom76. A silent round: the count against the candidate is 0, and
 its fixes are the next candidate's.
+**dom78, a scheduler on a real-time clock** (2026-10-28, a round against the code
+meant for v1.0.0-rc.2): Go 1.20's time package ported as written -- the
+absolute-epoch date arithmetic, Date's normalization, AddDate, ISOWeek, Sub's
+saturation, the named layouts, nextStdChunk, appendInt and the format loop, Parse
+and its ParseError with time's quote, Duration's String, Round and ParseDuration --
+over fixed zones from a pool; sort (Go 1.17's quickSort, heapSort, Stable's
+symMerge, Search) and container/heap with its PriorityQueue example ported;
+robfig/cron's six-field specs as bit sets, the descriptors and @every, and its Next
+with `goto WRAP`; a clock cog sending 400 RTC readings over a buffered channel to a
+main cog running the due jobs off a heap of entries, function values in their
+fields. Go's own twin printed wrong Unix times first: absoluteToInternal was
+misremembered, and Go 1.20's is `(absoluteZeroYear - internalYear) * 365.2425 *
+secondsPerDay`. Then `Sort(&ds)` over a local array of records holding a Time and a
+string was refused, "its parameter 1's contents are stored where they outlive every
+frame": Swap's `s.r[i], s.r[j] = s.r[j], s.r[i]` stores two pointers past its
+receiver, dom77's listed refusal, which refused sorting any local slice of pointers
+or of structs holding a reference, in every release; the arrays moved to package
+scope. Then the host build failed: `static const int64_t absoluteToInternal =
+(0xFFFFFFBBF2EE9140ULL * 365.2425 * 86400);`. That is a SILENT FAULT: a typed integer
+constant whose expression passes through a float, `const p int = 0.29 * 100`, was
+written as its expression, which C computes in doubles -- 28 on the host for Go's 29
+-- and on the board, whose double has 32 bits, `const k int64 = 9.2 * 1e18` printed
+-2147483648 and a uint32 of 4.294967295e9 2147483648, the build saying nothing. The
+integer fold does not read a float, and the exact fold's value, of a float kind, was
+not taken for the integer it is. A variable's value, a local's, an argument, a
+literal's element, a case and a conversion `int64(9.2 * 1e18)` were each right. **A
+typed constant takes its value from the exact fold, whatever kind the fold answers:
+a whole float is an integer to an integer type.** In every release checked, v0.50.0,
+v0.59.0 and v1.0.0-rc.1. Its main then outgrew a cog, parse holding 183 registers,
+and was split as the message says: its state into a struct, its switch into a
+method. Host and board print Go's 477 lines.
+The listed refusal was fixed, a value read from the elements it is stored among
+moving within them (storesBack), and its controls found a SECOND SILENT FAULT: a
+store through a method's result, `t.cur()[i] = t.cur()[i]`, and reduced, `t.q[0] =
+t.getp()[0]` in a method for a getp handing back `t.p`, kept the caller's local
+address in package storage, `32766` printed where Go prints `41`. dom77 had asked a
+caller's statement what such a method hands back; a callee's summary asked only
+whether it hands back the receiver itself, at a call's result read through (the
+derived edges) and at an argument passed on (the gates). **A rule a caller's
+statement asks of a call is asked by a callee's summary too: what a method hands
+back of what its receiver holds was followed where a statement read it and nowhere a
+summary did.** sweeps/callee-recv-contents, 456 rows (five getters, four ways to a
+receiver, three uses, five sinks, each with a control over package storage): 202
+unsound in v1.0.0-rc.1, none after, every control building. In every release
+checked, v0.50.0 and v0.59.0 among them. Followed, the gate refused dom77 itself:
+`bt2.Unmarshal(b, &a)` for a b its Marshal built by appending a field's bytes, the
+bytes a summary one level deep takes for everything the receiver's struct holds.
+**A summary kept one level deep is asked what the level holds: the contents of a
+[]byte are bytes, and a callee keeping them keeps nothing of the struct they were
+copied from** (paramContentsInert, the call site's contentsRef asked of a callee's
+parameter). Every host probe and sweep answers as before; 943 refused mutants are
+refused still; p2-11's and obeam's binaries are unchanged. Its 400 mutants on the
+host: 325 print what Go prints, 35 panic as Go does, 37 are refused alike, and of
+the 3 that differ two append past a slice's capacity, Go running out of memory
+growing it, and one panics in a String method printf calls, which fmt recovers
+from (both DIFFERENCES.md). On the board 342 of the 345 Go ends printed Go's output;
+m0123, m0185 and m0351 stopped a few seconds in, each at the line it stopped at
+before, and printed nothing in 30 minutes more, where Go and the host run each in
+0.2 s. They were taken at first for slow, cut short by the run's limit. That is a
+THIRD SILENT FAULT, the backend's: a function with no frame of its own that passes a
+struct by value -- Time.Minute as Go writes it, `return int(t.abs()%3600) / 60` --
+copies the struct onto the stack for the call, `add ptra, #16`, and nothing gives
+the copy back. m0351, instrumented, followed Go's trail through cron's Next pass for
+pass and died in a printf at pass 10835, a local's address climbing 32 bytes a pass
+to 0x7d430 of Hub RAM's 0x80000. spin2cpp's AstFuncTempMemory makes the alloca
+without setting uses_alloca, by which the asm backend gives a function a frame and
+the inliner leaves it alone; upstream's own stest184 golden had pinned the leak. In
+every release checked (v0.40.0, v0.50.0, v1.0.0-rc.1), under the backend before
+2026-10-25's regeneration too, and in dom78 itself, whose searches are short enough
+never to run out. **A run cut short on the board is run again past its time before
+it is called slow: a program that stops printing where Go and the host finish in a
+fraction of a second has died.** Fixed in the backend (internal/functions.c.diff's
+second hunk, the user's call, the five backends regenerated;
+doc/struct-argument-copy-frameless.c), and every target build's listing is read for
+such a function now (stackGivenBack). **A copy the backend makes for a call is asked
+where it is given back: a function with no frame gives back nothing, and every
+listing is read for one.** sweeps/frameless-copy, 72 rows (eight types, nine ways to
+hand a value on): 18 died on the board and 2 leaked less than the stack holds, among
+them every call through an interface of a value method, whose thunk the emitter
+writes frameless; none after. One row differed both ways, and that is a FOURTH
+SILENT FAULT, the emitter's: a struct embedding a defined array type, `type D struct
+{ T; z int }` for a `type T [3]int32`, has a member of the typedef's name, `T T_`,
+with no extents of its own, and four questions asked a field's extents alone. `D{v,
+4}` initialized the member with v's address, in silence on the target (the sweep's
+row printed 225637752 for Go's 375000) and refused by the host's compiler; a D was
+copied by assignment, which the target refuses; `d == e` compared the members'
+addresses, false for equal values on both; and its zero was braced as a scalar's.
+**A question whether a field is an array asks its type as well as its extents: an
+embedded defined array carries them in its typedef's name** (fieldDim). In every
+release checked (v0.40.0, v0.50.0, v1.0.0-rc.1). dom78's 345 mutants that Go ends
+print Go's output on the board under both fixes. No fuzzer part changed since dom77.
+A silent round: the count is 0, and its fixes are the candidate's.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

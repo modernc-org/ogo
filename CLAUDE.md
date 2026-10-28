@@ -123,6 +123,14 @@ silent fault puts the count back to 0. Each round's account is in
   element types were one C name), two
   listed (a store two pointers past a receiver; a slice literal's backing dated
   to the inner block it is read in) -- 0
+- dom78 (2026-10-28), a scheduler on a real-time clock (Go 1.20's time calendar,
+  Format, Parse and Duration, sort and container/heap ported, cron specs, a clock
+  cog): silent (a typed integer constant computed through a float, written as C
+  doubles; what a method hands back of its receiver's holdings, unasked in a
+  callee's summary; the backend's copy of a struct argument, never given back by
+  a function with no frame, fixed in the backend and all five regenerated; a
+  struct embedding an array type, its member taken for no array), one false
+  refusal fixed (a Swap of a local slice's elements, dom77's sort) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -824,7 +832,8 @@ had it on 2026-10-13"; the sections named in capitals below are its journal's.
   524288" is the PROGRAM's size, not a fault of ogo's (hubOverflow). Every test
   building for the target also reads the listing for the backend's heap
   (`heapFree` in board_test.go; A STRUCT THE BACKEND DOES NOT RETURN IN REGISTERS IT
-  RETURNS ON A HEAP).
+  RETURNS ON A HEAP), and for a function that takes stack it does not give back
+  (`stackGivenBack`; doc/struct-argument-copy-frameless.c).
 - `smith` (`internal/smith`, package `octosmith`; `ogo smith -seed N`) is an
   *oracle fuzzer*: it interprets the program as it generates it, so it knows the
   final state and emits a self-checking checksum, and a binary failing it
@@ -964,8 +973,11 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **A DOMAIN PROGRAM IS A PROBE**: **write a program a user would write, and when it
   hits something, sweep the row it belongs to.** **A domain program written as Go is
   written finds what one written for this compiler does not**. **A domain program
-  is run on the board even when the host matched**. A sweep's accessors record
-  ORDER, `calls = calls*10 + k`, not a count ("Process rules learned the hard way").
+  is run on the board even when the host matched**. **A run cut short on the board
+  is run again past its time before it is called slow: a program that stops
+  printing where Go and the host finish in a fraction of a second has died**
+  (dom78). A sweep's accessors record ORDER, `calls = calls*10 + k`, not a count
+  ("Process rules learned the hard way").
 - **A MUTATED PROGRAM IS A PROBE OF THE FRONT END**; **A MUTATION WITH GO AS THE
   ORACLE IS A PROBE OF THE CHECKER**; **A MUTANT GO ACCEPTS IS A PROBE OF THE
   EMITTER** -- **A mutant that compiles is run**; **A MUTANT IS RUN ON THE BOARD, AND
@@ -1015,7 +1027,9 @@ section. A new finding goes there; the rule it leaves goes here too.
 
 - **A DEFINED TYPE OVER U IS A ROW**: **A name a resolution keeps for one question
   is asked by every question of the type: the element's name was kept for its
-  methods and not for its slices** (dom73). **A PACKAGE BOUNDARY IS A ROW**: **A
+  methods and not for its slices** (dom73). **A question whether a field is an
+  array asks its type as well as its extents: an embedded defined array carries
+  them in its typedef's name** (dom78, fieldDim). **A PACKAGE BOUNDARY IS A ROW**: **A
   boundary sweep crosses two packages and three**; **Every row swept in one package
   is swept across the boundary too, with the qualified spelling in every
   position**; **A row swept in one package is swept with the qualified spelling**.
@@ -1047,7 +1061,8 @@ section. A new finding goes there; the rule it leaves goes here too.
   expression is asked what the shifted one is.** **A step one declaration form
   takes is asked of the others**. **A constant's value is exact, and a C spelling
   of it that is not -- a sign on a zero -- is the C compiler's arithmetic, not
-  Go's.**
+  Go's.** **A typed constant takes its value from the exact fold, whatever kind the
+  fold answers: a whole float is an integer to an integer type** (dom78).
 - **AN INTERFACE WRITTEN OUT IS A TYPE**: **A rule asked by name is a row of every
   type that has none.** **AN ALIAS OF A TYPE WRITTEN OUT IS THAT TYPE**: **a type
   that names no defined type is stored under the literal's table, and every place
@@ -1176,7 +1191,12 @@ section. A new finding goes there; the rule it leaves goes here too.
   and it refuses every field kept out of the holder** (dom75, sweeps/field-holder;
   listed). **What a call hands back is asked where it is bound as where it is
   written, and a method is asked what its receiver holds as well as what it is**
-  (dom77, sweeps/result-contents).
+  (dom77, sweeps/result-contents). **A rule a caller's statement asks of a call
+  is asked by a callee's summary too: what a method hands back of what its
+  receiver holds was followed where a statement read it and nowhere a summary
+  did.** **A summary kept one level deep is asked what the level holds: the
+  contents of a []byte are bytes, and a callee keeping them keeps nothing of the
+  struct they were copied from** (dom78, sweeps/callee-recv-contents).
 - **A PARENTHESISED HEAD IS A ROW OF EVERY SCAN**: **A new scan reads heads through
   them, and a new shape the emitter reads through parentheses is a row in each
   scan.**
@@ -1276,7 +1296,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   (TestBuildSharedVariables reads the listing).
 - **A STRUCT THE BACKEND DOES NOT RETURN IN REGISTERS IT RETURNS ON A HEAP**: **A
   promise the language makes about the hardware is checked in the listing**
-  (`__system___gc_` in it is the backend's heap).
+  (`__system___gc_` in it is the backend's heap). **A copy the backend makes for a
+  call is asked where it is given back: a function with no frame gives back
+  nothing, and every listing is read for one** (dom78, stackGivenBack).
 - **A GOROUTINE'S STACK IS READ OFF THE LISTING**: **A listing is a probe of what
   the C costs**; **a bound with no answer still has a floor**; **A size taken as
   asked is still held to the floor the build knows: what the user gave is no reason
