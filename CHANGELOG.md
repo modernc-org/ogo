@@ -50,9 +50,24 @@ shipped section tells a reader on that version that they have behaviour they do 
   nothing, so `gk = h.get()[0]` kept the address too. Each is refused now where
   what is handed back holds a reference to the frame, as `gk = h.s[0]` is, in every
   release.
+- **What a method hands back of what its receiver holds is asked in a callee
+  too**: `func (t *T) move() { t.q[0] = t.getp()[0] }`, for a `getp` handing back
+  `t.p`, kept the caller's local address that t.p held in package storage -- `32766`
+  printed where Go prints `41` -- and so did a callee storing it in a package
+  variable, handing it to a keeper, sending it or handing it back, by a pointer or
+  a value receiver, a parameter or a field. A caller's own statement had asked it
+  since the last entry; a callee's summary did not. Each is refused now, in every
+  release checked since v0.50.0.
 
 ### Fixed
 
+- **A Swap of a local slice's elements builds**: `func (s *byKey) Swap(i, j int) {
+  s.r[i], s.r[j] = s.r[j], s.r[i] }`, called on a local slice of pointers, or of
+  structs holding a string, directly or through an interface as sort.Sort calls
+  it, was refused, "what its receiver holds is stored where it outlives every
+  frame": a store two pointers past the receiver was taken to land where no rule
+  can name. A value read from the elements it is stored among moves within them,
+  and keeps nothing more.
 - **An integer constant computed through a float is the integer Go computes**:
   `const p int = 0.29 * 100` was written as its expression, which C computed in
   doubles -- 28 on the host where Go prints 29 -- and on a P2-EDGE, whose double

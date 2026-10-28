@@ -12522,6 +12522,31 @@ type crossEdge struct {
 	part bool
 }
 
+// paramContentsInert reports whether the contents of callee's parameter i can hold
+// no reference -- the bytes of a []byte, a string's, the int an *int points at --
+// so a callee keeping them keeps nothing of the caller's: the summaries keep
+// contents one level deep, and what a callee copies out of a []byte stood for every
+// reference the caller's struct the bytes came from held (dom78). The call site
+// asks the same of a value (contentsRef).
+func (e *emitter) paramContentsInert(callee string, i int) bool {
+	ps := e.funcParams[callee]
+	if i < 0 || i >= len(ps) {
+		return false
+	}
+	u := e.underlyingCType(ps[i])
+	switch {
+	case u == cString:
+		return true
+	case e.isSliceCType(u):
+		el, ok := e.sliceElemByName[u]
+		return ok && !e.carriesReference(el) && !e.holdsString(el, map[string]bool{})
+	case e.isPointer(u):
+		el := e.elemType(u)
+		return !e.carriesReference(el) && !e.holdsString(el, map[string]bool{})
+	}
+	return false
+}
+
 // viaGate is one call an argument's value went through, and the parameter of it.
 type viaGate struct {
 	callee string
@@ -12661,6 +12686,8 @@ func (e *emitter) gatesHold(via []viaGate, contents bool) (holds, contentsOut bo
 			if !e.retRecvShallow[v.callee] {
 				contents = true // what is past the receiver's pointee (deepRecvReturn)
 			}
+		case v.to < 0 && e.retRecvCont[v.callee]:
+			contents = true // what the receiver holds, `return t.p` (retRecvCont)
 		case v.to < 0:
 			return false, false
 		case v.to < len(rp) && rp[v.to]:
@@ -14987,6 +15014,14 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		}
 		for _, st := range through {
 			if storesPast(st) {
+				// A value read from the place it is stored into lands where it
+				// already was: the elements a Swap exchanges, `s.p[i], s.p[j] =
+				// s.p[j], s.p[i]`, keep nothing more however far past the receiver
+				// they lie. Taken for a keeper, sorting a local slice of what holds a
+				// reference was refused (dom77, dom78).
+				if e.storesBack(st) {
+					continue
+				}
 				sinkHeld(reachOfStore(st), leakGlobal)
 				if st.value != nil {
 					derived(st.value, leakGlobal, -1)
@@ -15955,7 +15990,7 @@ func (e *emitter) closeCrossParams() {
 			if ci := e.crossInto[g.callee]; g.to < len(ci) {
 				intos = ci[g.to]
 			}
-			if g.to < len(calleeC) {
+			if g.to < len(calleeC) && !e.paramContentsInert(g.callee, g.to) {
 				// What the callee does with its parameter's contents, the caller does
 				// with what it passed there: its own parameter's contents, or -- for
 				// an argument that WAS those contents -- their contents in turn.
@@ -16136,6 +16171,19 @@ func (e *emitter) closeCrossParams() {
 				}
 				orContents(g.caller, g.from, flags)
 				continue
+			}
+			// A method handing back what its receiver HOLDS, `return t.p`
+			// (retRecvCont): what it was called on holds what the result does, and
+			// goes where the result went, read through or taken whole. Unread, `t.q[0]
+			// = t.getp()[0]` kept a local's address in package storage, `t.getp()`
+			// being followed in a caller's statement (dom77) and not in a callee's
+			// summary (dom78).
+			if g.to < 0 && e.retRecvCont[g.callee] {
+				flags := g.sink
+				if g.slot >= 0 {
+					flags = leakGlobal // through a parameter, where no slot says
+				}
+				orContents(g.caller, g.from, flags)
 			}
 			// A value read through the result, `gbp = idH(h).c`: what the result points
 			// at holds, which is what was handed back holds -- one level, as the
@@ -17077,6 +17125,60 @@ type storeShape struct {
 	// elems says the store writes its ELEMENTS, as copy does: what storesPast reads.
 	target []int32
 	elems  bool
+}
+
+// storesBack reports whether a store's value is read from the elements it is
+// stored among: the target and the value are one call-free chain to the same slice
+// or array, `s.p[i]` and `s.p[j]`, an element of it each and nothing past the
+// element, so the value is in that storage already and moves within it. A step
+// past the element, `s.p[i].f`, may be through a pointer of one element and not of
+// the other, and is not one.
+func (e *emitter) storesBack(st storeShape) bool {
+	if st.value == nil || st.target == nil || st.elems {
+		return false
+	}
+	chain := func(ast []int32) (string, []Node, bool) {
+		kids, ok := e.soleFactor(e.unparenExpr(ast))
+		if !ok {
+			return "", nil, false
+		}
+		base, steps, ok := e.factorAccessChain(kids)
+		if !ok || len(steps) == 0 || steps[len(steps)-1].sym != Index {
+			return "", nil, false
+		}
+		for _, s := range steps {
+			if e.nodeHasEffect(s) {
+				return "", nil, false
+			}
+		}
+		return base, steps, true
+	}
+	tb, ts, ok := chain(st.target)
+	if !ok {
+		return false
+	}
+	vb, vs, ok := chain(st.value)
+	if !ok || vb != tb || len(vs) != len(ts) {
+		return false
+	}
+	for i := range len(ts) - 1 {
+		if !slices.Equal(e.tokenTexts(ts[i].ast), e.tokenTexts(vs[i].ast)) {
+			return false
+		}
+	}
+	return true
+}
+
+// tokenTexts is the source text of every token of ast, in order.
+func (e *emitter) tokenTexts(ast []int32) (out []string) {
+	for n := range it(ast) {
+		if n.sym == 0 {
+			out = append(out, e.src(n.tok))
+			continue
+		}
+		out = append(out, e.tokenTexts(n.ast)...)
+	}
+	return out
 }
 
 // throughStores lists the stores a statement makes THROUGH a name -- a selector, an

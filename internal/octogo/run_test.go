@@ -56187,6 +56187,69 @@ func main() {
 		want: "29 1500000000 9200000000000000000 9223372036854775500 -9223371966579724800 -9223372036854775800\n18446744073709551615 4294967295 -128 3 1 2 5764607523034234880 29\n29 1 -106751990353932 1017028436254494264 4611686018427387906\n",
 	},
 	{
+		// A Swap of a local slice's elements through an interface: the elements stay
+		// where they were (storesBack). It stores two pointers past its receiver,
+		// which the summaries took to land where no rule can name, and sorting a
+		// local slice of pointers, or of structs holding a string, was refused
+		// (dom77, dom78).
+		name: "sorting local slices through an interface",
+		src: `type rec struct {
+	key  int
+	name string
+}
+
+type sorter interface {
+	Len() int
+	Less(i, j int) bool
+	Swap(i, j int)
+}
+
+type byPtr struct{ r []*rec }
+
+func (s *byPtr) Len() int           { return len(s.r) }
+func (s *byPtr) Less(i, j int) bool { return s.r[i].key < s.r[j].key }
+func (s *byPtr) Swap(i, j int)      { s.r[i], s.r[j] = s.r[j], s.r[i] }
+
+type byVal struct{ r []rec }
+
+func (s *byVal) Len() int           { return len(s.r) }
+func (s *byVal) Less(i, j int) bool { return s.r[i].name > s.r[j].name }
+func (s *byVal) Swap(i, j int)      { s.r[i], s.r[j] = s.r[j], s.r[i] }
+
+func insertion(data sorter) {
+	for i := 1; i < data.Len(); i++ {
+		for j := i; j > 0 && data.Less(j, j-1); j-- {
+			data.Swap(j, j-1)
+		}
+	}
+}
+
+func run() {
+	recs := [5]rec{{3, "c"}, {1, "a"}, {4, "d"}, {1, "b"}, {5, "e"}}
+	var ps [5]*rec
+	for i := range recs {
+		ps[i] = &recs[i]
+	}
+	s := byPtr{ps[:]}
+	insertion(&s)
+	for _, p := range ps {
+		print(p.key, p.name, " ")
+	}
+	println()
+	v := byVal{recs[:]}
+	insertion(&v)
+	for _, r := range recs {
+		print(r.key, r.name, " ")
+	}
+	println()
+	println(ps[0].name, ps[4].name)
+}
+
+func main() { run() }
+`,
+		want: "1a 1b 3c 4d 5e \n5e 4d 3c 1b 1a \nd a\n",
+	},
+	{
 		// A whole float constant, `const K = 2.0`, where Go wants an integer: an
 		// array's length, a literal's key, len of an array type written with it, a
 		// case beside an integer tag. The key was refused by the emitter, the

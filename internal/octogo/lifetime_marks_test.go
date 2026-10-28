@@ -462,6 +462,47 @@ func (h H) byValue() []*int          { return h.s }
 func (h *H) viaGet() []*int          { return get(h.s) }
 func idH(h *H) *H                    { return h }
 func keepC(b []*int)                 { gk = b[0] }
+func (h *H) keepOwn()                { gk = h.recv()[0] }
+func (h *H) keepVia()                { keepC(h.recv()) }
+func keepH(h *H)                     { gk = h.recv()[0] }
+func (h *H) handBack() *int          { return h.recv()[0] }
+
+type S struct{ p []*int }
+
+func (s *S) Swap(i, j int) { s.p[i], s.p[j] = s.p[j], s.p[i] }
+
+type swapper interface{ Swap(i, j int) }
+
+func rev(x swapper, n int) {
+	for i := 0; i < n/2; i++ {
+		x.Swap(i, n-1-i)
+	}
+}
+
+type S2 struct{ p, q []*int }
+
+func (s *S2) move(i int) { s.p[i] = s.q[i] }
+
+type M struct {
+	dev []byte
+	ptr *int
+}
+
+func (m *M) marshal(b []byte) []byte { return append(b, m.dev...) }
+
+type S3 struct {
+	c byte
+	p *int
+}
+
+var gs3 S3
+
+func keepByte(b []byte) { gs3 = S3{c: b[0]} }
+
+func keepMarshal(m *M) {
+	var frame [16]byte
+	keepByte(m.marshal(frame[:0]))
+}
 
 `
 	const local = "\tx, y := 7, 8\n\ts := []*int{&x, &y}\n\tvar frame [4]*int\n\th := H{s: s}\n\t_, _ = frame, h\n"
@@ -486,6 +527,23 @@ func keepC(b []*int)                 { gk = b[0] }
 		{"package storage through a value receiver", pkg, "b := h.byValue()\n\tgk = b[0]", false},
 		{"package storage through a call's result", pkg, "b := idH(&h).s\n\tgk = b[0]", false},
 		{"a local result kept locally", local, "b := h.recv()\n\t_ = *b[0]", false},
+		// A callee reading what a method of its receiver or parameter hands back
+		// (dom78): unread in its summary, each kept the caller's local.
+		{"a method keeping a method's result", local, "h.keepOwn()", true},
+		{"a method handing a method's result on", local, "h.keepVia()", true},
+		{"a function keeping a method's result", local, "keepH(&h)", true},
+		{"a method handing back a method's result", local, "gk = h.handBack()", true},
+		{"package storage through a callee's method", pkg, "h.keepOwn()", false},
+		// The elements a Swap exchanges stay where they were (storesBack); a move
+		// between two fields does not.
+		{"a swap of a local slice of pointers", local, "q := S{s}\n\tq.Swap(0, 1)", false},
+		{"a swap through an interface", local, "q := S{s}\n\trev(&q, 2)", false},
+		{"a move between two fields", local, "m := S2{p: gps[:], q: s}\n\tm.move(0)", true},
+		// The bytes a method copies out of its receiver, kept by a callee: they
+		// hold no reference, whatever else the receiver's struct holds
+		// (paramContentsInert; dom77's Marshal, refused by the method's gate
+		// without it).
+		{"bytes copied out of a receiver and kept", local, "m := M{dev: []byte(\"node\"), ptr: &x}\n\tkeepMarshal(&m)", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			src := head + "func run() {\n" + test.setup + "\t" + test.run + "\n}\n\nfunc main() { run() }\n"
