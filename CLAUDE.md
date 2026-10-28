@@ -131,6 +131,8 @@ silent fault puts the count back to 0. Each round's account is in
   a function with no frame, fixed in the backend and all five regenerated; a
   struct embedding an array type, its member taken for no array), one false
   refusal fixed (a Swap of a local slice's elements, dom77's sort) -- 0
+- **v1.0.0-rc.2** (2026-10-28), tagged after dom78 on its fixes: rounds against
+  it count from 0 of 3, and its two weeks in public from its release
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
