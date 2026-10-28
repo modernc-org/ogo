@@ -10942,328 +10942,377 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 		}
 		// As for locals: a value list is that many independent single-name
 		// declarations; one value (or none) keeps the single-spec paths below.
+		// An array's or a slice's is written by those paths, name by name, each
+		// a `var name T = value` of its own: emitPackageVarList's inference types
+		// no array and writes no slice literal, and `var p, q = [2]int{1, 2},
+		// [5]int{3}` was "cannot infer a type for the package variable" (dom80).
+		units := []pkgVarUnit{{names, typeAST, initExprs}}
 		if len(names) > 1 && len(initExprs) == len(names) {
-			e.emitPackageVarList(names, typeAST, initExprs)
-			continue
-		}
-		var initExpr []int32
-		if len(initExprs) != 0 {
-			initExpr = initExprs[0]
-		}
-		if typeAST == nil {
-			// Type-inferred package variable `var x = expr`. C requires a constant
-			// initializer at file scope (emitGlobalInit), so a single named variable
-			// with an inferable type is modelled; a make/slice initializer still needs
-			// an explicit type and fails honestly through inference.
-			if len(names) != 1 {
-				if len(initExprs) == 1 {
-					// `var a, b = f()` at package scope: a multi-result call bound to
-					// several variables. C cannot call in a file-scope initializer, so
-					// the call and its distribution are deferred to the synthesized
-					// package init.
-					e.emitPackageDestructure(names, initExprs[0])
-					continue
-				}
-				e.fail("a type-inferred package variable must be a single name (var x = expr)")
-				return
+			if !e.pkgVarListByName(typeAST, initExprs) {
+				e.emitPackageVarList(names, typeAST, initExprs)
+				continue
 			}
-			if names[0] == "_" {
-				continue // a blank package variable declares nothing
+			units = units[:0]
+			for i := range names {
+				units = append(units, pkgVarUnit{names[i : i+1], typeAST, initExprs[i : i+1]})
 			}
-			// `var g = [N]T{...}` or `var g = []T{...}` at package scope: a
-			// file-scope static table, the global counterpart of a local
-			// array-literal variable. inferCType can type neither -- an array has no
-			// assignable C value type, and a slice literal needs a hoisted backing --
-			// so this precedes the general inference path below.
-			if litType, lit, isLit := e.soleArrayLit(initExpr); isLit {
-				// A literal whose elements are not all constant cannot BE a static
-				// initializer: C evaluates one at compile time, and the target's
-				// compiler says so ("global initializers ... must be constant") of
-				// generated code the program never wrote. The table is emitted
-				// zeroed and filled at package initialization instead, which is
-				// what the scalar and struct forms already did -- staticInitOK
-				// answered for an array literal all along and only this position
-				// never asked it.
-				// So is one whose elements' static initializer the target's compiler
-				// lays out wrong (flexccInitSkew).
-				skew := false
-				if a, isArr := e.arrayDim(litType); isArr {
-					skew = e.flexccInitSkew(a.elem)
-				}
-				if skew || !e.staticLitElementsOKLevels(lit, e.elemLitLevels(litType)) {
-					if a, isArr := e.pkgArrayInit(initExpr); isArr {
-						e.emitPkgArrayVar(e.globalC(names[0]), names[0], a, initExpr)
+		}
+		for _, u := range units {
+			names, typeAST, initExprs := u.names, u.typeAST, u.initExprs
+			var initExpr []int32
+			if len(initExprs) != 0 {
+				initExpr = initExprs[0]
+			}
+			if typeAST == nil {
+				// Type-inferred package variable `var x = expr`. C requires a constant
+				// initializer at file scope (emitGlobalInit), so a single named variable
+				// with an inferable type is modelled; a make/slice initializer still needs
+				// an explicit type and fails honestly through inference.
+				if len(names) != 1 {
+					if len(initExprs) == 1 {
+						// `var a, b = f()` at package scope: a multi-result call bound to
+						// several variables. C cannot call in a file-scope initializer, so
+						// the call and its distribution are deferred to the synthesized
+						// package init.
+						e.emitPackageDestructure(names, initExprs[0])
 						continue
 					}
-				}
-				e.emitArrayLitVar(e.globalC(names[0]), litType, lit, true)
-				continue
-			}
-			// `var g = mk()` / `var g = src` / `var g = h.f`: an array from something
-			// that is not a literal. An array has no assignable C value type, so
-			// inferCType answers no for every one of them and the variable was
-			// refused for want of a type -- of a value whose own is in hand. A local
-			// takes all three.
-			if a, isArr := e.pkgArrayInit(initExpr); isArr {
-				e.emitPkgArrayVar(e.globalC(names[0]), names[0], a, initExpr)
-				continue
-			}
-			// `var g = make([]T, n)` and `var g = make(List, n, c)`: make has no C
-			// value type to infer -- the backing array is synthesised beside the
-			// header -- so the declaration was refused for want of one, where the
-			// same line with its type written was taken. The type is the one make
-			// NAMES, which is a defined slice type's own where it names one.
-			if elem, lenAST, capAST, isMake := e.makeSliceInit(initExpr); isMake {
-				if len(names) != 1 || names[0] == "_" {
-					e.fail("a make slice initializer needs a single named variable")
+					e.fail("a type-inferred package variable must be a single name (var x = expr)")
 					return
 				}
-				cname := e.makeSliceCName(initExpr)
-				if cname == "" {
-					cname = sliceCName(elem)
+				if names[0] == "_" {
+					continue // a blank package variable declares nothing
 				}
-				gn := e.globalC(names[0])
-				e.needSlice(elem)
-				e.globals[gn] = cname
-				e.globalSliceVars[gn] = elem
-				e.emitMakeSliceVar(gn, cname, elem, lenAST, capAST, true)
-				continue
-			}
-			ct, ok := e.inferCType(initExpr)
-			if !ok {
-				e.fail("cannot infer a type for the package variable %q", names[0])
-				return
-			}
-			gn := e.globalC(names[0])
-			e.globals[gn] = ct
-			e.bindFuncValue(names[0], initExpr)
-			if e.isSliceCType(ct) {
-				e.globalSliceVars[gn] = e.sliceElemFromCName(ct)
-			}
-			if e.staticInitOK(initExpr) {
-				e.emit("static " + ct + " " + gn + " = ")
-				e.emitGlobalInit(ct, initExpr)
-				e.emit(";\n")
-				continue
-			}
-			e.emit("static " + ct + " " + gn + e.staticZeroC(ct) + ";\n")
-			e.pkgInitAssign(gn, names[0], initExpr)
-			continue
-		}
-		if len(names) != 1 && initExpr != nil {
-			e.fail("multi-name package variable with an initializer is not supported yet")
-			return
-		}
-		// A package-level fixed array `var a [N]T` -> `static T a[N];`, of any rank:
-		// arrayDim carries every extent, where arrayType reports only the outermost
-		// (a `var m [2][3]int` read through that one lost its inner extent and
-		// failed as a nameless "unsupported type").
-		if a, ok := e.arrayDim(typeAST); ok {
-			// `var a [N]T = [N]T{...}`: the same static table as the inferred form,
-			// after checking the literal's type against the declared one.
-			if initExpr != nil && len(names) == 1 && names[0] != "_" {
-				litType, lit, isLit := e.soleArrayLit(initExpr)
-				if !isLit {
-					// Not a literal but still an array -- a call's result, another
-					// array, a field. The declared extents are what it is checked
-					// against and filled as.
-					if _, isArr := e.pkgArrayInit(initExpr); isArr {
-						e.emitPkgArrayVar(e.globalC(names[0]), names[0], a, initExpr)
-						continue
-					}
-					e.fail("a package array initializer must be an array literal, another array, or a call returning one")
-					return
-				}
-				if !e.sameArrayType(a, litType) {
-					return
-				}
-				// Asked as the inferred form asks it: `var ga [2]int = [2]int{gx,
-				// 1}` was written `static int ga[2] = {gx, 1};`, a variable in a
-				// static initializer, which gcc refuses and the target's compiler
-				// reads as ITS initial value, not as Go's -- gx initialized from a
-				// call or another variable is 0 there.
-				if e.flexccInitSkew(a.elem) || !e.staticLitElementsOKLevels(lit, e.elemLitLevels(litType)) {
-					e.emitPkgArrayVar(e.globalC(names[0]), names[0], a, initExpr)
-					continue
-				}
-				e.emitArrayLitVar(e.globalC(names[0]), litType, lit, true)
-				continue
-			}
-			if initExpr != nil {
-				e.fail("array variable initializers are not supported yet")
-				return
-			}
-			for _, nm := range names {
-				if nm != "_" {
-					gn := e.globalC(nm)
-					e.globalArrays[gn] = a
-					e.emit("static " + a.elem + " " + gn + a.declSuffix() + ";\n")
-				}
-			}
-			continue
-		}
-		// A package-level slice `var xs []T` -> `static ogo_slice_T xs;` (BSS-zeroed
-		// to {NULL, 0}); its element type is recorded for `xs[i]` / len(xs) in bodies.
-		if elem, ok := e.sliceType(typeAST); ok {
-			e.needSlice(elem)
-			cname := sliceCName(elem)
-			if initExpr != nil && e.isNilExpr(initExpr) {
-				// `var s []T = nil` is the zero header a declaration without one has;
-				// it was "a package slice initializer must be a slice of the declared
-				// type".
-				initExpr = nil
-			}
-			if initExpr != nil {
-				// `var s []T = []T{...}`: a static backing array plus a header over
-				// it, the same lowering the local form uses.
+				// `var g = [N]T{...}` or `var g = []T{...}` at package scope: a
+				// file-scope static table, the global counterpart of a local
+				// array-literal variable. inferCType can type neither -- an array has no
+				// assignable C value type, and a slice literal needs a hoisted backing --
+				// so this precedes the general inference path below.
 				if litType, lit, isLit := e.soleArrayLit(initExpr); isLit {
-					if me, isSlice := e.sliceType(litType); !isSlice || me != elem {
-						e.fail("a %s literal cannot initialize a variable declared []%s", e.litTypeName(litType), elem)
-						return
+					// A literal whose elements are not all constant cannot BE a static
+					// initializer: C evaluates one at compile time, and the target's
+					// compiler says so ("global initializers ... must be constant") of
+					// generated code the program never wrote. The table is emitted
+					// zeroed and filled at package initialization instead, which is
+					// what the scalar and struct forms already did -- staticInitOK
+					// answered for an array literal all along and only this position
+					// never asked it.
+					// So is one whose elements' static initializer the target's compiler
+					// lays out wrong (flexccInitSkew).
+					skew := false
+					if a, isArr := e.arrayDim(litType); isArr {
+						skew = e.flexccInitSkew(a.elem)
 					}
-					if len(names) != 1 || names[0] == "_" {
-						e.fail("a slice literal initializer needs a single named variable")
-						return
+					if skew || !e.staticLitElementsOKLevels(lit, e.elemLitLevels(litType)) {
+						if a, isArr := e.pkgArrayInit(initExpr); isArr {
+							e.emitPkgArrayVar(e.globalC(names[0]), names[0], a, initExpr)
+							continue
+						}
 					}
 					e.emitArrayLitVar(e.globalC(names[0]), litType, lit, true)
 					continue
 				}
-				me, lenAST, capAST, ok := e.makeSliceInit(initExpr)
-				if !ok {
-					// Any other slice value -- a slice of a package array, another
-					// package slice, a call's result -- is what the inferred form takes:
-					// a static initializer where C has one, the package init's
-					// assignment otherwise. `var s = back[:0]` was accepted, and the
-					// same declaration with its type written, `var s []T = back[:0]`,
-					// refused.
-					if len(names) != 1 || names[0] == "_" {
-						e.fail("a slice initializer needs a single named variable")
-						return
-					}
-					if ct, typed := e.inferCType(initExpr); !typed || e.underlyingCType(ct) != cname {
-						e.fail("a package slice initializer must be a slice of the declared type")
-						return
-					}
-					gn := e.globalC(names[0])
-					e.globals[gn] = cname
-					e.globalSliceVars[gn] = elem
-					if e.staticInitOK(initExpr) {
-						e.emit("static " + cname + " " + gn + " = ")
-						e.emitGlobalInit(cname, initExpr)
-						e.emit(";\n")
-						continue
-					}
-					e.emit("static " + cname + " " + gn + e.staticZeroC(cname) + ";\n")
-					e.pkgInitAssign(gn, names[0], initExpr)
+				// `var g = mk()` / `var g = src` / `var g = h.f`: an array from something
+				// that is not a literal. An array has no assignable C value type, so
+				// inferCType answers no for every one of them and the variable was
+				// refused for want of a type -- of a value whose own is in hand. A local
+				// takes all three.
+				if a, isArr := e.pkgArrayInit(initExpr); isArr {
+					e.emitPkgArrayVar(e.globalC(names[0]), names[0], a, initExpr)
 					continue
 				}
-				if me != elem {
-					e.fail("make element type %q does not match the declared slice element type %q", me, elem)
-					return
+				// `var g = make([]T, n)` and `var g = make(List, n, c)`: make has no C
+				// value type to infer -- the backing array is synthesised beside the
+				// header -- so the declaration was refused for want of one, where the
+				// same line with its type written was taken. The type is the one make
+				// NAMES, which is a defined slice type's own where it names one.
+				if elem, lenAST, capAST, isMake := e.makeSliceInit(initExpr); isMake {
+					if len(names) != 1 || names[0] == "_" {
+						e.fail("a make slice initializer needs a single named variable")
+						return
+					}
+					cname := e.makeSliceCName(initExpr)
+					if cname == "" {
+						cname = sliceCName(elem)
+					}
+					gn := e.globalC(names[0])
+					e.needSlice(elem)
+					e.globals[gn] = cname
+					e.globalSliceVars[gn] = elem
+					e.emitMakeSliceVar(gn, cname, elem, lenAST, capAST, true)
+					continue
 				}
-				if len(names) != 1 || names[0] == "_" {
-					e.fail("a make slice initializer needs a single named variable")
+				ct, ok := e.inferCType(initExpr)
+				if !ok {
+					e.fail("cannot infer a type for the package variable %q", names[0])
 					return
 				}
 				gn := e.globalC(names[0])
-				e.globalSliceVars[gn] = elem
-				e.globals[gn] = cname
-				e.emitMakeSliceVar(gn, cname, elem, lenAST, capAST, true)
+				e.globals[gn] = ct
+				e.bindFuncValue(names[0], initExpr)
+				if e.isSliceCType(ct) {
+					e.globalSliceVars[gn] = e.sliceElemFromCName(ct)
+				}
+				if e.staticInitOK(initExpr) {
+					e.emit("static " + ct + " " + gn + " = ")
+					e.emitGlobalInit(ct, initExpr)
+					e.emit(";\n")
+					continue
+				}
+				e.emit("static " + ct + " " + gn + e.staticZeroC(ct) + ";\n")
+				e.pkgInitAssign(gn, names[0], initExpr)
 				continue
 			}
-			for _, nm := range names {
-				if nm != "_" {
-					gn := e.globalC(nm)
-					e.globalSliceVars[gn] = elem
-					e.globals[gn] = cname
-					e.emit("static " + cname + " " + gn + ";\n")
+			if len(names) != 1 && initExpr != nil {
+				e.fail("multi-name package variable with an initializer is not supported yet")
+				return
+			}
+			// A package-level fixed array `var a [N]T` -> `static T a[N];`, of any rank:
+			// arrayDim carries every extent, where arrayType reports only the outermost
+			// (a `var m [2][3]int` read through that one lost its inner extent and
+			// failed as a nameless "unsupported type").
+			if a, ok := e.arrayDim(typeAST); ok {
+				// `var a [N]T = [N]T{...}`: the same static table as the inferred form,
+				// after checking the literal's type against the declared one.
+				if initExpr != nil && len(names) == 1 && names[0] != "_" {
+					litType, lit, isLit := e.soleArrayLit(initExpr)
+					if !isLit {
+						// Not a literal but still an array -- a call's result, another
+						// array, a field. The declared extents are what it is checked
+						// against and filled as.
+						if _, isArr := e.pkgArrayInit(initExpr); isArr {
+							e.emitPkgArrayVar(e.globalC(names[0]), names[0], a, initExpr)
+							continue
+						}
+						e.fail("a package array initializer must be an array literal, another array, or a call returning one")
+						return
+					}
+					if !e.sameArrayType(a, litType) {
+						return
+					}
+					// Asked as the inferred form asks it: `var ga [2]int = [2]int{gx,
+					// 1}` was written `static int ga[2] = {gx, 1};`, a variable in a
+					// static initializer, which gcc refuses and the target's compiler
+					// reads as ITS initial value, not as Go's -- gx initialized from a
+					// call or another variable is 0 there.
+					if e.flexccInitSkew(a.elem) || !e.staticLitElementsOKLevels(lit, e.elemLitLevels(litType)) {
+						e.emitPkgArrayVar(e.globalC(names[0]), names[0], a, initExpr)
+						continue
+					}
+					e.emitArrayLitVar(e.globalC(names[0]), litType, lit, true)
+					continue
 				}
+				if initExpr != nil {
+					e.fail("array variable initializers are not supported yet")
+					return
+				}
+				for _, nm := range names {
+					if nm != "_" {
+						gn := e.globalC(nm)
+						e.globalArrays[gn] = a
+						e.emit("static " + a.elem + " " + gn + a.declSuffix() + ";\n")
+					}
+				}
+				continue
 			}
-			continue
-		}
-		ctype := e.cType(typeAST)
-		if ctype == "" {
-			return
-		}
-		if initExpr != nil && e.isSliceCType(e.underlyingCType(ctype)) && e.isNilExpr(initExpr) {
-			// `var g List = nil` for a defined slice type: the zero header. It was
-			// assigned the null pointer at package initialization, `g = 0`, which no
-			// C compiler takes for a struct.
-			initExpr = nil
-		}
-		for _, nm := range names {
-			if nm == "_" {
-				continue // a blank package variable declares nothing
-			}
-			gn := e.globalC(nm)
-			e.globals[gn] = ctype
-			if initExpr != nil {
-				e.bindFuncValue(nm, initExpr)
-			}
-			// A DEFINED slice type, `var g List = ...` over `type List []int`,
-			// arrives here rather than in the "[]T" branch above, its declared type
-			// being a name. The backing array and the header over it are built
-			// exactly as for the unnamed spelling -- which the LOCAL form already
-			// did, and which this one did not: `= make(List, 2)` was "make is only
-			// supported as a `var s []T = make(...)` initializer yet", and `=
-			// List{1, 2, 3}` became `static List g = {1, 2, 3}`, the literal's
-			// elements written into the header's three fields, with a pointer made
-			// from 1.
-			if u := e.underlyingCType(ctype); initExpr != nil && e.isSliceCType(u) {
-				elem := e.sliceElemFromCName(u)
-				if me, lenAST, capAST, isMake := e.makeSliceInit(initExpr); isMake {
+			// A package-level slice `var xs []T` -> `static ogo_slice_T xs;` (BSS-zeroed
+			// to {NULL, 0}); its element type is recorded for `xs[i]` / len(xs) in bodies.
+			if elem, ok := e.sliceType(typeAST); ok {
+				e.needSlice(elem)
+				cname := sliceCName(elem)
+				if initExpr != nil && e.isNilExpr(initExpr) {
+					// `var s []T = nil` is the zero header a declaration without one has;
+					// it was "a package slice initializer must be a slice of the declared
+					// type".
+					initExpr = nil
+				}
+				if initExpr != nil {
+					// `var s []T = []T{...}`: a static backing array plus a header over
+					// it, the same lowering the local form uses.
+					if litType, lit, isLit := e.soleArrayLit(initExpr); isLit {
+						if me, isSlice := e.sliceType(litType); !isSlice || me != elem {
+							e.fail("a %s literal cannot initialize a variable declared []%s", e.litTypeName(litType), elem)
+							return
+						}
+						if len(names) != 1 || names[0] == "_" {
+							e.fail("a slice literal initializer needs a single named variable")
+							return
+						}
+						e.emitArrayLitVar(e.globalC(names[0]), litType, lit, true)
+						continue
+					}
+					me, lenAST, capAST, ok := e.makeSliceInit(initExpr)
+					if !ok {
+						// Any other slice value -- a slice of a package array, another
+						// package slice, a call's result -- is what the inferred form takes:
+						// a static initializer where C has one, the package init's
+						// assignment otherwise. `var s = back[:0]` was accepted, and the
+						// same declaration with its type written, `var s []T = back[:0]`,
+						// refused.
+						if len(names) != 1 || names[0] == "_" {
+							e.fail("a slice initializer needs a single named variable")
+							return
+						}
+						if ct, typed := e.inferCType(initExpr); !typed || e.underlyingCType(ct) != cname {
+							e.fail("a package slice initializer must be a slice of the declared type")
+							return
+						}
+						gn := e.globalC(names[0])
+						e.globals[gn] = cname
+						e.globalSliceVars[gn] = elem
+						if e.staticInitOK(initExpr) {
+							e.emit("static " + cname + " " + gn + " = ")
+							e.emitGlobalInit(cname, initExpr)
+							e.emit(";\n")
+							continue
+						}
+						e.emit("static " + cname + " " + gn + e.staticZeroC(cname) + ";\n")
+						e.pkgInitAssign(gn, names[0], initExpr)
+						continue
+					}
 					if me != elem {
 						e.fail("make element type %q does not match the declared slice element type %q", me, elem)
 						return
 					}
-					e.needSlice(elem)
-					e.globalSliceVars[gn] = elem
-					e.emitMakeSliceVar(gn, ctype, elem, lenAST, capAST, true)
-					continue
-				}
-				if litType, lit, isLit := e.soleArrayLit(initExpr); isLit {
-					if me, isSlice := e.litSliceType(litType); !isSlice || me != elem {
-						e.fail("a %s literal cannot initialize a variable declared %s",
-							e.litTypeName(litType), e.goTypeName(ctype))
+					if len(names) != 1 || names[0] == "_" {
+						e.fail("a make slice initializer needs a single named variable")
 						return
 					}
-					e.needSlice(elem)
+					gn := e.globalC(names[0])
 					e.globalSliceVars[gn] = elem
-					e.emitArrayLitVar(gn, litType, lit, true)
+					e.globals[gn] = cname
+					e.emitMakeSliceVar(gn, cname, elem, lenAST, capAST, true)
 					continue
 				}
-				e.globalSliceVars[gn] = elem
-			}
-			e.emit("static " + ctype + " " + gn)
-			switch {
-			case initExpr == nil:
-			case e.isIfaceCType(ctype):
-				// An interface value is an address beside a table pointer, and an
-				// address is not a C constant expression, so the two words are
-				// written at package initialization. What it points at has to be a
-				// package variable too: a frame temporary would be a local of
-				// ogo_pkg_init, which is not storage a package variable may keep.
-				e.emit(e.staticZeroC(ctype))
-				if step, ok := e.pkgInitIfaceStore(gn, nm, ctype, initExpr); ok {
-					defer func() { e.pkgInit = append(e.pkgInit, step) }()
+				for _, nm := range names {
+					if nm != "_" {
+						gn := e.globalC(nm)
+						e.globalSliceVars[gn] = elem
+						e.globals[gn] = cname
+						e.emit("static " + cname + " " + gn + ";\n")
+					}
 				}
-			case e.staticInitOK(initExpr):
-				e.emit(" = ")
-				e.emitGlobalInit(ctype, initExpr)
-			default:
-				// C evaluates a file-scope initializer at compile time, so anything
-				// that is not a constant expression is done at package
-				// initialization instead -- which is where the inferred-type form
-				// beside this one already puts it. Written out, the variable used to
-				// keep the initializer and the backend refused the program: "global
-				// initializers are evaluated at compile time and therefore must be
-				// constant", about C the reader never wrote.
-				e.emit(e.staticZeroC(ctype))
-				defer e.pkgInitAssign(gn, nm, initExpr)
+				continue
 			}
-			e.emit(";\n")
+			ctype := e.cType(typeAST)
+			if ctype == "" {
+				return
+			}
+			if initExpr != nil && e.isSliceCType(e.underlyingCType(ctype)) && e.isNilExpr(initExpr) {
+				// `var g List = nil` for a defined slice type: the zero header. It was
+				// assigned the null pointer at package initialization, `g = 0`, which no
+				// C compiler takes for a struct.
+				initExpr = nil
+			}
+			for _, nm := range names {
+				if nm == "_" {
+					continue // a blank package variable declares nothing
+				}
+				gn := e.globalC(nm)
+				e.globals[gn] = ctype
+				if initExpr != nil {
+					e.bindFuncValue(nm, initExpr)
+				}
+				// A DEFINED slice type, `var g List = ...` over `type List []int`,
+				// arrives here rather than in the "[]T" branch above, its declared type
+				// being a name. The backing array and the header over it are built
+				// exactly as for the unnamed spelling -- which the LOCAL form already
+				// did, and which this one did not: `= make(List, 2)` was "make is only
+				// supported as a `var s []T = make(...)` initializer yet", and `=
+				// List{1, 2, 3}` became `static List g = {1, 2, 3}`, the literal's
+				// elements written into the header's three fields, with a pointer made
+				// from 1.
+				if u := e.underlyingCType(ctype); initExpr != nil && e.isSliceCType(u) {
+					elem := e.sliceElemFromCName(u)
+					if me, lenAST, capAST, isMake := e.makeSliceInit(initExpr); isMake {
+						if me != elem {
+							e.fail("make element type %q does not match the declared slice element type %q", me, elem)
+							return
+						}
+						e.needSlice(elem)
+						e.globalSliceVars[gn] = elem
+						e.emitMakeSliceVar(gn, ctype, elem, lenAST, capAST, true)
+						continue
+					}
+					if litType, lit, isLit := e.soleArrayLit(initExpr); isLit {
+						if me, isSlice := e.litSliceType(litType); !isSlice || me != elem {
+							e.fail("a %s literal cannot initialize a variable declared %s",
+								e.litTypeName(litType), e.goTypeName(ctype))
+							return
+						}
+						e.needSlice(elem)
+						e.globalSliceVars[gn] = elem
+						e.emitArrayLitVar(gn, litType, lit, true)
+						continue
+					}
+					e.globalSliceVars[gn] = elem
+				}
+				e.emit("static " + ctype + " " + gn)
+				switch {
+				case initExpr == nil:
+				case e.isIfaceCType(ctype):
+					// An interface value is an address beside a table pointer, and an
+					// address is not a C constant expression, so the two words are
+					// written at package initialization. What it points at has to be a
+					// package variable too: a frame temporary would be a local of
+					// ogo_pkg_init, which is not storage a package variable may keep.
+					e.emit(e.staticZeroC(ctype))
+					if step, ok := e.pkgInitIfaceStore(gn, nm, ctype, initExpr); ok {
+						defer func() { e.pkgInit = append(e.pkgInit, step) }()
+					}
+				case e.staticInitOK(initExpr):
+					e.emit(" = ")
+					e.emitGlobalInit(ctype, initExpr)
+				default:
+					// C evaluates a file-scope initializer at compile time, so anything
+					// that is not a constant expression is done at package
+					// initialization instead -- which is where the inferred-type form
+					// beside this one already puts it. Written out, the variable used to
+					// keep the initializer and the backend refused the program: "global
+					// initializers are evaluated at compile time and therefore must be
+					// constant", about C the reader never wrote.
+					e.emit(e.staticZeroC(ctype))
+					defer e.pkgInitAssign(gn, nm, initExpr)
+				}
+				e.emit(";\n")
+			}
 		}
 	}
+}
+
+// A pkgVarUnit is one declaration emitPackageVarDecl writes: a spec, or one name of
+// a value list written name by name (pkgVarListByName).
+type pkgVarUnit struct {
+	names     []string
+	typeAST   []int32
+	initExprs [][]int32
+}
+
+// pkgVarListByName reports whether a value list's names are written one by one, as
+// a single-name spec each: where emitPackageVarList refuses the list -- an array
+// or a slice type written out, `var p, q [2]int = ...`, and a value it infers no
+// type for or cannot write, an array literal or a call returning an array, a slice
+// literal, a make. Any other list is written by emitPackageVarList as it always
+// was, a defined array type's among them.
+func (e *emitter) pkgVarListByName(typeAST []int32, inits [][]int32) bool {
+	if typeAST != nil {
+		nodes := slices.Collect(it(typeAST))
+		return len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == LBRACK
+	}
+	for _, x := range inits {
+		if _, _, _, isMake := e.makeSliceInit(x); isMake {
+			return true
+		}
+		if litType, _, isLit := e.soleArrayLit(x); isLit {
+			if _, isSlice := e.sliceType(litType); isSlice {
+				return true
+			}
+		}
+		if _, ok := e.inferCType(x); !ok {
+			return true
+		}
+	}
+	return false
 }
 
 // emitChanSend emits one send on an already-rendered channel, whatever named it: a

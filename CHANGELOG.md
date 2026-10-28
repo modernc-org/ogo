@@ -29,6 +29,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   and a `type S struct{ v [n]int }` -- Go reports a cycle, and the program is
   refused as before. A type naming such an array whose element type is declared
   below the type is still refused.
+- **A value list of package arrays and slices builds**: `var p, q = [2]int{1, 2},
+  [5]int{3}` was refused, "cannot infer a type for the package variable p", and
+  so were the same with the type written, `var a, b [2]int8 = ...` ("unsupported
+  type"), a list of slice literals, of makes and of calls returning an array. Such
+  a list is written name by name, as a local one is.
 
 ## v1.0.0-rc.2
 

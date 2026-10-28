@@ -39550,6 +39550,59 @@ func main() {
 		want: "5 6 60\n9 3 3\n5 5\n7 8\n8 8\n",
 	},
 	{
+		// A value list of package variables of an array or a slice, `var p, q =
+		// [2]int{1, 2}, [5]int{3}`: "cannot infer a type for the package variable p",
+		// and with the type written, `var a, b [2]int8 = ...`, "unsupported type". The
+		// list's own path infers no array's type and writes no slice literal; such a
+		// list is written name by name now, each as its own `var name = value`, as a
+		// local value list is (dom80). An array literal, a call returning an array, a
+		// slice literal, a make, a blank, a name the list declares before, and a list
+		// in a group, the calls in Go's order. Byte-identical to the same program
+		// under Go.
+		name: "a value list of package arrays and slices",
+		src: `var calls int
+
+func f(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func mk(k int) [2]int { return [2]int{k, f(k)} }
+
+var p, q = [2]int{1, f(2)}, [5]int{3}
+
+var a, b [2]int8 = [2]int8{1, 2}, [2]int8{3, 4}
+
+var s, t = []int{f(5)}, []int{6, 7}
+
+var u, v []string = []string{"a"}, []string{"b", "c"}
+
+var m, n = make([]int, 3), make([]int, 2, 5)
+
+var r, w = mk(4), 9
+
+var _, z = [2]int{}, [3]float64{0.5}
+
+var d, e = [2]int{8, 9}, d
+
+var (
+	g    = 3
+	h, k = [2][3]int{{1}, {4, 5, 6}}, [][2]int{{1, 2}}
+)
+
+func main() {
+	e[0] = 0
+	n = append(n, 1)
+	printf("%v %v %v %v\n", p, q, a, b)
+	printf("%v %v %v %v %d\n", s, t, u, v, len(v))
+	printf("%v %v %d %d %v %d\n", m, n, len(n), cap(n), r, w)
+	printf("%v %v %v %d %v %v\n", z, d, e, g, h, k)
+	printf("%d\n", calls)
+}
+`,
+		want: "[1 2] [3 0 0 0 0] [1 2] [3 4]\n[5] [6 7] [a] [b c] 2\n[0 0 0] [0 0 1] 3 5 [4 4] 9\n[0.5 0 0] [8 9] [0 9] 3 [[1 0 0] [4 5 6]] [[1 2]]\n254\n",
+	},
+	{
 		// A package variable initialized from a MEMBER of a later one -- a field, a
 		// field of a call's result, an element. What each depends on is read off the
 		// identifiers its initializer mentions, and the member name is not one of them:
