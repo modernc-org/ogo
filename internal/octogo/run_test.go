@@ -56250,6 +56250,65 @@ func main() { run() }
 		want: "1a 1b 3c 4d 5e \n5e 4d 3c 1b 1a \nd a\n",
 	},
 	{
+		// A struct embedding a defined array type: the member is the typedef's,
+		// `T T_`, and carries no extents of its own (fieldDim). The literal
+		// initialized it with the address of the array it was given, `D{v, 4}`,
+		// which the target took in silence; a copy, a call by value, a return, a
+		// send and an append were assignments the target refused; and == compared
+		// the members' addresses, false for equal values on both (dom78's sweeps).
+		name: "a struct embedding an array type",
+		src: `type T [3]int32
+
+func (t T) sum() int32 { return t[0] + t[1] + t[2] }
+
+type D struct {
+	T
+	z int
+}
+
+type W struct {
+	d D
+	w int
+}
+
+var gv = T{7, 8, 9}
+
+var pd = D{gv, 1}
+
+func show(d D) { printf("%v %d|", d, d.sum()) }
+
+func mk(v T, z int) D { return D{v, z} }
+
+func main() {
+	v := T{1, 2, 3}
+	d := D{v, 4}
+	k := D{T: v, z: 5}
+	vs := [2]T{{4, 5, 6}, {6, 5, 4}}
+	el := D{vs[1], 6}
+	show(d)
+	show(k)
+	show(el)
+	show(pd)
+	show(mk(v, 7))
+	e := d
+	d.T[0] = 9
+	show(e)
+	println()
+	w1, w2, w3 := W{e, 1}, W{D{v, 4}, 1}, W{d, 1}
+	println(e == D{T{1, 2, 3}, 4}, e == d, w1 == w2, w1 == w3)
+	ch := make(chan D, 1)
+	ch <- e
+	r := <-ch
+	var a [2]D
+	ds := a[:0]
+	ds = append(ds, r, D{gv, 8})
+	ds[1].T = v
+	printf("%+v %v\n", ds[0], ds[1])
+}
+`,
+		want: "{[1 2 3] 4} 6|{[1 2 3] 5} 6|{[6 5 4] 6} 15|{[7 8 9] 1} 24|{[1 2 3] 7} 6|{[1 2 3] 4} 6|\ntrue false true false\n{T:[1 2 3] z:4} {[1 2 3] 8}\n",
+	},
+	{
 		// A whole float constant, `const K = 2.0`, where Go wants an integer: an
 		// array's length, a literal's key, len of an array type written with it, a
 		// case beside an integer tag. The key was refused by the emitter, the

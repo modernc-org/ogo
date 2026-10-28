@@ -3888,9 +3888,17 @@ func (e *emitter) zeroFieldC(f structField) string {
 	if e.zeroSizedField(f) {
 		return "{}"
 	}
-	z := e.zeroBraceC(f.ctype)
-	if f.dim.bound != "" {
-		for range f.dim.dims() {
+	ct, a := f.ctype, f.dim
+	if a.bound == "" {
+		// An embedded defined array (fieldDim) is braced as its typedef's extents
+		// say, around its element's zero: its typedef's own zero is a scalar's.
+		if na := e.namedArrays[f.ctype]; na.bound != "" {
+			ct, a = na.elem, na
+		}
+	}
+	z := e.zeroBraceC(ct)
+	if a.bound != "" {
+		for range a.dims() {
 			z = "{" + z + "}"
 		}
 	}
@@ -3910,7 +3918,7 @@ func (e *emitter) zeroFieldC(f structField) string {
 // over-approximation that leaves the common case untouched.
 func (e *emitter) hasArrayField(ctype string) bool {
 	for _, f := range e.structs[ctype] {
-		if f.dim.bound != "" || e.hasArrayField(f.ctype) {
+		if e.fieldDim(f).bound != "" || e.hasArrayField(f.ctype) {
 			return true
 		}
 	}
@@ -3924,6 +3932,20 @@ func (e *emitter) hasArrayField(ctype string) bool {
 		}
 	}
 	return false
+}
+
+// fieldDim is a field's array extents: its own, or, for an embedded defined array
+// type -- a member of the typedef's name, `T T_`, whose declarator carries the
+// extents -- the typedef's (see structFieldArray). A field that holds no array
+// answers no bound. A question asking whether a field IS an array asks this, not
+// f.dim: `D{v, 4}` for a D embedding a `type T [3]int32` initialized the member
+// with v's address, a D was copied by assignment, which the target's compiler
+// refuses, and `d == e` compared the members' addresses (dom78's sweeps).
+func (e *emitter) fieldDim(f structField) arrDim {
+	if f.dim.bound != "" {
+		return f.dim
+	}
+	return e.namedArrays[f.ctype]
 }
 
 // emitStructCopy emits a copy of an array-holding struct as a memcpy, the one form
@@ -25185,6 +25207,9 @@ func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 		var expect structField
 		if i < len(fields) {
 			expect = fields[i] // the field, for a type-elided or nested element
+			// An embedded array takes an array as a field written with its extents
+			// does, as an array literal's named array element does.
+			expect.dim = e.fieldDim(expect)
 			e.litPath = litPath + "." + e.fieldIdent(expect.name)
 		}
 		e.emitLitElement(*v, expect, brace)
@@ -55730,12 +55755,12 @@ func (e *emitter) needStructEq(ctype string) {
 	}
 	e.eqStructs[ctype] = true
 	for _, fld := range e.structs[ctype] {
-		switch {
-		case fld.dim.bound != "":
+		switch a := e.fieldDim(fld); {
+		case a.bound != "":
 			// An array field compares through its array's helper, element by element;
 			// the struct's own helper then takes its operands by pointer
 			// (structEqByPtr), the target's compiler passing no such struct by value.
-			e.needArrayEq(fld.dim)
+			e.needArrayEq(a)
 		case fld.ctype == cString:
 			e.usesStringEq = true
 		case e.isSliceCType(fld.ctype):
@@ -55806,8 +55831,8 @@ func (e *emitter) structEqDef(ctype string) string {
 		}
 		nm := e.fieldIdent(fld.name)
 		l, r := "_ogo_l"+sel+nm, "_ogo_r"+sel+nm
-		if fld.dim.bound != "" {
-			b.WriteString(arrayEqName(fld.dim) + "(" + l + ", " + r + ")")
+		if a := e.fieldDim(fld); a.bound != "" {
+			b.WriteString(arrayEqName(a) + "(" + l + ", " + r + ")")
 			continue
 		}
 		b.WriteString(e.fieldEqCmp(fld.ctype, l, r))

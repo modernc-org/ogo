@@ -73,6 +73,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   float64, a byte, a nested struct -- is copied so. The backend gives such a
   function a frame now (internal/functions.c.diff, carried ahead of upstream). In
   every release checked since v0.40.0.
+- **A wrong answer, silent, measured on a P2-EDGE: a struct embedding an array
+  type**: for a `type D struct { T; z int }` over a `type T [3]int32`, `D{v, 4}`
+  with v an array variable, a parameter, an element or a package variable put
+  v's address in the member -- a call through an interface on such a D printed
+  225637752 where Go prints 375000 -- and `d == e` was false for equal values, on
+  the host too. A copy of such a D, a call or a return by value, a send and an
+  append did not build for the target. Each is Go's now, in every release
+  checked since v0.40.0.
 - **A Swap of a local slice's elements builds**: `func (s *byKey) Swap(i, j int) {
   s.r[i], s.r[j] = s.r[j], s.r[i] }`, called on a local slice of pointers, or of
   structs holding a string, directly or through an interface as sort.Sort calls
