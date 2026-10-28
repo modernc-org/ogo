@@ -114,6 +114,14 @@ silent fault puts the count back to 0. Each round's account is in
   not say a panic does not return) -- 3
 - **v1.0.0-rc.1** (2026-10-27), tagged after dom76: rounds against it count from
   0 of 3, and its two weeks in public from its release
+- dom77 (2026-10-27), a sensor node's messages in protobuf's wire format
+  (protowire and encoding/base64 ported, a producer cog framing batches onto
+  base64 lines): silent (a callee's view of a view of its parameter kept past the
+  frame; what a call hands back holds, asked nowhere it is bound), one false
+  refusal fixed (a []byte's contents held to a holder's marks), one loud fault
+  fixed (a slice of slices of pointers named a typedef nobody declared), two
+  listed (a store two pointers past a receiver; a slice literal's backing dated
+  to the inner block it is read in) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1141,7 +1149,8 @@ section. A new finding goes there; the rule it leaves goes here too.
   what is sliced: a slice of a pointer to an array views what the pointer reaches,
   which the pointer's root is not.** **A slice holds no storage: a rule asking
   where a view's storage lives asks what it views, not where the slice is
-  declared** (dom67, markBacked). **A
+  declared** (dom67, markBacked). **A rule read off one step is asked of a chain
+  of them: a view of a view is the view, at any length** (dom77). **A
   type a rule does not know is asked which rules read it as a default**. **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN**: **A mark is a fact about a
   variable at a point; a rule reading one asks what reaches that point -- a loop's
   back edge and an alias both do.**
@@ -1164,7 +1173,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   source, never as the slice it spreads** (dom73). **A cost a comment calls rare
   is swept before it is believed: the per-variable mark was to refuse one program,
   and it refuses every field kept out of the holder** (dom75, sweeps/field-holder;
-  listed).
+  listed). **What a call hands back is asked where it is bound as where it is
+  written, and a method is asked what its receiver holds as well as what it is**
+  (dom77, sweeps/result-contents).
 - **A PARENTHESISED HEAD IS A ROW OF EVERY SCAN**: **A new scan reads heads through
   them, and a new shape the emitter reads through parentheses is a row in each
   scan.**

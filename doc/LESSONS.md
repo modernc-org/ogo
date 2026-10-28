@@ -3923,6 +3923,54 @@ when run again: it panics in the middle of a line, `utf8:` before the message, a
 the harness, cutting at a panic that begins a line, held the board's message to
 Go's trace; it cuts where the panic begins now, as the host's comparison does. No
 fuzzer part changed since dom75. A clean round: the count is 3.
+**dom77, a sensor node's messages in protobuf's wire format** (2026-10-27, the first
+round against v1.0.0-rc.1): protowire ported as written -- the unrolled varints, tags,
+fixed32 and fixed64, bytes, groups with consumeGroup and consumeFieldValueD recursing
+under a depth limit, zigzag, ParseError's codes -- with math/bits' Len64; the messages
+as protoc-gen-go would shape them, written by hand over views of the frame: sint32 by
+zigzag, a packed field that takes unpacked elements, an embedded message merged field
+by field, unknown fields kept whole and written back, repeated fields in storage the
+caller owns; a protoscope-style dump; encoding/base64 ported, its four encodings,
+Strict and the eight-byte path; a CRC-32; a producer cog framing twenty batches onto
+base64 lines over a buffered channel, some spoiled on the way. Its first build was
+refused four times. CorruptInputError returned as an error: an interface holds a
+pointer here, and the error is package storage. A batch's readings as a run of the
+caller's arena, decoded by `m.Readings[i].unmarshal(v, a)`: the arena's storage is
+stored two pointers past the receiver, which the summaries take to outlive every
+frame; listed, the batch holds its repeated fields' storage as nanopb lays a message
+out. `bt2.Unmarshal(b, &a)` for a b that `bt.Marshal(frame[:0])` returned, "b, whose
+contents hold a pointer into a slice literal's backing array": a []byte's contents
+were held to the marks a call over a holder gave it -- fixed, the contents of a slice
+of what holds no reference reach nothing -- and, reducing it, the summaries read
+ConsumeBytes, `return b[n:][:m]`, as b's contents. That is a SILENT FAULT: a callee
+keeping or handing back a view of a view of its parameter kept the caller's local
+array past its frame, `2 0` printed where Go prints `2 2`, and a slice step after a
+slice expression in parentheses, `g = (a[:])[1:]`, was no view of the frame to the
+caller's own rule. **A rule read off one step is asked of a chain of them: a view of
+a view is the view, at any length.** sweeps/reslice, 396 rows: 123 unsound before,
+none after. Its controls met a loud fault: an append to a `[][]*int` wrote C naming a
+typedef nobody declared, a slice's element read back off its C name with every
+"_ptr" taken for a star; it is the element the name was made with now (a `[][]*int`
+and a `[]*[]int` in one program still share a name, listed). And asking the contents
+rule its row found a second silent fault: what a call hands back HOLDS was asked
+nowhere a result is bound -- `b := get(s); gk = b[0]`, for a get handing back a slice
+of pointers to the caller's locals, kept a local's address, `231` for Go's `7` -- and a
+method handing back what its receiver holds, `return h.s`, by pointer or by value,
+was summarised as handing back nothing. **What a call hands back is asked where it is
+bound as where it is written, and a method is asked what its receiver holds as well
+as what it is.** sweeps/result-contents, 190 rows: 69 unsound before, none after;
+nine of its controls, a value holding a pointer to a local, are refused as the field
+read written out is, the marks being one level. Both faults in every release checked,
+v0.40.0, v0.50.0 and v0.59.0, the parenthesized reslice since v0.50.0. The fourth
+refusal, `rm.unmarshal(e, &a)` in a range over an array of slice literals with rm
+declared before the loop: a literal's backing read in an inner block is dated to that
+block; listed, the reading is the loop's own. Its main then outgrew a cog
+(testMessages, 162 registers) and was split. Host and board print Go's 250 lines. Its
+400 mutants on the host: 341 print what Go prints, 27 panic as Go does, 31 are refused
+alike, and the one that differs appends past a slice's capacity (DIFFERENCES.md)
+after Go's lines. On the board all 366 that Go ends print Go's output. No fuzzer
+part changed since dom76. A silent round: the count against the candidate is 0, and
+its fixes are the next candidate's.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
@@ -4808,6 +4856,15 @@ with it any field that can hold a reference, kept out of a struct that holds a v
 of the frame in another -- `g = z.w`, `store(z.w)`, `z.keep()` for a z.w that is a
 package variable's address (the holder marks are per variable, the summaries keep a
 receiver's or a parameter's holdings whole; dom75, sweeps/field-holder, 23 rows); a
+method storing what it is handed two pointers past its receiver,
+`m.Readings[i].unmarshal(v, a)` for a batch whose Readings are a run of the caller's
+arena (such a store lands where no rule can name; dom77); a slice literal's backing
+read in an inner block, dated to that block, `rm.unmarshal(e, &a)` in a range over an
+array of slice literals with rm declared before the loop, and `r.set(xs[i])` in a
+loop (dom77); a field read of a value holding a pointer to a local, written out or
+handed back by a method, for a `P{h: &h}` (the marks are one level; dom77,
+sweeps/result-contents, 9 rows); a `[][]*int` and a `[]*[]int` in one program, one C
+name to both, which both C compilers refuse (dom77); a
 Builder passed by value, `count(sb)` for a `func count(b Builder)`, "cannot use sb
 as Builder value in argument to count: it is a struct" (a pointer is the spelling
 that works); an
