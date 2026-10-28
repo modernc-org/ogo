@@ -133,6 +133,9 @@ silent fault puts the count back to 0. Each round's account is in
   refusal fixed (a Swap of a local slice's elements, dom77's sort) -- 0
 - **v1.0.0-rc.2** (2026-10-28), tagged after dom78 on its fixes: rounds against
   it count from 0 of 3, and its two weeks in public from its release
+- dom79 (2026-10-28), signed firmware updates (Ed25519 over ref10, SHA-512, an
+  uploader cog's CRC-32 frames, A/B slots and rollback), the first round against
+  rc.2: clean -- 1
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its

@@ -4064,6 +4064,45 @@ embedded defined array carries them in its typedef's name** (fieldDim). In every
 release checked (v0.40.0, v0.50.0, v1.0.0-rc.1). dom78's 345 mutants that Go ends
 print Go's output on the board under both fixes. No fuzzer part changed since dom77.
 A silent round: the count is 0, and its fixes are the candidate's.
+**dom79, signed firmware updates** (2026-10-28, the first round against
+v1.0.0-rc.2): Ed25519 as golang.org/x/crypto wrote it over ref10 in 2020,
+edwards25519.go and const.go copied as they stand -- [10]int32 field elements with
+int64 products, FeCombine of ten int64 parameters, feSquare of ten int64 results,
+the signed carries, ScReduce and ScMulAdd over two dozen int64 limbs, the base point
+tables, 30 KB of static initializer; SHA-512 as Go 1.27's
+crypto/internal/fips140/sha512 writes it, all four sizes, Sum appending to the
+caller's slice from a copy of the digest and the short sums through a
+slice-to-array-pointer conversion; ed25519's key derivation, Sign and Verify in the
+outlined form Go 1.15 gave them, over storage the caller gives; encoding/hex,
+crypto/subtle's compare and hash/crc32's simple table ported. The program runs RFC
+8032's tests 1-3 and signatures that must not verify, S+L among them, which only
+ScMinimal refuses; sixteen images signed by a build server, a manifest of 108 bytes
+and a payload whose first bytes are a self-test for a little stack machine; an
+uploader cog streaming them stop-and-wait in CRC-32 frames over a buffered channel
+of structs holding an array, spoiling, dropping, repeating and truncating frames and
+tampering under a good CRC; the main cog checking each manifest's rules (a key known
+and not revoked, a beta key only for a beta image, the security epoch, rollback),
+verifying, hashing the payload as it arrives, installing into the A/B slot not
+running and booting through the self-test, an image that never confirms itself
+rolled back. Its first build was refused twice, each as specs.go says: hex's
+`return i, InvalidByteError(p)`, an interface holding a pointer here, and `return
+string(hexBuf[:n])`, a conversion Go's compiler allocates for where it is returned;
+the error was kept in a package variable and the bytes printed with %s. The host's
+compiler warned twice, at a local array only stored into, the dead tmp2 of FromBytes
+as x/crypto wrote it, and at a package variable nothing reads, ed25519's A: a
+program with either fails TestEmitCRun's host build, a warning failing it, though no
+behaviour rests on a variable nothing reads and the target's build is silent; the
+host binary was built without -Werror, as run.py builds a mutant's. Host and board
+print Go's 95 lines, the first build of each; on the board the program runs 17.5 s,
+a Verify about 0.5 s. Its 400 mutants, drawn outside the tables (whose 8000
+literals would take most of them, each a table both sides compute alike): on the
+host 356 print what Go prints, 16 panic as Go does, 27 are refused alike, and the
+one that differs appends 64 bytes to a slice of length 1 and capacity 64
+(DIFFERENCES.md). On the board all 372 that Go ends print Go's output, one only
+when run again: its wait for the board lock ran out behind another session's job,
+and the harness held the empty capture to Go's output; it waits again now and
+names a mutant it never ran. No fuzzer part changed since dom78. A clean round:
+the count against the candidate is 1.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
