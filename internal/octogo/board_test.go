@@ -480,7 +480,10 @@ func boardBuildPaths(ogo, out, allowWarning string, flags []string, src string) 
 			"A backend diagnostic means the emitted C is suspect even though the build passed. "+
 			"Fix the emitter, or record it in the case's backendWarning field with the reason it is harmless.", chatter)
 	}
-	return heapFree(out)
+	if err := heapFree(out); err != nil {
+		return err
+	}
+	return stackGivenBack(out)
 }
 
 // heapFree holds a target build to no call of the backend's heap. The language
@@ -509,6 +512,53 @@ func heapFree(out string) error {
 	}
 	if len(in) != 0 {
 		return fmt.Errorf("the backend allocates on its heap, in %s: a result the emitter returns by value that the target's compiler returns in a heap copy (see heapReturned)", strings.Join(in, ", "))
+	}
+	return nil
+}
+
+// stackGivenBack holds a target build to no function that takes stack it does not
+// give back. The target's compiler copies a struct argument it passes by reference
+// into memory it takes on the stack, `add ptra, #N`, and a frame's `mov ptra, fp`
+// is what gives the memory back; a function with no frame of its own, one that only
+// hands a struct on, left the stack higher by the copy at every call until
+// internal/functions.c.diff's second hunk, and a loop of such calls ran it past the
+// end of Hub RAM (doc/struct-argument-copy-frameless.c). Every program a test builds
+// for the target is read for such a function in its listing, as for the heap.
+func stackGivenBack(out string) error {
+	listing, err := os.ReadFile(strings.TrimSuffix(out, filepath.Ext(out)) + ".p2asm")
+	if err != nil {
+		return fmt.Errorf("reading the listing to check the stack is given back: %v", err)
+	}
+	var fn string
+	var took, framed bool
+	var in []string
+	for _, line := range strings.Split(string(listing), "\n") {
+		if listingFunc(line) {
+			if fn != "" && line == fn+"_ret" && took && !framed {
+				in = append(in, fn)
+			}
+			fn, took, framed = line, false, false
+			if strings.HasSuffix(line, "_ret") {
+				fn = ""
+			}
+			continue
+		}
+		f := strings.Fields(line)
+		if fn == "" || len(f) == 0 {
+			continue
+		}
+		if strings.HasPrefix(f[0], "if_") {
+			f = f[1:] // a condition prefix, ` if_e	add	ptra, #4`
+		}
+		switch {
+		case len(f) >= 3 && f[0] == "add" && f[1] == "ptra," && strings.HasPrefix(f[2], "#"):
+			took = true
+		case len(f) >= 3 && f[0] == "mov" && f[1] == "ptra," && f[2] == "fp", strings.Contains(line, "pushregs_"):
+			framed = true
+		}
+	}
+	if len(in) != 0 {
+		return fmt.Errorf("the backend takes stack it does not give back, in %s: a function with no frame that copies a struct argument (see doc/struct-argument-copy-frameless.c)", strings.Join(in, ", "))
 	}
 	return nil
 }
