@@ -4103,6 +4103,61 @@ when run again: its wait for the board lock ran out behind another session's job
 and the harness held the empty capture to Go's output; it waits again now and
 names a mutant it never ran. No fuzzer part changed since dom78. A clean round:
 the count against the candidate is 1.
+**dom80, an oscillatory rheometer's measurement chain** (2026-10-28, the second
+round against v1.0.0-rc.2): gonum v0.8.2 ported as written -- the last release whose
+FFTPACK translation is real-valued -- dsp/fourier/internal/fftpack whole, rfft,
+cfft, cost, cosq, sint and sinq over the two- and three-dimensional array views
+their methods index, dsp/window, floats' Sum and MaxIdx, stat's means, variances,
+covariance, Correlation, CircularMean, LinearRegression and RSquared; every
+transform there and back at lengths of 60, 77 (the general radix, 7 x 11), 128, 61
+and 59; a sampling cog rotating its drive phasor sample by sample over a material of
+three Maxwell modes that softens at large strain and stiffens at rest, ranging and
+quantizing strain and stress into blocks of counts over a buffered channel of
+structs holding two arrays, through frequency, amplitude and time sweeps, drives
+between bins, a channel left at its highest gain, a stalled drive and a lost block;
+the main cog reading G', G'', tan delta, |eta*| and the odd harmonics off the real
+FFT, the noise left once they are taken out, the energy a cycle dissipates, the
+envelope of the analytic signal, the crossover, the linear viscoelastic limit and
+the gel point; a thixotropic flow curve fitted to Bingham and to Herschel-Bulkley.
+Its first build was refused, "non-constant array bound", at `var stepErrs
+[len(plan)]StepError` above `var plan [nSteps]Step`. A FALSE REFUSAL: every type and
+constant is resolved before any variable, and variables in source order, so len or
+cap of a package array declared below a bound, or named from any type or constant,
+met an array with no type recorded -- `const n = len(plan)` above plan was "len is
+not a constant" -- in every release. The type is read off the declaration now
+(specVarTypeAt), and a read that runs into a declaration still being resolved
+answers nothing, as Go reports a cycle there: `const n = len(plan)` for a `var plan
+[4]S` and a `type S struct{ v [n]int }`, through a pointer, a slice, a function's
+parameter or a field the length does not read. Made to compile first, eight such
+cycles Go rejects compiled -- HEAD had refused each only by accident -- so the read
+asks every type the array's type reaches whether it is settled (specTypeSettled).
+**A shape made to compile is asked what Go refuses near it: a refusal by accident
+was refusing a cycle too.** And what the read reports is trimmed to the spec read,
+the spec's own resolution reporting it again; what it reports of a declaration
+resolved on the way, for good, is kept. Listed: a type naming such an array whose
+element type is declared below the type, types being resolved in source order.
+Asking the row found an older false refusal beside it: a value list of package
+arrays or slices, `var p, q = [2]int{1, 2}, [5]int{3}`, "cannot infer a type for the
+package variable" -- and with the type written "unsupported type" -- in every
+release; such a list is written name by name now, as a local's is, and every list
+that compiled keeps its C. NewValues, a make of n weights returned, is a heap's and
+was left out. On the target the program needed more registers than a cog has:
+FFTPACK's radfg and radbg and cfft's pass each exceed the backend's limit for one
+function, which ogo's message does not name, and split once their parts exceeded the
+pool the cog has left (radbgSums 150 registers, radfgTwiddle 144, of about 110),
+each accessor's float64 result being a C local of two words. Split at their loops,
+as the message says, the split being the program's (dom63); Go's output unchanged by
+it. Host and board print Go's 120 lines, the first build of each. Its 400 mutants
+were drawn after the split; a first 400, drawn before it, were clean on the host and
+built for no cog, a batch for the board being drawn from the program the board runs.
+On the host 326 print what Go prints, 41 panic as Go does, 33 are refused alike. On
+the board all 367 that Go ends print Go's output, one only when run to its end:
+m0285's trial factors {3, 4, 2, 6} leave 60's 5 unfactored, and the search counts j
+through its wrap to Go's index panic, 2^31 passes in 4515 s from the load to the
+panic. The harness had read two seconds past the last line Go prints before the
+panic, its time limit never reached, and called it a BOARD DIFFER; where Go panics
+it reads until the board's panic now. No fuzzer part changed since dom79. A clean
+round: the count against the candidate is 2.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
@@ -4995,7 +5050,13 @@ read in an inner block, dated to that block, `rm.unmarshal(e, &a)` in a range ov
 array of slice literals with rm declared before the loop, and `r.set(xs[i])` in a
 loop (dom77); a field read of a value holding a pointer to a local, written out or
 handed back by a method, for a `P{h: &h}` (the marks are one level; dom77,
-sweeps/result-contents, 9 rows); a
+sweeps/result-contents, 9 rows); a type whose bound is len of a package array
+declared below it, the array's element type being declared below the type, `type B
+[len(plan)]int` above `var plan [4]S` above `type S`, "non-constant array bound"
+(types are resolved in source order, and S is not yet when B reads plan's type;
+dom80); a function past the backend's limit for one function's locals, "exceeded
+local register limit", named by no message (the backend stops before the listing
+cogHint reads; dom80's were found by building parts alone); a
 Builder passed by value, `count(sb)` for a `func count(b Builder)`, "cannot use sb
 as Builder value in argument to count: it is a struct" (a pointer is the spelling
 that works); an

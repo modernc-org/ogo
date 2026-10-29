@@ -136,6 +136,10 @@ silent fault puts the count back to 0. Each round's account is in
 - dom79 (2026-10-28), signed firmware updates (Ed25519 over ref10, SHA-512, an
   uploader cog's CRC-32 frames, A/B slots and rollback), the first round against
   rc.2: clean -- 1
+- dom80 (2026-10-28), an oscillatory rheometer's measurement chain (gonum's real
+  FFTPACK, windows and stat over float64, a sampling cog), the second round
+  against rc.2: clean, two false refusals fixed (len of a package array declared
+  below; a value list of package arrays and slices) -- 2
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1117,7 +1121,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   it does not know**; **A rule that refuses by failing to resolve is found by
   widening the resolver and running the rejects again**; **A rule refused by
   accident is a rule nobody wrote**; **A rule that refuses on what the checker knows
-  must ask what the checker fails to record, not only what it records**.
+  must ask what the checker fails to record, not only what it records**. **A shape
+  made to compile is asked what Go refuses near it: a refusal by accident was
+  refusing a cycle too** (dom80, specTypeSettled).
 - **A CALL'S RESULT HAD NO STEPS**: **A walk that types a value hands its type back
   to every rule, and a rule asked of a value asks the walk**. **A walk that passes a
   call hands the call to the argument check.** **A lowering that makes a shape
