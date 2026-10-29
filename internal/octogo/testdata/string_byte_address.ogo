@@ -1,0 +1,28 @@
+// A string's byte has no address: `&s[0]` built in every release checked, and a
+// store through the pointer wrote into the string, a program Go refuses (dom84).
+
+type D struct{ s string }
+
+var g = "xhello"
+
+var gp *byte
+
+func f() string { return g }
+
+func main() {
+	var d D
+	d.s = g
+	// ERROR "cannot take address of g\[0\] \(value of type byte\)"
+	p := &g[0]
+	// ERROR "cannot take address of d.s\[1\] \(value of type byte\)"
+	q := &d.s[1]
+	// ERROR "cannot take address of f\(\)\[0\] \(value of type byte\)"
+	r := &f()[0]
+	// ERROR "cannot take address of g\[0\] \(value of type byte\)"
+	t := &(g[0])
+	// ERROR "cannot take address of g\[1:\]\[0\] \(value of type byte\)"
+	gp = &g[1:][0]
+	// ERROR "cannot take address of f\(\)"
+	u := &(f())
+	println(p, q, r, t, u)
+}

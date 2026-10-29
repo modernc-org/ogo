@@ -1,0 +1,43 @@
+// COMPILE
+
+// A slice of what a call hands back of a string, `f()[m:]`, is a string, of a
+// defined string type's type too: the walk past a call typed nothing for it, the
+// flags called it a slice, and every valid use but printing was refused (dom84).
+
+type S string
+
+func (s S) up() string { return string(s) }
+
+type D struct{ s string }
+
+var g = "xhéllo"
+
+var gs S = "xabc"
+
+func (d *D) name() string { return g }
+
+func f() string { return g }
+
+func fs() S { return gs }
+
+func ff() func() string { return f }
+
+func one(s string) string { return s }
+
+func oneS(s S) S { return s }
+
+func main() {
+	var d D
+	m := 1
+	nm := f()[m:]
+	println(one(nm), nm == "héllo", nm < "z", nm[1], len(nm))
+	for i, c := range nm {
+		println(i, c)
+	}
+	var s string = nm
+	t := d.name()[m:][1:]
+	u := (ff()())[m:]
+	var v = fs()[m:]
+	println(s, t, u, v.up(), oneS(v), len([]byte(nm)))
+	printf("%T %v\n", v, nm)
+}

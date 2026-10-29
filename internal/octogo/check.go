@@ -18020,10 +18020,27 @@ func (f *File) checkAddressable(s *Scope, op Node, fac Node) {
 			return
 		}
 	}
+	pos := f.tok(op.Pos()).Position()
+	// A string's byte, `&s[0]`, `&f()[1]`, `&(t.name)[i]`: a string's bytes are no
+	// storage, and Go refuses the address. Taken in rc.3, rc.2 and v0.58.0, a
+	// pointer into a string built, and a store through it wrote the string (dom84).
+	if !hasLit && f.indexesString(s, fac) {
+		f.err(pos, "invalid operation: cannot take address of %s (value of type byte)", f.exprSource(fac))
+		return
+	}
+	// `&(g[0])`, `&(f())`: the operand in parentheses is the operand, asked as
+	// itself. Asked nothing, both built.
+	if !hasLit && !hasID && len(kids) == 3 {
+		if inner, ok := f.parenInner(fac); ok {
+			if ifac, ok := f.soleFactorOf(inner); ok {
+				f.checkAddressable(s, op, ifac)
+				return
+			}
+		}
+	}
 	if hasLit || !hasID {
 		return // `&T{...}`, or an operand this does not model
 	}
-	pos := f.tok(op.Pos()).Position()
 	what := func(name string) {
 		f.err(pos, "invalid operation: cannot take address of %s", name)
 	}
@@ -18636,7 +18653,18 @@ func (f *File) walkSteps(t typeAt, addr bool, steps []Node, i, reportFrom int, w
 			case *TypeNodeSlice:
 				elem, isSlice = x.TypeNode, true
 			default:
-				return w // a string, or what this does not type
+				// A string's slice past a call, `f()[m:]`, `d.name()[1:]`: of the
+				// string's own type, a defined one's too, as stepsTypeIn reads it.
+				// Untyped, a variable declared from one was a slice to the flags,
+				// and `nm[0] = 120`, `nm = nil`, `var b []byte = nm` -- programs Go
+				// rejects -- built, where a string argument was refused (dom84).
+				if f.isSliceExpr(st) {
+					if k, ok := u.f.typeKind(u.s, u.tn); ok && k == PredeclaredString {
+						addr = false
+						continue
+					}
+				}
+				return w // a string's element, or what this does not type
 			}
 			// An element of ANOTHER package's array or slice type, `dk[1]` for a
 			// `dk lib.K`: the walk goes on in that package, as a field's does.

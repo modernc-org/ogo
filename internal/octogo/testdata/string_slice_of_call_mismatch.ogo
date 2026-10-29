@@ -1,0 +1,28 @@
+// A slice of what a call hands back of a string is a string, and goes only where
+// one does: `nm := f()[m:]` was a slice to the checker, and a store into its
+// bytes, a nil and a []byte took it -- programs Go refuses -- in every release
+// checked since v0.58.0 (dom84).
+
+type D struct{ s string }
+
+var g = "xhello"
+
+func (d *D) name() string { return g }
+
+func f() string { return g }
+
+func main() {
+	var d D
+	m := 1
+	nm := f()[m:]
+	// ERROR "cannot assign to nm\[...\]"
+	nm[0] = 120
+	// ERROR "cannot use nil as string value in assignment"
+	nm = nil
+	// ERROR "cannot use nm \(value of type string\) as \[\]byte value in variable declaration"
+	var bs []byte = nm
+	dn := d.name()[1:]
+	// ERROR "cannot assign to dn\[...\]"
+	dn[0]++
+	println(nm, len(bs), dn)
+}

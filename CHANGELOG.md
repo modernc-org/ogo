@@ -31,6 +31,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   Pixel goes, "cannot use p of type uint32 as type Pixel" (rsc.io/qr's coding), and
   so was a method called on the copy: the call was typed by nothing, and its
   variable had only the underlying type.
+- **A slice of what a call hands back of a string is a string**: `name :=
+  arena.String()[m:]`, `nm := f()[m:]` of a function, a method or a function
+  value was refused as a string argument, compared with a string or assigned to
+  one, "it is a slice".
 
 ### Behaviour changes
 
@@ -56,6 +60,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   method handing back the String and the same through a parameter's field. A
   Builder was counted as holding no reference where a summary asked a struct's
   fields. In every release checked since v0.40.0.
+- **A slice of a call's string goes only where a string does**: `nm :=
+  f()[m:]` was a slice to the checker, and `nm[0] = 120`, `nm[0]++`, `nm =
+  nil`, `nm == nil` and `var b []byte = nm` built -- programs Go refuses -- the
+  first two writing into the string. In rc.3, rc.2 and v0.58.0; v0.40.0's backend
+  refused the C.
+- **A string's byte has no address**: `&s[0]`, `&t.name[1]`, `&f()[0]` and
+  `&(s[0])` built, a pointer into a string, through which a store wrote the
+  string; and so did `&(f())`, a call in parentheses. Each is refused as Go
+  refuses it, "cannot take address of s[0] (value of type byte)". In rc.3, rc.2
+  and v0.58.0; v0.40.0's backend refused the C.
 
 ### Fixed
 

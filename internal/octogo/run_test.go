@@ -57021,6 +57021,58 @@ func main() {
 		want: "7 13 18 0 69 1\nmain.Pixel 8 9 72 17 4\n133 4 0\n",
 	},
 	{
+		// `name := arena.String()[m:]` of a periph.io port (dom84): the walk past a
+		// call typed nothing for a slice of a string, and the variable was a slice to
+		// the checker, refused as a string argument and taken for a []byte.
+		name: "a slice of a call's string result, bound",
+		src: `type S string
+
+func (s S) up() string { return string(s) }
+
+type D struct{ s string }
+
+var g = "xhéllo"
+
+var gs S = "xabc"
+
+var back [16]byte
+
+var sb = NewBuilder(back[:])
+
+func (d *D) name() string { return g }
+
+func f() string { return g }
+
+func fs() S { return gs }
+
+func ff() func() string { return f }
+
+func one(s string) string { return s }
+
+func oneS(s S) S { return s }
+
+func main() {
+	var d D
+	m := 1
+	nm := f()[m:]
+	println(one(nm), nm == "héllo", nm < "z", nm[1], len(nm))
+	for i, c := range nm {
+		print(i, ":", c, " ")
+	}
+	println()
+	var s string = nm
+	t := d.name()[m:][1:]
+	u := (ff()())[m:]
+	var v = fs()[m:]
+	println(s, t, u, v.up(), oneS(v), len([]byte(nm)))
+	sb.WriteString("BMP180")
+	w := sb.String()[3:]
+	printf("%T %v %T %q\n", v, nm, w, one(w))
+}
+`,
+		want: "héllo true true 195 6\n0:104 1:233 3:108 4:108 5:111 \nhéllo éllo héllo abc abc 6\nmain.S héllo string \"180\"\n",
+	},
+	{
 		// `if src, ok := src.(*Uniform); ok`, x/image/vector's own idiom: the name
 		// declared over the one asserted was read in its own C initializer, which both
 		// compilers refused (dom81). The value is read into a temporary first.
