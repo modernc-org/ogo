@@ -4215,6 +4215,37 @@ an infinity, a NaN or a float past int32's range to an integer, which Go leaves 
 the implementation, and part from Go's output at the first such conversion, as their
 twins, made to report each, show. No fuzzer part changed since dom80. A silent
 round: the count is 0, and its fixes are the next candidate's.
+
+**dom82, a temperature controller on a Modbus RTU line** (2026-10-29, the first
+round against v1.0.0-rc.3): github.com/goburrow/modbus v0.1.0's client as the
+master, its eleven functions, the RTU, ASCII and TCP packagers, the serial
+transporters' reads over io.ReadAtLeast and io.ReadFull and the TCP one's header,
+length and flush, its tests' vectors; github.com/tbrandon/mbserver's server on a
+cog, its table of function handlers, its RTU and TCP frames and exceptions, the
+handlers it lacks registered beside them and an ASCII frame it has not; behind it a
+PID loop in float64 over a heater with dead time, alarms and a FIFO of events;
+between the cogs a line of two channels that splits, loses, flips and cuts frames
+by a generator of its own, and the master retries. Ported as written, but where the
+language says otherwise: the frames in the packagers' and the server's buffers, the
+register maps package arrays, fmt.Errorf in a package Builder. Its first build was
+refused four times. `return []byte{}, &IllegalDataAddress`, every mbserver
+handler's answer to a bad request, was "cannot return a slice literal, whose
+backing array is this function's": with no elements its length and capacity are 0
+and nothing is reached through it (a FALSE REFUSAL, fixed: an empty slice literal
+reaches nothing). `str := string(aduResponse[0:1])` was "a string conversion needs
+allocation", where Go's compiler says the conversion does not escape and makes it
+on its stack -- by the rule that a refusal for what a construct costs asks what
+Go's compiler pays for it where it stands, a false refusal (listed). mbserver's
+`[256](func(*Server, Framer) ([]byte, *Exception))` did not parse, dom81's listed
+parenthesised element type, here in an array type (listed). And the slave's
+request, a local, was refused to NewRTUFrame, which keeps a view of it in the
+package frame -- rightly: in Go it goes to the heap. Host and board printed Go's
+152 lines the first run. Its 400 mutants, drawn outside the two CRC tables: on the
+host 291 print what Go prints and 2 run past the time on both sides, 34 panic as Go
+does, 72 are refused alike, and the one that differs sends the stop after waiting
+for its answer and deadlocks, Go saying so and OctoGo waiting (DIFFERENCES.md). On
+the board all 325 that Go ends print Go's output. No fuzzer part changed since
+dom81. A clean round: 1 of 3 against rc.3.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
@@ -5117,7 +5148,12 @@ cogHint reads; dom80's were found by building parts alone); a comma-ok assertion
 a for clause's init, `for p, ok := x.(*T); ok; n++ {`, "assignment mismatch: 2
 variables but 1 value" (the clause counts its values itself; a receive there
 compiles; dom81); a parenthesised element type in a composite literal,
-`[]([4]int32){...}`, a parse error (dom81); a Builder passed by value, `count(sb)`
+`[]([4]int32){...}`, a parse error (dom81), and in an array type,
+`[256](func(*Server, Framer) ([]byte, *Exception))` (dom82, mbserver's); a string
+conversion bound to a local, `str := string(b[0:1])`, "a string conversion needs
+allocation", where Go's compiler makes a conversion that does not escape on its
+stack up to 32 bytes (dom82, goburrow/modbus's ASCII Verify); a Builder passed by
+value, `count(sb)`
 for a `func count(b Builder)`, "cannot use sb as Builder value in argument to count:
 it is a struct" (a pointer is the spelling that works); an
 array-returning call as a package literal element; a function returning an ARRAY

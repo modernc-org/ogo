@@ -152,6 +152,11 @@ silent fault puts the count back to 0. Each round's account is in
 - **v1.0.0-rc.3** (2026-10-29), tagged after dom81 on its fixes, with `ogo run -9`
   (the user's call: in before v1.0.0): rounds against it count from 0 of 3, and its
   two weeks in public from its release
+- dom82 (2026-10-29), a temperature controller on a Modbus RTU line
+  (goburrow/modbus's client, mbserver's server on a cog, a PID loop in float64, a
+  line that spoils frames), the first round against rc.3: clean, one false refusal
+  fixed (an empty slice literal handed back), two listed (a string conversion bound
+  to a local; a parenthesised element type in an array type) -- 1
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
