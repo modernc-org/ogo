@@ -4158,6 +4158,63 @@ panic. The harness had read two seconds past the last line Go prints before the
 panic, its time limit never reached, and called it a BOARD DIFFER; where Go panics
 it reads until the board's panic now. No fuzzer part changed since dom79. A clean
 round: the count against the candidate is 2.
+**dom81, an instrument panel's display** (2026-10-29, the third round against
+v1.0.0-rc.2): golang.org/x/image v0.45.0's vector rasterizer, both paths, held to
+each other, math/fixed, font's Drawer and basicfont's 7x13 face with its 7488 bytes
+of mask, Go's image geometry and images, image/color's colours and Palette,
+image/draw's DrawMask with its fast paths and FALLBACK1.17, and drawPaletted's
+Floyd-Steinberg, ported as written, the colours put into interfaces by their
+addresses and the buffers package arrays; a gauge swept through ten readings in
+dirty rectangles, a bar graph, a trend stroked on both paths, an alarm dithered to
+sixteen colours, sent to a display cog modelling an ST7789's CASET, RASET, RAMWR and
+MADCTL over a buffered channel of SPI frames. Its first build was refused three
+times and failed the cog once. `Point52_12{...}.Add(...).Sub(...)` was "cannot infer
+a type": a struct literal took one method call and no more (a FALSE REFUSAL, fixed,
+and with it the methods of an interface, a defined slice and a pointer one hands
+back, and several results at the end). vector's own `if src, ok := src.(*Uniform);
+ok` was C both compilers refused, the new name read in its own initializer, and
+`Index(&c)` of a ColorRGBA64 parameter drew a backend warning, the target passing
+such a struct by reference to a copy (two LOUD faults, fixed). `s :=
+string(buf[:n])` was refused by design, and the labels went through DrawBytes, as
+x/image writes them for that. The cog's registers were over by 41, and drawPaletted,
+DrawMask and vectorChecks were split, the split the program's. Host MATCH, and on
+the board the Floyd-Steinberg pass dithered to noise: `eg -= palette[bestIndex][1]`
+subtracted a register no instruction wrote. A SILENT FAULT of the C backend, in
+rc.2's own compiler and in every release checked since v0.40.0: its rewrite of `x
+op= y` loads nothing for an element of a row whose index holds a call, and in a
+checked build every index but a constant one is ogo_bound's
+(doc/compound-row-element.c). The emitter had bound such an operand since
+flexprop#106, for an array member reached through a call, and its gate asked the
+operand for a selector, which a row has none of. **A workaround's gate is asked of
+every shape its fault takes: the fault was an array-typed value reached through a
+call, and the gate asked for the member that made one in the first shape.** The
+listing was the witness, a register read and written nowhere, and every listing can
+be read for it (build/probes/tools/unwritten.py). **A dropped load leaves a mark in
+the listing: a register a function reads and no instruction of it writes.** Swept,
+twelve element types by every operator by eight operands by three statement forms:
+rc.2 dropped the load in 49 functions of 32 bits, `+=` `-=` `&=` `|=` `^=` and `*=`
+of a constant column past the first, crashed the backend at 16 bits and was refused
+at 8; bound, all of them print Go's output on the board. A second silent fault came
+of the octoforth session's report, a parameter named like a package function taken
+for that function used as a value -- stack checks no run needs, and a goroutine
+refused its bound (a false refusal, fixed: a name the checker read as a variable is
+no function value): its run case's goroutine printed its last line and main returned
+as it received, and on the board the newline came out as 0xfe. Ending the program,
+main stopped every other cog at once, and a stopped cog resets the smart pins it
+drives, the serial line's where no other cog drives it, the byte in flight with it;
+in every release since v0.50.0. The end takes the stdio lock and drains the line
+first now. **A program's end is asked what the line still holds: the byte a stopped
+cog was shifting out was the program's last.** Not fixed, listed: a comma-ok
+assertion in a for clause's init, and a parenthesised element type in a composite
+literal. Its 400 mutants: on the host 325 print what Go prints and 2 run past the
+time on both sides, 28 panic as Go does, 44 are refused alike, and the one that
+differs stores a command's byte after its frame is sent and deadlocks, Go saying so
+and OctoGo waiting (DIFFERENCES.md), on the board too, Go's lines printed to there.
+On the board 349 of the 353 that Go ends print Go's output; the four others convert
+an infinity, a NaN or a float past int32's range to an integer, which Go leaves to
+the implementation, and part from Go's output at the first such conversion, as their
+twins, made to report each, show. No fuzzer part changed since dom80. A silent
+round: the count is 0, and its fixes are the next candidate's.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
@@ -5056,10 +5113,13 @@ declared below it, the array's element type being declared below the type, `type
 (types are resolved in source order, and S is not yet when B reads plan's type;
 dom80); a function past the backend's limit for one function's locals, "exceeded
 local register limit", named by no message (the backend stops before the listing
-cogHint reads; dom80's were found by building parts alone); a
-Builder passed by value, `count(sb)` for a `func count(b Builder)`, "cannot use sb
-as Builder value in argument to count: it is a struct" (a pointer is the spelling
-that works); an
+cogHint reads; dom80's were found by building parts alone); a comma-ok assertion in
+a for clause's init, `for p, ok := x.(*T); ok; n++ {`, "assignment mismatch: 2
+variables but 1 value" (the clause counts its values itself; a receive there
+compiles; dom81); a parenthesised element type in a composite literal,
+`[]([4]int32){...}`, a parse error (dom81); a Builder passed by value, `count(sb)`
+for a `func count(b Builder)`, "cannot use sb as Builder value in argument to count:
+it is a struct" (a pointer is the spelling that works); an
 array-returning call as a package literal element; a function returning an ARRAY
 taken as a value, `mb := mkb`, "cannot infer a type" and, with the type written,
 "cannot return an array beside another result" (a function value's type has no out

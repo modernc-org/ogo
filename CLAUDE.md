@@ -140,6 +140,15 @@ silent fault puts the count back to 0. Each round's account is in
   FFTPACK, windows and stat over float64, a sampling cog), the second round
   against rc.2: clean, two false refusals fixed (len of a package array declared
   below; a value list of package arrays and slices) -- 2
+- dom81 (2026-10-29), an instrument panel's display (x/image's vector rasterizer,
+  math/fixed, font and basicfont, image/draw's DrawMask and Floyd-Steinberg, an
+  ST7789 cog), the third round against rc.2: silent (the backend's compound
+  assignment of a row's element, whose index holds a call, loaded nothing; a
+  goroutine's last byte lost at the program's end), two loud faults fixed (a
+  comma-ok assertion declaring the name it asserts; a struct parameter's address in
+  an interface), two false refusals fixed (a struct literal's methods chained; a
+  parameter named like a package function), two listed (a comma-ok assertion in a
+  for clause's init; a parenthesised element type) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -295,7 +304,9 @@ unsafe.Pointer or converted, opens the signature (noteFuncValuePun).
 debug build's panic stops every other cog and then its own (panicHaltC), and a return
 from main stops every other cog (ogo_end_program, written where main returns in a
 program that starts a cog -- a goroutine or a Spin2 object, whose driver may -- and
-nowhere else, so no other program's C changed; on the host it `_Exit`s). A program
+nowhere else, so no other program's C changed; on the host it `_Exit`s), on the
+target taking the stdio lock first, so no cog begins a print after it, and draining
+the line ten milliseconds before it stops them (dom81). A program
 calling its own main ends only in the run of main it began with (ogo_main_top). A
 stopped cog releases its pins and holds its smart pins in reset, so an ended program
 leaves the pins as a reset does. Inside a panic the order is the message, then the
@@ -1346,7 +1357,8 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **What the backend makes of a library call is read in the listing for what it
   holds while the arguments run**; **A goroutine's output is asked with main
   waiting in each way it can wait, a print of a receive among them** (A PRINT HOLDS
-  A LOCK).
+  A LOCK). **A program's end is asked what the line still holds: the byte a stopped
+  cog was shifting out was the program's last** (dom81).
 - **A backend fault measured for one type is asked of every type of its size: the
   target's compiler lays out bytes, not Go's types** (wideRowC; A VALUE OF SEVERAL
   WORDS IS A ROW OF EVERY POSITION, ON THE BOARD).
@@ -1356,7 +1368,12 @@ section. A new finding goes there; the rule it leaves goes here too.
   A CALL IS LOST ON THE TARGET**. **A float literal the emitter writes is one the
   target reads exactly**.
 - **A fault measured in one statement form is measured in the others: a plain store
-  right says nothing of its compound form** (doc/row-call-compound.c).
+  right says nothing of its compound form** (doc/row-call-compound.c). **A
+  workaround's gate is asked of every shape its fault takes: the fault was an
+  array-typed value reached through a call, and the gate asked for the member that
+  made one in the first shape** (dom81, doc/compound-row-element.c). **A dropped
+  load leaves a mark in the listing: a register a function reads and no instruction
+  of it writes** (build/probes/tools/unwritten.py).
 - **A workaround written from a symptom covers the symptom: the backend's source is
   read for the cause before the workaround is called whole**; **a row measured last
   in its argument list says nothing of the same argument with another after it**
