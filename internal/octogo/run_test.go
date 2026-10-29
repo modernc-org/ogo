@@ -57073,6 +57073,57 @@ func main() {
 		want: "héllo true true 195 6\n0:104 1:233 3:108 4:108 5:111 \nhéllo éllo héllo abc abc 6\nmain.S héllo string \"180\"\n",
 	},
 	{
+		// `d.Conn.Tx([]byte{reg, v}, nil)` of periph.io's mmr (dom84): a method
+		// called through an interface a chain reached -- a field, an element, a
+		// call's result -- had its arguments converted to nothing, and a nil for a
+		// slice parameter was 0, which both compilers refused, as were a variadic
+		// call's arguments.
+		name: "an interface method through a field, an element and a call, given nil",
+		src: `type C interface {
+	Tx(w, r []byte) int
+	Sum(k int, xs ...int) int
+	Mix(a int64, b uint64) int64
+}
+
+type D struct{ Conn C }
+
+type T struct{ n int }
+
+func (t *T) Tx(w, r []byte) int {
+	if r == nil {
+		return len(w)*10 + t.n
+	}
+	return len(w)*10 + len(r) + t.n + 100
+}
+
+func (t *T) Sum(k int, xs ...int) int {
+	for _, x := range xs {
+		k += x
+	}
+	return k + t.n
+}
+
+func (t *T) Mix(a int64, b uint64) int64 { return a + int64(b>>20) + int64(t.n) }
+
+var gt = T{5}
+
+var cs [2]C
+
+func get() C { return cs[1] }
+
+func main() {
+	var d D
+	d.Conn = &gt
+	pd := &d
+	cs[1] = &gt
+	println(d.Conn.Tx([]byte{1, 2}, nil), pd.Conn.Tx(nil, []byte{3}), cs[1].Tx(nil, nil), get().Tx([]byte{1}, nil))
+	println(d.Conn.Sum(1, 2, 3), pd.Conn.Sum(4), cs[1].Sum(1, []int{7, 8}...), get().Sum(2, 2))
+	println(d.Conn.Mix(3, 1<<40), cs[1].Mix(-1<<33, 1<<62))
+}
+`,
+		want: "25 106 5 15\n11 9 21 9\n1048584 4389456576517\n",
+	},
+	{
 		// `if src, ok := src.(*Uniform); ok`, x/image/vector's own idiom: the name
 		// declared over the one asserted was read in its own C initializer, which both
 		// compilers refused (dom81). The value is read into a temporary first.

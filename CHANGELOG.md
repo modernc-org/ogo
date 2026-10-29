@@ -76,6 +76,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 - **A chain past a typed constant's method builds**: `Position.Pixel().Next()` and
   `Position.Box().P` named the constant in the C, which has no such symbol, and no
   C compiler took it.
+- **A method called through an interface in a field, an element or a call's
+  result is handed its arguments as its parameters are**: `d.Conn.Tx(b, nil)`,
+  periph.io's mmr, wrote `0` for the nil slice, and a variadic method's arguments
+  went unpacked; neither C compiler took it. The call on an interface variable
+  was right.
 
 ## v1.0.0-rc.3
 

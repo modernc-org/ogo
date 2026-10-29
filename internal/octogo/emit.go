@@ -42233,6 +42233,13 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 					vtRead = "((const " + e.ifaceVTName(cur.ctype) + "*)ogo_iface_vt(" + text + ".vt))"
 				}
 				call := vtRead + "->" + vtMember(field) + "(" + text + ".data"
+				// The method's parameter types, which spell what each argument is
+				// converted to, as ifaceCallArgC sets them for a call on a variable.
+				// Unset, `d.Conn.Tx(b, nil)` of an interface field, periph.io's mmr,
+				// handed `0` to a slice parameter, which both compilers refused
+				// (dom84).
+				e.callParams = e.ifaceMethodParams(cur.ctype, field)
+				e.callVararg = e.ifaceMethodVararg(cur.ctype, field)
 				if args := e.argsCText("", steps[i+1].ast); args != "" {
 					call += ", " + args
 				}
