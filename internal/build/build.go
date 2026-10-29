@@ -32,6 +32,9 @@ import (
 // the -o target). It returns a process exit code and, for control-flow errors,
 // a Go error; tool diagnostics (checker, flexcc) go to stderr.
 func Build(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
+	if _, f, err := parseArgs(args); err == nil && f.fileRoot != "" {
+		return 2, fmt.Errorf("build: -9 serves files to a program ogo run loads, and build loads nothing")
+	}
 	_, code, err := compile(args, stdout, stderr)
 	return code, err
 }
@@ -42,8 +45,18 @@ func Build(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error
 // output is readable out of the box — see loadp2.DefaultClockHz for why
 // the clock, not just the baud, is the load-bearing setting. A board with a
 // non-standard crystal, or a program that reconfigures its serial, needs the raw
-// `ogo loadp2` passthrough with explicit -f/-b instead.
+// `ogo loadp2` passthrough with explicit -f/-b instead. -9 DIR is loadp2's: the
+// loader serves DIR to the program as a 9P file system over the serial line.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
+	_, f, err := parseArgs(args)
+	if err != nil {
+		return 2, err
+	}
+	if f.fileRoot != "" {
+		if fi, err := os.Stat(f.fileRoot); err != nil || !fi.IsDir() {
+			return 2, fmt.Errorf("run: -9 wants a directory, got %q", f.fileRoot)
+		}
+	}
 	bin, code, err := compile(args, stdout, stderr)
 	if err != nil || code != 0 {
 		return code, err
@@ -53,7 +66,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 		return 2, fmt.Errorf("run: no func main to run")
 	}
 
-	return loadp2.Load(loadp2.Options{Binary: bin, Terminal: true}), nil
+	return loadp2.Load(loadp2.Options{Binary: bin, Terminal: true, FileRoot: f.fileRoot}), nil
 }
 
 // compile checks and emits C for the package named by args, then compiles it to a
@@ -769,6 +782,9 @@ type buildFlags struct {
 	// report prints what the program takes of the P2 after it is built
 	// (report).
 	report bool
+	// fileRoot is the directory ogo run's loader serves to the program as a 9P
+	// file system (loadp2's -9).
+	fileRoot string
 }
 
 // parseHz reads a flag's frequency argument, advancing i past it. It takes plain Hz
@@ -834,6 +850,12 @@ func parseArgs(args []string) (srcs []string, f buildFlags, err error) {
 			f.allowWarnings = true
 		case a == "--report" || a == "-report":
 			f.report = true
+		case a == "-9":
+			i++
+			if i >= len(args) {
+				return nil, buildFlags{}, fmt.Errorf("build: -9 requires a directory")
+			}
+			f.fileRoot = args[i]
 		case a == "--clock" || a == "-clock":
 			if f.clock, err = hz(a, &i); err != nil {
 				return nil, buildFlags{}, err

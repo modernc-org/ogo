@@ -82,6 +82,7 @@ type Options struct {
 	Verbose  bool     // -v verbose loader output
 	Quiet    bool     // -q quiet mode, watch for the program's exit sequence (ogo test)
 	Terminal bool     // -t enter interactive terminal after load (ogo run)
+	FileRoot string   // -9 serve the 9P file system rooted here over the line (ogo run -9)
 	Extra    []string // additional raw loadp2 flags, appended after the binary
 }
 
@@ -121,6 +122,9 @@ func buildArgs(o Options) []string {
 	}
 	if o.Terminal {
 		args = append(args, "-t")
+	}
+	if o.FileRoot != "" {
+		args = append(args, "-9", o.FileRoot)
 	}
 	if o.Binary != "" {
 		args = append(args, o.Binary)

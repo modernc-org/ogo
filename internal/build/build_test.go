@@ -176,6 +176,12 @@ func TestParseArgs(t *testing.T) {
 	if _, _, err := parseArgs([]string{"-nope"}); err == nil {
 		t.Error("unknown flag: want an error")
 	}
+	if srcs, f, err := parseArgs([]string{"-9", "lib", "a.ogo"}); err != nil || f.fileRoot != "lib" || !slices.Equal(srcs, []string{"a.ogo"}) {
+		t.Errorf("parseArgs(-9 lib a.ogo): fileRoot=%q srcs=%v, %v", f.fileRoot, srcs, err)
+	}
+	if _, _, err := parseArgs([]string{"-9"}); err == nil {
+		t.Error("-9 without a directory: want an error")
+	}
 
 	// A clock may be written in Hz or with the suffix it is usually spoken in --
 	// nine digits are easy to write with the wrong number of zeros.

@@ -26,6 +26,11 @@ func TestBuildArgs(t *testing.T) {
 			want: []string{"loadp2", "-p", "/dev/ttyUSB0", "-f", "200000000", "-b", "230400", "-t", "blink.binary"},
 		},
 		{
+			name: "ogo run -9 (terminal + 9P file server)",
+			o:    Options{Binary: "blink.binary", Terminal: true, FileRoot: "lib"},
+			want: []string{"loadp2", "-f", "200000000", "-b", "230400", "-t", "-9", "lib", "blink.binary"},
+		},
+		{
 			name: "ogo test (quiet, watch exit sequence)",
 			o:    Options{Binary: "blink.binary", Quiet: true, Verbose: true},
 			want: []string{"loadp2", "-f", "200000000", "-b", "230400", "-v", "-q", "blink.binary"},

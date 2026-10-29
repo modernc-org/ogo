@@ -263,7 +263,7 @@ report costs about a compile more than the build.
 	              build a program the C backend warned about
 	--report      say what the binary takes of Hub RAM, cogs and locks
 `,
-	"run": `usage: ogo run [--release] [--unchecked] [--no-inline] [--clock hz] [--gostack longs] [--allow-backend-warnings] [package | file.ogo ...]
+	"run": `usage: ogo run [--release] [--unchecked] [--no-inline] [--clock hz] [--gostack longs] [--allow-backend-warnings] [-9 dir] [package | file.ogo ...]
 
 Run builds a package exactly as ogo build does, loads the binary onto a connected
 Propeller 2 and opens a terminal on its serial output, reading at 230400 baud so
@@ -275,6 +275,10 @@ does not decide what the program runs at: a flexcc-compiled program sets its own
 clock as it starts, which is why the frequency has to be chosen at build time.
 
 Press Ctrl-] to leave the terminal.
+
+-9 dir serves dir to the program as a file system, as loadp2's -9 does: the
+loader answers 9P2000 messages the program sends over the serial line, each
+after the bytes 0xFF 0x01, with dir as the root.
 
 The terminal also ends where the program writes the bytes 0xFF 0x00, the
 loader's exit sequence, and run exits with the byte after them as its status. A

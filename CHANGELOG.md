@@ -40,6 +40,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   type" and "multiple assignment requires a single function call": a literal took
   one call and no more.
 
+### Toolchain
+
+- **`ogo run -9 dir` serves dir to the program as a file system**, as loadp2's
+  `-9` does: the loader answers the 9P2000 messages a program sends over the
+  serial line after the bytes 0xFF 0x01. It took `ogo build` and `ogo loadp2 -t
+  -9 dir` before. Asked for by OctoForth, whose INCLUDE reads the host's files
+  so.
+
 ### Fixed
 
 - **A wrong answer, silent, measured on a P2-EDGE: a compound assignment whose
