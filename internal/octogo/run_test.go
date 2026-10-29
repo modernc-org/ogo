@@ -56729,6 +56729,91 @@ func main() {
 `,
 		want: "a 3\nb 3\n3253\n5 r 3 2 80\n41 g\n41\n33\n34\n3 6\n",
 	},
+	{
+		// A compound assignment whose operand is an element read through a row,
+		// `eg -= palette[k][1]`: in a checked build the row index is a call, ogo_bound,
+		// and the target's compiler loaded nothing, subtracting a register no
+		// instruction wrote. Column 0, an index without a call, the plain form and a
+		// sum or a product of the same element were right. image/draw's
+		// Floyd-Steinberg, ported for dom81, dithered to noise on a P2-EDGE; the
+		// emitter binds such an operand to a temporary (rowElement,
+		// doc/compound-row-element.c). Every operator, a slice of arrays, an array, a
+		// pointer to one, three dimensions, a call in the row index, a for post and an
+		// if header.
+		name: "a compound assignment of an element of a row",
+		src: `var calls int
+
+func id(i int) int {
+	calls = calls*10 + i + 1
+	return i
+}
+
+var (
+	pal  = [4][4]int32{{0, 0, 0, 65535}, {65535, 0, 0, 65535}, {0, 65535, 0, 65535}, {65535, 65535, 65535, 65535}}
+	cube [2][2][3]uint32
+)
+
+func main() {
+	p := pal[:]
+	cube[1][1][2] = 7
+	cube[1][0][2] = 3
+	for x := 0; x < 4; x++ {
+		er, eg, eb, ea := int32(x*8000), int32(x*3000), int32(x*1000), int32(65535)
+		i := x & 3
+		er -= p[i][0]
+		eg -= p[i][1]
+		eb -= (p[i][2])
+		ea -= pal[id(i)][3]
+		u := uint32(9)
+		u *= cube[1][x&1][2]
+		for n := 0; n < 1; n++ {
+			er |= p[i][1]
+		}
+		if eg += p[i][2]; eg > 0 {
+			ea &^= p[i][3]
+		}
+		printf("%d %d %d %d %d %d\n", x, er, eg, eb, ea, u)
+	}
+	printf("%d\n", calls)
+}
+`,
+		want: "0 0 0 0 0 27\n1 -57535 3000 1000 0 63\n2 65535 -59535 2000 0 27\n3 -1 9000 -62535 0 63\n1234\n",
+	},
+	{
+		// The same operand of 8 and 16 bits, which the target's compiler refused
+		// ("Array dereferences on non-array") or crashed on, rather than miscompiled.
+		name: "a compound assignment of a narrow element of a row",
+		src: `var calls int
+
+func id(i int) int {
+	calls = calls*10 + i + 1
+	return i
+}
+
+var (
+	rows = [][4]int16{{1, 2, 3, 4}, {5, 6, 7, 8}}
+	bs   = [2][3]uint8{{1, 2, 3}, {4, 5, 6}}
+	ws   = [2][3]uint16{{100, 200, 300}, {400, 500, 600}}
+	cs   = [2][2]int8{{-1, 2}, {3, -4}}
+)
+
+func main() {
+	for x := 0; x < 4; x++ {
+		h := int16(100)
+		h += rows[x&1][(x+1)&3]
+		b := uint8(50)
+		b ^= bs[id(x&1)][2]
+		w := uint16(1000)
+		w -= ws[x&1][x%3]
+		c := int8(10)
+		c *= cs[x&1][1]
+		printf("%d %d %d %d %d\n", x, h, b, w, c)
+	}
+	printf("%d\n", calls)
+}
+`,
+		want: "0 102 49 900 20\n1 107 52 500 -40\n2 104 49 700 20\n3 105 52 600 -40\n1212\n",
+	},
 }
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

@@ -35,6 +35,22 @@ shipped section tells a reader on that version that they have behaviour they do 
   type"), a list of slice literals, of makes and of calls returning an array. Such
   a list is written name by name, as a local one is.
 
+### Fixed
+
+- **A wrong answer, silent, measured on a P2-EDGE: a compound assignment whose
+  operand is an element of a row**: `eg -= palette[k][1]`, for a `palette
+  [][4]int32` or a `[3][4]int32`, subtracted from eg a register nothing had
+  written, on the target only. A checked build, the default, reads every index but
+  a constant one through a bounds check, a call, and the C backend's rewrite of
+  `x op= y` loaded nothing for an element whose row index holds a call: image/draw's
+  Floyd-Steinberg dithering, ported, dithered to noise. `+=`, `-=`, `*=`, `&=`,
+  `|=` and `^=`, of an element at a constant column past the first, of a row of an
+  array, of a slice of arrays or of three dimensions, the row index a variable or a
+  call; an element of 8 or 16 bits was refused or crashed the backend instead.
+  Column 0, the plain form `x = x - y` and a sum or a product of the element were
+  right. Such an operand is read into a temporary first
+  (doc/compound-row-element.c). In every release checked since v0.40.0.
+
 ## v1.0.0-rc.2
 
 The second release candidate for v1.0. Both rounds run against rc.1 found silent

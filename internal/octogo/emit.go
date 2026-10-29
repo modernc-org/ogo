@@ -49999,7 +49999,7 @@ func (e *emitter) emitHoistedCompound(target func(), t assignTail) bool {
 		return false
 	}
 
-	if !subtreeHasSym(t.rhs, Index) || !subtreeHasSym(t.rhs, Selector) {
+	if (!subtreeHasSym(t.rhs, Index) || !subtreeHasSym(t.rhs, Selector)) && !e.rowElement(t.rhs) {
 		return false
 	}
 
@@ -50022,6 +50022,40 @@ func (e *emitter) emitHoistedCompound(target func(), t assignTail) bool {
 	}
 	e.emit(" " + t.op + " " + tmp + ";\n")
 	return true
+}
+
+// rowElement reports whether an operand is nothing but an element read through two
+// or more index steps, `palette[k][1]`, parenthesised or not: the same backend
+// fault in another shape. The base of the last index is a ROW, an array-typed
+// value like the member #106 was about, and where an index before the last holds a
+// call -- in a checked build every index but a constant one, ogo_bound -- the
+// compound form loaded nothing: `eg -= palette[k][1]` subtracted a register no
+// instruction wrote, and image/draw's Floyd-Steinberg dithered to noise on a
+// P2-EDGE (dom81, doc/compound-row-element.c). A sum, a product, a negation or a
+// conversion of the same element was right, and so were `eg = eg - ...`, an index
+// without a call, and column 0, whose address is the row's.
+func (e *emitter) rowElement(ast []int32) bool {
+	for {
+		kids, ok := e.soleFactor(ast)
+		if !ok {
+			return false
+		}
+		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression {
+			ast = kids[1].ast
+			continue
+		}
+		kids = e.unparenKids(kids)
+		if len(kids) == 0 || kids[len(kids)-1].sym != FactorSuffix {
+			return false
+		}
+		n := 0
+		for st := range it(kids[len(kids)-1].ast) {
+			if st.sym == Index {
+				n++
+			}
+		}
+		return n >= 2
+	}
 }
 
 // subtreeHasSym reports whether a symbol occurs anywhere in a subtree.
