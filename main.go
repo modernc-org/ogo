@@ -274,7 +274,9 @@ otherwise, exactly as for ogo build. The loader is passed a -f frequency, but th
 does not decide what the program runs at: a flexcc-compiled program sets its own
 clock as it starts, which is why the frequency has to be chosen at build time.
 
-Press Ctrl-] to leave the terminal.
+Press Ctrl-] to leave the terminal. What is typed or piped in before the
+terminal says it is entering terminal mode does not reach the program: a script
+writing to run's input waits for that line.
 
 -9 dir serves dir to the program as a file system, as loadp2's -9 does: the
 loader answers 9P2000 messages the program sends over the serial line, each
