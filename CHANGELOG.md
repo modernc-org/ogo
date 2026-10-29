@@ -62,6 +62,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   builds**: `Index(&c)` for a `c ColorRGBA64`, a struct of uint16s, drew a backend
   warning about the conversion to the interface's data word, and the build was
   refused, a backend warning failing it.
+- **A wrong answer, silent, measured on a P2-EDGE: the last byte a goroutine
+  printed before main returned**: main, ending the program, stopped every other cog
+  at once, and a stopped cog resets the smart pins it drives, the serial line's
+  among them where no other cog drives it: the byte being shifted out was lost, a
+  goroutine's last newline arriving as 0xfe in every run. The end takes the stdio
+  lock now, so no cog begins a print after main's return, and drains the line
+  before it stops the others; a panic begun meanwhile is let print and ends the
+  program, as before. In every release since v0.50.0.
+
 
 ## v1.0.0-rc.2
 

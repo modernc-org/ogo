@@ -56999,6 +56999,28 @@ func main() {
 `,
 		want: "1234 9876 5678 11110\n",
 	},
+	{
+		// A goroutine's lines printed last, main returning as it receives: stopping
+		// the goroutine's cog reset the serial line's smart pin, which it drove alone,
+		// and the byte being shifted out was lost, the last newline 0xfe on a P2-EDGE.
+		// The end of the program takes the stdio lock and drains the line before it
+		// stops the other cogs (ogoEndProgram).
+		name: "a goroutine's lines printed last",
+		src: `func run(done chan bool) {
+	for i := 0; i < 3; i++ {
+		println("line", i)
+	}
+	done <- true
+}
+
+func main() {
+	done := make(chan bool)
+	go run(done)
+	<-done
+}
+`,
+		want: "line 0\nline 1\nline 2\n",
+	},
 }
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

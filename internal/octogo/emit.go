@@ -22246,10 +22246,27 @@ func (e *emitter) endProgramC(text []byte, endsCogs bool) []byte {
 // outermost block outlives every cog (outlivesCogs), is gone under them -- a
 // channel cell of main's read garbage there, "close of closed channel" on the host
 // where the board stopped every cog first.
+//
+// What another cog printed before main returned leaves the line first: a stopped
+// cog resets the smart pins it drives, the serial line's among them where no other
+// cog drives it, and the byte the pin was shifting out was lost -- a goroutine's
+// last newline came out as 0xfe, in every run. So main takes the stdio lock, which
+// keeps any cog from beginning a print after main's return, as Go's exit keeps it,
+// waits out the panic path's drain, and stops the others holding it. A panic begun
+// in the drain would wait on the lock to print: the lock is given back to it, and
+// it ends the program itself, as one already under way does.
 const ogoEndProgram = panickingDecl + "static void ogo_end_program(void) {\n" +
 	"\twhile (ogo_panicking) {} // a panic under way on another cog ends the program, and says why\n" +
 	"#ifdef __FLEXC__\n" +
+	"\tfor (;;) {\n" +
+	"\t\t__lockio(0);\n" +
+	"\t\t_waitms(10); // what the others printed leaves the line: a stopped cog resets its smart pins\n" +
+	"\t\tif (!ogo_panicking) break;\n" +
+	"\t\t__unlockio(0);\n" +
+	"\t\twhile (ogo_panicking) {}\n" +
+	"\t}\n" +
 	"\tfor (int _ogo_c = 0, _ogo_me = _cogid(); _ogo_c < 8; _ogo_c++) if (_ogo_c != _ogo_me) _cogstop(_ogo_c);\n" +
+	"\t__unlockio(0);\n" +
 	"#else\n" +
 	"\tfflush(stdout);\n" +
 	"\t_Exit(0);\n" +
