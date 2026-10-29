@@ -59220,7 +59220,13 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 	}
 	// A slice literal is backed by an array this frame owns, so it reaches this
 	// frame's storage by construction -- there is no variable to have marked.
-	if elem, _, ok := e.soleSliceLit(ast); ok && elem != "" {
+	// One with no elements reaches nothing: its length and capacity are 0, so
+	// nothing is read or written through it, and a function may hand it back, as
+	// mbserver's handlers do, `return []byte{}, &IllegalDataAddress` (dom82).
+	if elem, lit, ok := e.soleSliceLit(ast); ok && elem != "" {
+		if len(compositeLitElements(lit)) == 0 {
+			return frameRef{}, false
+		}
 		return litRef(), true
 	}
 	// `[]byte("...")` of a constant is the same slice literal by another spelling

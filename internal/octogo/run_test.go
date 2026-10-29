@@ -56906,6 +56906,53 @@ func main() {
 		want: "{3 6} {5 8} 100 300 14 3 24 {3 5} 10 11 true\n3 7\nbig\n-1425706553\n",
 	},
 	{
+		// An empty slice literal handed back, `return []byte{}, &IllegalDataAddress`,
+		// mbserver's handlers' answer to a bad request, was refused, "cannot return a
+		// slice literal, whose backing array is this function's": with no elements its
+		// length and capacity are 0 and nothing is read or written through it, so it
+		// reaches nothing (dom82). It is not nil, as in Go.
+		name: "an empty slice literal handed back",
+		src: `type E uint8
+
+var IllegalDataAddress E = 2
+var Success E
+
+type S struct {
+	name string
+	data []byte
+}
+
+var gs []byte
+var gst S
+
+func handler(n int) ([]byte, *E) {
+	if n > 3 {
+		return []byte{}, &IllegalDataAddress
+	}
+	return nil, &Success
+}
+
+func empty() []int { return []int{} }
+
+func inStruct() S { return S{"x", []byte{}} }
+
+func main() {
+	d, e := handler(5)
+	println(len(d), cap(d), d == nil, *e)
+	d, e = handler(1)
+	println(len(d), cap(d), d == nil, *e)
+	x := empty()
+	println(len(x), cap(x), x == nil)
+	s := inStruct()
+	println(s.name, len(s.data), s.data == nil)
+	gs = []byte{}
+	gst = S{"g", []byte{}}
+	println(len(gs), gs == nil, gst.name, len(gst.data), gst.data == nil)
+}
+`,
+		want: "0 0 false 2\n0 0 true 0\n0 0 false\nx 0 false\n0 false g 0 false\n",
+	},
+	{
 		// `if src, ok := src.(*Uniform); ok`, x/image/vector's own idiom: the name
 		// declared over the one asserted was read in its own C initializer, which both
 		// compilers refused (dom81). The value is read into a temporary first.
