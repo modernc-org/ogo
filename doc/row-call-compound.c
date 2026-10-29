@@ -23,6 +23,9 @@
 // the board where the host and Go agreed. The emitter binds such a target's address
 // first (hoistCompoundTarget, rowIndexCalls), as it did a compound assignment's.
 //
+// The cause is the one of doc/compound-row-element.c, the compound read: the row is
+// copied into a temporary of array type, which holds nothing (2026-10-29).
+//
 // gcc prints, and the target should print, for each i of 0, 1, 2:
 //
 //	i: a1=1 c2=1 r2=1 t3=1 m3=1 h2=1

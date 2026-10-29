@@ -23,6 +23,19 @@
 // in-process flexcc (spin2cpp b5993a84 with the carried diffs), the pin of
 // v1.0.0-rc.2.
 //
+// The cause, read the same day in upstream master a7a41364, which still has it:
+// ExtractSideEffects (frontends/hltransform.c) copies an ARRAYREF's base that has
+// side effects into a temporary `_arr_` of the base's own type, and for a row that
+// type is an array, which no temporary holds -- the call is made and nothing is
+// copied, so the element read is a register nothing wrote. A temporary that is a
+// pointer to the row's first element, holding its address (ArrayToPointerType, as
+// the function's AST_CONDRESULT case writes one), prints gcc's lines for this file
+// in a native build, and so for doc/row-call-compound.c (the compound store),
+// doc/wide-row-call-index.c (an element wider than a long, whose plain assignment
+// takes the same rewrite) and doc/ptr-to-array-through-call.c (an array a call's
+// pointer reaches): one cause. Prepared as an upstream PR, held until the open ones
+// are answered.
+//
 // It reaches OctoGo programs because the call is the compiler's own: a checked
 // build -- the default -- writes every index but a constant one through ogo_bound,
 // so `eg -= palette[bestIndex][1]` is `eg -= palette.ptr[ogo_bound(bestIndex,

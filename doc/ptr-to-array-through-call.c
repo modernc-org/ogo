@@ -31,6 +31,10 @@
 // _main__arr__0064_00"). Until 2026-08-25 the pointer to an array carried no check at
 // all on that account.
 //
+// The cause is the one of doc/compound-row-element.c (2026-10-29): the struct
+// element's assignment takes the rewrite of `M op= N`, which copies the array the
+// call's pointer reaches into a temporary of array type, `_arr_`, holding nothing.
+//
 // To check whether this is still so, compile it and read the three lines.
 
 #include <stdio.h>

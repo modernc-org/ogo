@@ -46,6 +46,10 @@
 // The target prints r2 and r3 as 0 0, the read as garbage, s2's and s3's reads
 // as garbage, and s2's element as 13 14: the store of a whole element is lost, and
 // the store of a field of one is right.
+//
+// The cause is the one of doc/compound-row-element.c (2026-10-29): an assignment of
+// a value wider than a long takes the rewrite of `M op= N`, which copies the row
+// into a temporary of array type, holding nothing.
 
 #include <stdio.h>
 #include <stdint.h>
