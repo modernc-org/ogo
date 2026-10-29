@@ -63,6 +63,21 @@ var u func(int) int = b1
 func main() { println(run(1, 2), u(3)) }
 `, map[string][]string{"run": {"handler"}, "hCall": {"bif"}, "main": {"ogo_functype0"}},
 			map[string][]string{"handler": {"b1", "b2", "hAdd", "hCall"}, "bif": {"b1", "b2", "hAdd", "hCall"}, "ogo_functype0": {"b1", "b2", "hAdd", "hCall"}}},
+		{"a parameter and a local named like a function", tables + `
+func lone(n int) int { return n - 1 }
+
+func next(lone int) int { return lone + 1 }
+
+func loc(n int) int {
+	lone := n
+	return lone * 2
+}
+
+var u func(int) int = b1
+
+func main() { println(run(1, 2), u(3), next(4), loc(5), lone(6)) }
+`, map[string][]string{"run": {"handler"}, "hCall": {"bif"}, "main": {"ogo_functype0"}},
+			map[string][]string{"handler": {"b1", "b2", "hAdd", "hCall"}, "bif": {"b1", "b2", "hAdd", "hCall"}, "ogo_functype0": {"b1", "b2", "hAdd", "hCall"}}},
 		{"a conversion", tables + `
 func main() {
 	var h handler = handler(bifs[0].f)

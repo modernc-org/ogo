@@ -70,7 +70,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   lock now, so no cog begins a print after main's return, and drains the line
   before it stops the others; a panic begun meanwhile is let print and ends the
   program, as before. In every release since v0.50.0.
-
+- **A parameter or a local named like a package function is no function value**:
+  `func next(step int)` beside a `func step()` made step a value of its signature,
+  and every call through a value of it was taken to reach step: main paid stack
+  checks for a recursion no run makes, and a goroutine calling step was refused,
+  "recurses through step, so its stack has no bound".
 
 ## v1.0.0-rc.2
 

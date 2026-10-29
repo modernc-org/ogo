@@ -12885,6 +12885,15 @@ func (e *emitter) noteFuncValue(kids []Node) {
 	if len(kids) == 0 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT {
 		return
 	}
+	// A name the checker read as a variable where it stands, a parameter or a local
+	// named like a package function or an import, is neither: `func next(step int)`
+	// made the package's step a value of its type, and every call through a value of
+	// that type was taken to reach it, closing a recursion no run makes -- stack
+	// checks on main, and a goroutine refused its stack bound (found by oforth). A
+	// name the checker recorded nothing of keeps the answer it had.
+	if e.f.varNameToks[kids[0].tok] {
+		return
+	}
 	name := e.src(kids[0].tok)
 	var steps []Node
 	if len(kids) >= 2 && kids[1].sym == FactorSuffix {

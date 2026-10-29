@@ -57021,6 +57021,59 @@ func main() {
 `,
 		want: "line 0\nline 1\nline 2\n",
 	},
+	{
+		// A parameter named like a package function, `func next(step int)`, made
+		// that function a value of its signature, and a call through any value of it,
+		// Poll() here, was taken to reach it: main paid stack checks no run needs, and
+		// a goroutine looping on step was refused, "recurses through step, so its
+		// stack has no bound" (found by oforth). A name the checker read as a
+		// variable is no function (varNameToks).
+		name: "a parameter named like a package function",
+		src: `// A parameter named like a function makes a call through a function value
+// look recursive: Poll only ever holds ready, yet the build checks the
+// stack at step and wait, as if Poll could call step.
+
+var Poll func() bool
+
+var polls int
+
+func ready() bool {
+	polls++
+	return polls > 3
+}
+
+func step() bool {
+	println("step", polls)
+	wait()
+	println("stepped", polls)
+	return polls > 10
+}
+
+func wait() {
+	for !Poll() {
+		println("waiting", polls)
+	}
+}
+
+// next's parameter is named step, as the function above is.
+func next(step int) int { return step + 1 }
+
+func run(done chan bool) {
+	for !step() {
+		println(next(polls))
+	}
+	done <- true
+}
+
+func main() {
+	Poll = ready
+	done := make(chan bool)
+	go run(done)
+	<-done
+}
+`,
+		want: "step 0\nwaiting 1\nwaiting 2\nwaiting 3\nstepped 4\n5\nstep 4\nstepped 5\n6\nstep 5\nstepped 6\n7\nstep 6\nstepped 7\n8\nstep 7\nstepped 8\n9\nstep 8\nstepped 9\n10\nstep 9\nstepped 10\n11\nstep 10\nstepped 11\n",
+	},
 }
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

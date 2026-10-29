@@ -303,6 +303,7 @@ type File struct {
 	chanSizes         map[*int32]int64            // a buffered channel's size, by the place of make's second argument in the AST, as the checker computed it (checkChanMake); read by the emitter, which folds no size of its own
 	headerBindings    map[*int32]Node             // the statements headers declare or assign by, `if p := r; ...`, for the passes reading a body's statements by shape (headerBindingsIn)
 	ownCallees        map[int32]bool              // the token indexes of callees named like a builtin and resolving to the program's own declaration (checkCallee)
+	varNameToks       map[int32]bool              // the token indexes of names read in a function body that resolve to a variable -- a local, a parameter -- by noteRef; read by the emitter, a name a variable shadows being no function used as a value
 	headerStmts       map[*int32]Node             // the statements standing in headers, `if two(); ok`, as the statements they are, by the place of the header's expression in the AST (see headerStmt); read by the emitter
 	importToks        map[*Package]Token          // a token of this file spelling the name it imports a package by, or none (importQualTok)
 	foreignPkgs       map[string]*Package         // a qualifier another package wrote, which this file spells a type with and does not import (foreignQual); nil where two packages share the name
@@ -902,6 +903,10 @@ func (f *File) noteRef(s *Scope, tok Token) {
 		}
 		return
 	}
+	if f.varNameToks == nil {
+		f.varNameToks = map[int32]bool{}
+	}
+	f.varNameToks[tok.index] = true
 	if vd.clauseOf != nil {
 		vd = vd.clauseOf
 	}
