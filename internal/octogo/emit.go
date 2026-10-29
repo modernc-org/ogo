@@ -41923,6 +41923,11 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 		// Go refuses too.
 		if lit, isConst := e.wideConstRef(base); isConst {
 			text, addr = lit, false
+		} else if lit, isConst := e.intConstRef(base); isConst {
+			// One of 32 bits or fewer the same, `Position.Pixel().Next()`: written
+			// by its name, the C named nothing and no compiler took it (rsc.io/qr's
+			// coding, dom83).
+			text, addr = lit, false
 		}
 	case e.isChainFunc(base):
 		pendingFn, text = true, base

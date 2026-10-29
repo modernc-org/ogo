@@ -56953,6 +56953,74 @@ func main() {
 		want: "0 0 false 2\n0 0 true 0\n0 0 false\nx 0 false\n0 false g 0 false\n",
 	},
 	{
+		// What a method of a typed CONSTANT hands back, `pos := Position.Pixel()`
+		// for a `const Position PixelRole` (rsc.io/qr's coding, dom83): the checker
+		// typed no such call, so a copy of the variable, `p := pos`, was the flags'
+		// uint32 and refused where a Pixel goes (and taken where Go refuses it, the
+		// const_method_result spec files); and a chain past the call, `Position.
+		// Pixel().Next()`, named the constant in the C, which no compiler took.
+		name: "a typed constant's method's result, copied and chained",
+		src: `type Pixel uint32
+
+func (p Pixel) Offset() uint { return uint(p >> 6) }
+
+func (p Pixel) Next() Pixel { return p + 64 }
+
+type Box struct {
+	P Pixel
+	N int
+}
+
+type PixelRole uint32
+
+const (
+	_ PixelRole = iota
+	Position
+	Alignment
+)
+
+const Timing PixelRole = 3
+
+const Format = PixelRole(4)
+
+func (r PixelRole) Pixel() Pixel { return Pixel(r<<2 | 1) }
+
+func (r PixelRole) Box() Box { return Box{Pixel(r << 2), int(r)} }
+
+func (r PixelRole) Two() (Pixel, int) { return Pixel(r << 3), int(r) * 2 }
+
+var grid [2][2]Pixel
+
+func take(p Pixel) Pixel { return p + 1 }
+
+func posBox(m [][2]Pixel) {
+	pos := Position.Pixel()
+	p := pos
+	p |= 2
+	m[0][0] = p
+}
+
+func main() {
+	posBox(grid[:])
+	var v = Timing.Pixel()
+	var w = v
+	grid[1][1] = w
+	c := Format.Pixel()
+	d := c
+	e := Position.Pixel().Next()
+	f := e
+	b := Alignment.Box().P
+	g := b
+	x, n := Alignment.Two()
+	y := x
+	printf("%d %d %d %d %d %d\n", grid[0][0], grid[1][1], take(d), d.Offset(), f, f.Offset())
+	printf("%T %d %d %d %d %d\n", g, g, take(g), g.Next(), take(y), n)
+	println(Position.Pixel().Next().Next(), Format.Box().N, Timing.Box().P.Offset())
+}
+`,
+		want: "7 13 18 0 69 1\nmain.Pixel 8 9 72 17 4\n133 4 0\n",
+	},
+	{
 		// `if src, ok := src.(*Uniform); ok`, x/image/vector's own idiom: the name
 		// declared over the one asserted was read in its own C initializer, which both
 		// compilers refused (dom81). The value is read into a temporary first.

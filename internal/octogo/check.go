@@ -17511,10 +17511,9 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList, suffix Nod
 		// A typed CONSTANT's method, `One.Add(Two, Two)` for a `const One N = 1`:
 		// the method of its type, asked nothing as long as only a variable was.
 		if cd, isConst := s.find(head.Src()).(*ConstDeclaration); isConst && cd.ConstSpec != nil {
-			f.resolveConst(s, cd)
-			if id, isIdent := cd.ConstSpec.TypeNode.(*TypeNodeIdent); isIdent && !id.Qualifier.IsValid() {
-				if _, isType := s.find(id.Name.Src()).(*TypeDeclaration); isType {
-					f.checkMethodCallOn(s, &VarDeclaration{typeName: id.Name}, head.Src(), member, argList)
+			if nm, ok := f.constTypeName(s, cd); ok {
+				if _, isType := s.find(nm.Src()).(*TypeDeclaration); isType {
+					f.checkMethodCallOn(s, &VarDeclaration{typeName: nm}, head.Src(), member, argList)
 				}
 			}
 		}
@@ -18230,6 +18229,24 @@ func (f *File) callChainWalk(s *Scope, head Token, steps []Node) (w callChain) {
 		}
 		t.f = wf
 		i = 1
+	case *ConstDeclaration:
+		// A typed CONSTANT's method called, `Position.Pixel()` for a `const
+		// Position PixelRole = 1`: its results, as callResults reads them off the
+		// constant's type (constTypeName). Untyped, a variable declared from the
+		// call had only the flags' uint32 and no name: a copy of it was refused
+		// where a Pixel goes, `m[y][x] = p` (rsc.io/qr's posBox, dom83), and taken
+		// where Go refuses one, `var u uint32 = pos`.
+		if len(steps) < 2 || steps[0].sym != Selector || steps[1].sym != CallSuffix || d.ConstSpec == nil {
+			return w
+		}
+		m, has := f.selectorMember(steps[0])
+		if !has {
+			return w
+		}
+		if results, ok := f.callResults(s, head, m); !one(results, ok, s) {
+			return w
+		}
+		i = 2
 	case *TypeDeclaration:
 		switch {
 		case steps[0].sym == CallSuffix:
@@ -18347,6 +18364,36 @@ func (f *File) callChainWalk(s *Scope, head Token, steps []Node) (w callChain) {
 				return w
 			}
 			t, i = typeAt{&TypeNodeIdent{Name: member}, home, f.fileOfToken(md.Token())}, 2
+		case *ConstDeclaration:
+			// A typed CONSTANT of another package's with its method called,
+			// `lib.Position.Pixel()`: the method's results, resolved where the method
+			// is declared, as a function's are. Untyped, the variable declared from
+			// one took what Go refuses, `var u uint32 = pos` (dom83).
+			if len(steps) < 3 || steps[1].sym != Selector || steps[2].sym != CallSuffix {
+				return w
+			}
+			mm, has := f.selectorMember(steps[1])
+			if !has {
+				return w
+			}
+			wf := f.fileOfToken(md.Token())
+			nm, ok := wf.constTypeName(home, md)
+			if !ok {
+				return w
+			}
+			td, _, ok := wf.typeDeclNamed(home, nm.Src())
+			if !ok {
+				return w
+			}
+			fd := td.methods[mm.Src()]
+			if fd == nil || fd.Type == nil {
+				return w
+			}
+			mf := f.fileOfToken(fd.Name)
+			if !one(mf.flattenResults(mf.Scope, fd.Type.Signature), true, mf.Scope) {
+				return w
+			}
+			t.f, i = mf, 3
 		default:
 			return w
 		}
@@ -26616,6 +26663,42 @@ func (f *File) funcSingleResultName(s *Scope, callee Token) string {
 // this package cannot see -- another package's, or a call through a function value
 // -- answers false, and what such a call returns is left unknown rather than
 // guessed at.
+// constTypeName is the name of the defined type of this package a typed constant
+// is of: the type its spec writes, `const One N = 1`, inherited in an iota group
+// too, or the one its initializer names, `const Format = PixelRole(4)`, asked
+// where the constant is declared and once, against a cycle. It is what the
+// constant's methods are looked up on.
+func (f *File) constTypeName(s *Scope, cd *ConstDeclaration) (Token, bool) {
+	if cd.ConstSpec == nil {
+		return Token{}, false
+	}
+	f.resolveConst(s, cd)
+	if tn := cd.ConstSpec.TypeNode; tn != nil {
+		id, isIdent := tn.(*TypeNodeIdent)
+		if !isIdent || id.Qualifier.IsValid() {
+			return Token{}, false
+		}
+		return id.Name, true
+	}
+	if !cd.ConstSpec.hasExpr {
+		return Token{}, false
+	}
+	if f.namingConsts == nil {
+		f.namingConsts = map[*ConstDeclaration]bool{}
+	}
+	if f.namingConsts[cd] {
+		return Token{}, false
+	}
+	f.namingConsts[cd] = true
+	defer delete(f.namingConsts, cd)
+	wf, ws := f.constHome(s, cd)
+	nm, ql, _, named := wf.exprNamedType(ws, cd.ConstSpec.exprNode)
+	if !named || ql.IsValid() {
+		return Token{}, false
+	}
+	return nm, true
+}
+
 func (f *File) callResults(s *Scope, callee, member Token) ([]retResult, bool) {
 	if !member.IsValid() {
 		// A variable holding a function, `c, ok := fv(3)`: the signature it carries.
@@ -26648,9 +26731,8 @@ func (f *File) callResults(s *Scope, callee, member Token) ([]retResult, bool) {
 	// A typed CONSTANT's method, `One.Int()`: its type's. Unresolved, the result
 	// was asked nothing -- `P{n: One.Int()}` of an int into an int64 field was taken.
 	if cd, isConst := s.find(callee.Src()).(*ConstDeclaration); isConst && cd.ConstSpec != nil {
-		f.resolveConst(s, cd)
-		if id, isIdent := cd.ConstSpec.TypeNode.(*TypeNodeIdent); isIdent && !id.Qualifier.IsValid() {
-			if td, home, ok := f.typeDeclNamed(s, id.Name.Src()); ok {
+		if nm, ok := f.constTypeName(s, cd); ok {
+			if td, home, ok := f.typeDeclNamed(s, nm.Src()); ok {
 				if fd := td.methods[member.Src()]; fd != nil && fd.Type != nil {
 					return f.flattenResults(home, fd.Type.Signature), true
 				}

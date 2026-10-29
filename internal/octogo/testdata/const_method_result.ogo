@@ -1,0 +1,74 @@
+// COMPILE
+
+// What a method of a typed CONSTANT hands back is of the method's result type,
+// `pos := Position.Pixel()` for a `const Position PixelRole` (rsc.io/qr's coding,
+// dom83): the checker typed no such call, so its variable had only the flags'
+// uint32, and a copy of it, `p := pos`, went nowhere a Pixel goes. Every shape of
+// the constant -- inherited in an iota group, its type written, typed by a
+// conversion -- and every shape of the value -- copied, chained, a field of its
+// result, one of several results.
+
+type Pixel uint32
+
+func (p Pixel) Offset() uint { return uint(p >> 6) }
+
+func (p Pixel) Next() Pixel { return p + 64 }
+
+type Box struct {
+	P Pixel
+	N int
+}
+
+type PixelRole uint32
+
+const (
+	_ PixelRole = iota
+	Position
+	Alignment
+)
+
+const Timing PixelRole = 3
+
+const Format = PixelRole(4)
+
+func (r PixelRole) Pixel() Pixel { return Pixel(r<<2 | 1) }
+
+func (r PixelRole) Box() Box { return Box{Pixel(r << 2), int(r)} }
+
+func (r PixelRole) Two() (Pixel, int) { return Pixel(r << 3), int(r) * 2 }
+
+var grid [2][2]Pixel
+
+func take(p Pixel) Pixel { return p + 1 }
+
+func posBox(m [][2]Pixel) {
+	pos := Position.Pixel()
+	p := pos
+	p |= 1
+	m[0][0] = p
+}
+
+func give() Pixel {
+	pos := Alignment.Pixel()
+	q := pos
+	return q
+}
+
+func main() {
+	posBox(grid[:])
+	var v = Timing.Pixel()
+	var w = v
+	grid[1][1] = w
+	c := Format.Pixel()
+	d := c
+	println(take(d), d.Offset())
+	e := Position.Pixel().Next()
+	f := e
+	var z Pixel = f
+	b := Alignment.Box().P
+	g := b
+	println(z, take(g), g.Next())
+	x, n := Alignment.Two()
+	y := x
+	println(take(y), n, give())
+}

@@ -26,6 +26,25 @@ shipped section tells a reader on that version that they have behaviour they do 
   was keeping one in a package variable or a struct a function returns. With no
   elements its length and capacity are 0, so nothing is read or written through
   it. It is not nil, as in Go.
+- **A copy of what a typed constant's method hands back builds**: `p := pos` for a
+  `pos := Position.Pixel()` of a `const Position PixelRole` was refused where a
+  Pixel goes, "cannot use p of type uint32 as type Pixel" (rsc.io/qr's coding), and
+  so was a method called on the copy: the call was typed by nothing, and its
+  variable had only the underlying type.
+
+### Behaviour changes
+
+- **What a typed constant's method hands back goes only where its type does**:
+  `var u uint32 = pos` for a `pos := Position.Pixel()` of a Pixel built, and so did
+  the value put into another defined type, a uint32 parameter or arithmetic with a
+  uint32 -- each a program Go refuses -- across a package boundary too, `pos :=
+  lib.Position.Pixel()`. In every release checked since v0.40.0.
+
+### Fixed
+
+- **A chain past a typed constant's method builds**: `Position.Pixel().Next()` and
+  `Position.Box().P` named the constant in the C, which has no such symbol, and no
+  C compiler took it.
 
 ## v1.0.0-rc.3
 
