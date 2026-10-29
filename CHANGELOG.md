@@ -16,7 +16,13 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
-## Unreleased
+## v1.0.0-rc.3
+
+The third release candidate for v1.0. Of the three rounds run against rc.2 the
+first two were clean, and the third found two silent faults -- one of the C
+backend's, which the emitter now writes around, and a goroutine's last byte lost
+at the program's end -- and their fixes are this candidate. Its three clean rounds
+and its two weeks in public count from here.
 
 ### Language
 

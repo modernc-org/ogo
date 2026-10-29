@@ -149,6 +149,9 @@ silent fault puts the count back to 0. Each round's account is in
   an interface), two false refusals fixed (a struct literal's methods chained; a
   parameter named like a package function), two listed (a comma-ok assertion in a
   for clause's init; a parenthesised element type) -- 0
+- **v1.0.0-rc.3** (2026-10-29), tagged after dom81 on its fixes, with `ogo run -9`
+  (the user's call: in before v1.0.0): rounds against it count from 0 of 3, and its
+  two weeks in public from its release
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
