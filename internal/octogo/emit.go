@@ -25011,6 +25011,12 @@ func (e *emitter) litMethodHead(rhs []int32) (string, []Node, bool) {
 	isMethodCall := func(steps []Node) bool {
 		return len(steps) == 2 && steps[0].sym == Selector && steps[1].sym == CallSuffix
 	}
+	// A struct literal's chain may call more than one method on the way, `x, y :=
+	// P{9, 9}.Add(q).Two()`, the chain from the temporary being a local's.
+	endsInCall := func(steps []Node) bool {
+		n := len(steps)
+		return n >= 2 && steps[n-2].sym == Selector && steps[n-1].sym == CallSuffix
+	}
 	// One occurrence binds once: a return renders its call more than once (the
 	// forms it tries), and each binding would be a copy and a cog register. The
 	// statement's memo, keyed apart from the array calls' by sign.
@@ -25031,8 +25037,8 @@ func (e *emitter) litMethodHead(rhs []int32) (string, []Node, bool) {
 		}
 		return "", nil, false
 	}
-	if ctype, lit, steps, ok := e.factorStructLitChain(kids); ok && isMethodCall(steps) {
-		if e.methodPtr[e.methodCName(ctype, e.soleIdent(steps[0].ast))] {
+	if ctype, lit, steps, ok := e.factorStructLitChain(kids); ok && endsInCall(steps) {
+		if steps[1].sym == CallSuffix && e.methodPtr[e.methodCName(ctype, e.soleIdent(steps[0].ast))] {
 			return "", nil, false
 		}
 		tmp, ok := memo(lit, func() (string, bool) { return e.hoistStructLit(ctype, lit) })
@@ -25075,10 +25081,29 @@ func (e *emitter) litMethodMulti(ast []int32) bool {
 	} else {
 		return false
 	}
-	if ctype == "" || len(steps) != 2 || steps[0].sym != Selector || steps[1].sym != CallSuffix {
+	n := len(steps)
+	if ctype == "" || n < 2 || steps[n-2].sym != Selector || steps[n-1].sym != CallSuffix {
 		return false
 	}
-	return len(e.funcRet[e.methodCName(methodBaseType(ctype), e.soleIdent(steps[0].ast))]) > 1
+	// `return P{1, 2}.Add(q).Two()`: the method's receiver is what the chain before
+	// it yields, a struct literal's only (litChainCType).
+	if n > 2 {
+		if _, _, _, isStruct := e.factorStructLitChain(kids); !isStruct {
+			return false
+		}
+		rt, ok := e.litChainCType(ctype, steps[:n-2])
+		if !ok {
+			cur, okc := e.accessChainTypeAt(accessCur{ctype: ctype}, steps[:n-2], false)
+			if !okc {
+				return false
+			}
+			if rt, ok = e.chainValueCType(cur); !ok {
+				return false
+			}
+		}
+		ctype = rt
+	}
+	return len(e.funcRet[e.methodCName(methodBaseType(ctype), e.soleIdent(steps[n-2].ast))]) > 1
 }
 
 // hoistStructLit binds a struct literal to a temporary declared ahead of the
@@ -54431,6 +54456,64 @@ func (e *emitter) logicalNamedBool(nodes []Node) (string, bool) {
 	return named, true
 }
 
+// litChainCType types a chain read from a struct literal of type ctype through
+// more than one method call, or past one: `P{1, 2}.Add(q).Add(r)` and
+// `P{1, 2}.Add(q).X`, each call its method's one result and the fields and indexes
+// between them the chain typer's, as emitStructLitChain applies them to the
+// literal's temporary. Typed by name, since inferring a type must emit nothing.
+// Such a declaration was refused, "cannot infer a type", where the literal took one
+// call and no more.
+func (e *emitter) litChainCType(ctype string, steps []Node) (string, bool) {
+	cur, start := accessCur{ctype: ctype}, 0
+	for i, st := range steps {
+		if st.sym != CallSuffix {
+			continue
+		}
+		if i == start || steps[i-1].sym != Selector {
+			return "", false
+		}
+		if i-1 > start {
+			c, ok := e.accessChainTypeAt(cur, steps[start:i-1], false)
+			if !ok {
+				return "", false
+			}
+			cur = c
+		}
+		// A method of the type reached, a defined slice type's by its name; an
+		// interface's method and a field holding a function are the chain typer's.
+		base := cur.ctype
+		if cur.slice {
+			base = cur.name
+		}
+		if rts, has := e.funcRet[e.methodCName(methodBaseType(base), e.soleIdent(steps[i-1].ast))]; has && base != "" && len(cur.dims) == 0 {
+			if len(rts) != 1 {
+				return "", false
+			}
+			if i == len(steps)-1 {
+				return rts[0], true
+			}
+			cur, start = e.plainOrSlice(rts[0]), i+1
+			continue
+		}
+		c, ok := e.accessChainTypeAt(cur, steps[i-1:i+1], false)
+		if !ok {
+			return "", false
+		}
+		if i == len(steps)-1 {
+			return e.chainValueCType(c)
+		}
+		cur, start = c, i+1
+	}
+	if start == 0 {
+		return "", false
+	}
+	c, ok := e.accessChainTypeAt(cur, steps[start:], false)
+	if !ok {
+		return "", false
+	}
+	return e.chainValueCType(c)
+}
+
 func (e *emitter) inferNode(n Node) (string, bool) {
 	switch n.sym {
 	case Expression, SimpleExpr, Term:
@@ -54734,11 +54817,11 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 							return rts[0], true
 						}
 					}
-					return "", false
+					return e.litChainCType(ctype, steps)
 				}
 				cur, okc := e.accessChainTypeAt(accessCur{ctype: ctype}, steps, false)
 				if !okc {
-					return "", false
+					return e.litChainCType(ctype, steps)
 				}
 				return e.chainValueCType(cur)
 			}

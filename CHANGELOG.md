@@ -34,6 +34,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   so were the same with the type written, `var a, b [2]int8 = ...` ("unsupported
   type"), a list of slice literals, of makes and of calls returning an array. Such
   a list is written name by name, as a local one is.
+- **A struct literal's methods chain**: `r := P{1, 2}.Add(q).Add(q)`, `x :=
+  P{7, 8}.Add(q).X`, a method of the pointer, the interface or the defined slice
+  one hands back, and `x, y := P{9, 9}.Add(q).Two()` were refused, "cannot infer a
+  type" and "multiple assignment requires a single function call": a literal took
+  one call and no more.
 
 ### Fixed
 

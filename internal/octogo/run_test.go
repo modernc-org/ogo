@@ -56815,6 +56815,97 @@ func main() {
 		want: "0 102 49 900 20\n1 107 52 500 -40\n2 104 49 700 20\n3 105 52 600 -40\n1212\n",
 	},
 	{
+		// A struct literal's methods chained, `P{1, 2}.Add(q).Add(q)`, a field of
+		// what one hands back, `P{7, 8}.Add(q).X`, a method of a pointer, of an
+		// interface and of a defined slice that one hands back, a method of several
+		// results at the end, `x, y := P{9, 9}.Add(q).Two()`, in every position: "cannot
+		// infer a type", and "multiple assignment requires a single function call",
+		// where the literal took one call and no more (litChainCType; dom81's
+		// fixed.Point52_12{...}.Add(...).Sub(...)).
+		name: "a struct literal's methods chained",
+		src: `var calls int
+
+type P struct{ X, Y int }
+
+type I interface{ Len() int }
+
+type S []int
+
+type A struct {
+	v [3]int
+	n int
+}
+
+var gp = P{100, 200}
+
+var gsl = S{0, 0}
+
+func (p P) Add(q P) P {
+	calls = calls*10 + 1
+	return P{p.X + q.X, p.Y + q.Y}
+}
+
+func (p P) Len() int { return p.X + p.Y }
+
+func (p P) Ptr() *P {
+	calls = calls*10 + 2
+	return &gp
+}
+
+func (p P) Iface() I {
+	calls = calls*10 + 3
+	return &gp
+}
+
+func (p P) Sl() S {
+	calls = calls*10 + 4
+	gsl[0], gsl[1] = p.X, p.Y
+	return gsl
+}
+
+func (s S) Sum() int {
+	t := 0
+	for _, v := range s {
+		t += v
+	}
+	return t
+}
+
+func (p P) Arr() A {
+	calls = calls*10 + 5
+	return A{[3]int{p.X, p.Y, 7}, 3}
+}
+
+func (p P) Two() (int, int) { return p.X, p.Y }
+
+func take(v int) int { return v * 2 }
+
+func ret(q P) P { return P{1, 1}.Add(q).Add(q) }
+
+func main() {
+	q := P{1, 2}
+	a := P{1, 2}.Add(q).Add(q)
+	var b P
+	b = P{3, 4}.Add(q).Add(q)
+	c := P{5, 6}.Add(q).Ptr().X
+	d := P{5, 6}.Add(q).Iface().Len()
+	e := P{5, 6}.Add(q).Sl().Sum()
+	f := P{5, 6}.Add(q).Arr().n
+	g := take(P{7, 8}.Add(q).Add(q).Y)
+	h := ret(q)
+	x, y := P{9, 9}.Add(q).Two()
+	eq := P{1, 2}.Add(q).Add(q) == a
+	printf("%v %v %d %d %d %d %d %v %d %d %v\n", a, b, c, d, e, f, g, h, x, y, eq)
+	println(P{1, 1}.Add(q).Add(q).X, P{2, 2}.Add(q).Len())
+	if (P{1, 1}).Add(q).Add(q).X > 2 {
+		println("big")
+	}
+	printf("%d\n", calls)
+}
+`,
+		want: "{3 6} {5 8} 100 300 14 3 24 {3 5} 10 11 true\n3 7\nbig\n-1425706553\n",
+	},
+	{
 		// `if src, ok := src.(*Uniform); ok`, x/image/vector's own idiom: the name
 		// declared over the one asserted was read in its own C initializer, which both
 		// compilers refused (dom81). The value is read into a temporary first.
