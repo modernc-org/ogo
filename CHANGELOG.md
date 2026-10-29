@@ -50,6 +50,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   Column 0, the plain form `x = x - y` and a sum or a product of the element were
   right. Such an operand is read into a temporary first
   (doc/compound-row-element.c). In every release checked since v0.40.0.
+- **`if src, ok := src.(*Uniform); ok` builds**: the comma-ok assertion declaring
+  the name it asserts, x/image/vector's own idiom, read the new variable in its own
+  C initializer, and the C compiler refused the C ogo wrote.
 
 ## v1.0.0-rc.2
 

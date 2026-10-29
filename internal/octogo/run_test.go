@@ -56814,6 +56814,49 @@ func main() {
 `,
 		want: "0 102 49 900 20\n1 107 52 500 -40\n2 104 49 700 20\n3 105 52 600 -40\n1212\n",
 	},
+	{
+		// `if src, ok := src.(*Uniform); ok`, x/image/vector's own idiom: the name
+		// declared over the one asserted was read in its own C initializer, which both
+		// compilers refused (dom81). The value is read into a temporary first.
+		name: "a comma-ok assertion declaring the name it asserts",
+		src: `type I interface{ M() int }
+
+type T struct{ data, v int }
+
+func (t *T) M() int { return t.v }
+
+type U struct{ w int }
+
+func (u *U) M() int { return u.w }
+
+var (
+	gt = T{5, 42}
+	gu = U{7}
+)
+
+func f(x I) int {
+	if x, ok := x.(*T); ok {
+		return x.v*100 + x.data
+	}
+	return -1
+}
+
+func g(x I) int {
+	{
+		x, ok := x.(*U)
+		if !ok {
+			return -2
+		}
+		return x.w
+	}
+}
+
+func main() {
+	printf("%d %d %d %d\n", f(&gt), f(&gu), g(&gt), g(&gu))
+}
+`,
+		want: "4205 -1 -2 7\n",
+	},
 }
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

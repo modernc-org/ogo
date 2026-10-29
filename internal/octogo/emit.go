@@ -51675,7 +51675,18 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 		okTmp := e.newTmp()
 		e.ind()
 		e.emit("int " + okTmp + " = " + e.assertOKC(operand, iface, target) + ";\n")
-		e.emitStore(targets[0], declare[0], target+"*", okTmp+" ? "+e.assertValueC(operand, target)+" : 0")
+		val := okTmp + " ? " + e.assertValueC(operand, target) + " : 0"
+		// `if src, ok := src.(*Uniform); ok`, the name declared over the one asserted:
+		// C's scope of a declaration begins at its declarator, so the initializer read
+		// the new variable, `Uniform* src = t ? (Uniform*)src.data : 0;`, which both
+		// compilers refused. The value is read into a temporary ahead of it.
+		if declare[0] && targets[0].name == operand {
+			tmp := e.newTmp()
+			e.ind()
+			e.emit(target + "* " + tmp + " = " + val + ";\n")
+			val = tmp
+		}
+		e.emitStore(targets[0], declare[0], target+"*", val)
 		e.emitStore(targets[1], declare[1], cBool, okTmp)
 		return
 	}
