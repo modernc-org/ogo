@@ -56857,6 +56857,57 @@ func main() {
 `,
 		want: "4205 -1 -2 7\n",
 	},
+	{
+		// The address of a struct parameter, and of a value receiver, put into an
+		// interface: where the target passes the struct as a reference to a copy, its
+		// members not all longs, the conversion to the data word's void* drew a
+		// backend warning, and the build was refused (dom81's Paletted.SetRGBA64,
+		// `Index(&c)` for a `c ColorRGBA64`). Written `(void*)&c` now.
+		name: "the address of a struct parameter in an interface",
+		src: `type Color interface {
+	RGBA() (r, g, b, a uint32)
+}
+
+type C64 struct {
+	R, G, B, A uint16
+}
+
+func (c C64) RGBA() (r, g, b, a uint32) {
+	return uint32(c.R), uint32(c.G), uint32(c.B), uint32(c.A)
+}
+
+type C32 struct {
+	R, G, B, A uint8
+}
+
+func (c C32) RGBA() (r, g, b, a uint32) {
+	return uint32(c.R), uint32(c.G), uint32(c.B), uint32(c.A)
+}
+
+func sum(c Color) uint32 {
+	r, g, b, a := c.RGBA()
+	return r*1000 + g*100 + b*10 + a
+}
+
+func f(c C64) uint32 {
+	return sum(&c)
+}
+
+func g(c C32) uint32 {
+	var cc Color = &c
+	return sum(cc)
+}
+
+func (c C64) twice() uint32 {
+	return sum(&c) * 2
+}
+
+func main() {
+	printf("%d %d %d %d\n", f(C64{1, 2, 3, 4}), f(C64{9, 8, 7, 6}), g(C32{5, 6, 7, 8}), C64{5, 5, 5, 5}.twice())
+}
+`,
+		want: "1234 9876 5678 11110\n",
+	},
 }
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

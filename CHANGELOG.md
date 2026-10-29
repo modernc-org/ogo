@@ -53,6 +53,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 - **`if src, ok := src.(*Uniform); ok` builds**: the comma-ok assertion declaring
   the name it asserts, x/image/vector's own idiom, read the new variable in its own
   C initializer, and the C compiler refused the C ogo wrote.
+- **The address of a struct parameter or a value receiver in an interface
+  builds**: `Index(&c)` for a `c ColorRGBA64`, a struct of uint16s, drew a backend
+  warning about the conversion to the interface's data word, and the build was
+  refused, a backend warning failing it.
 
 ## v1.0.0-rc.2
 

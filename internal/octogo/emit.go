@@ -8078,6 +8078,7 @@ type emitter struct {
 	chainDiscard        bool                         // the chain chainCText renders next is a statement's whose value is thrown away (chainFallback)
 	printArgs           []printArg                   // a print's arguments already bound to temporaries, so nothing the print itself emits can change state (see hoistPrintArgs)
 	scopeNames          []map[string]bool            // per open block, the local names visible entering it, so blockDepthOf can say which block declares a name
+	valueRecv           string                       // the receiver of the method being emitted where it is a value, "" otherwise: by value a struct is a parameter like any other (ifaceOperand)
 	curParams           map[string]bool              // the parameter names of the function being emitted. A parameter's own storage is this frame's, but what it POINTS AT is the caller's, which isFrameVar deliberately does not distinguish and the receiver-leak rule must (see checkRecvLeak).
 	litPath             string                       // the C path from the composite literal being rendered to the element now being rendered -- "[1]", ".xs", "[0].xs". Empty outside one.
 	litUnderAddr        bool                         // the composite literal about to be rendered is the operand of &: its elements' storage is what the address points at (see litDerefMark)
@@ -9669,6 +9670,15 @@ func (e *emitter) ifaceOperand(rhs []int32) (concrete, data string, temp, ok boo
 				return e.arrayTypedef(a), "&" + e.varRef(root), false, true
 			}
 			return "", "", false, false
+		}
+		// A struct PARAMETER, or a value receiver, is passed by the target as a
+		// reference to a copy where its members are not all longs, and its address put
+		// into the data word, a void*, drew "incompatible pointer types in assignment:
+		// expected pointer to void unknown type" from the backend, which failed the
+		// build: `Index(&c)` for a `c ColorRGBA64`. Converted first, it is the same
+		// address without one.
+		if (e.curParams[root] || root != "" && root == e.valueRecv) && e.isStruct(ct) {
+			return ct, "(void*)&" + e.varRef(root), false, true
 		}
 		return ct, "&" + e.varRef(root), false, true
 	}
@@ -19998,6 +20008,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.frameBacked = map[string]int{}
 	e.frameHolder = map[string]string{}
 	e.frameHolderPlain = map[string]bool{}
+	e.valueRecv = ""
 	e.tmpShown = nil
 	e.tmp = 0
 	e.defers = nil
@@ -20021,6 +20032,9 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	} else {
 		var recvNamed bool
 		recvName, recvCType, recvNamed = e.receiverInfo(recv)
+		if !e.isPointer(recvCType) {
+			e.valueRecv = recvName
+		}
 		cname := e.methodCName(methodBaseType(recvCType), name)
 		proto = e.methodSignatureC(cname, recvName, recvCType, sig)
 		e.curFunc = cname
@@ -20236,6 +20250,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		bindBody                    int
 		curParams                   map[string]bool
 		curParamOrder               []string
+		valueRecv                   string
 		// The names the function around the literal has -- its local types, the
 		// labels its gotos name, its block constants and their folds. The literal's
 		// replaced them and they were never put back: after a literal, the function
@@ -20265,7 +20280,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		bindWrites: e.bindWrites, bindBlock: e.bindBlock, bindLits: e.bindLits, bindValue: e.bindValue,
 		bindOpaque: e.bindOpaque, bindAliased: e.bindAliased, bindGotos: e.bindGotos, bindBody: e.bindBody,
 		bindSelfAddr: e.bindSelfAddr, bindSelfCall: e.bindSelfCall, bindViews: e.bindViews,
-		curParams: e.curParams, curParamOrder: e.curParamOrder,
+		curParams: e.curParams, curParamOrder: e.curParamOrder, valueRecv: e.valueRecv,
 		localTypes: e.localTypes, gotoTargets: e.gotoTargets, localConsts: e.localConsts,
 		labelHeads:      e.labelHeads,
 		localConstSpecs: e.localConstSpecs, inheritedTypes: e.inheritedTypes,
@@ -20302,6 +20317,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.frameBacked = map[string]int{}
 	e.frameHolder = map[string]string{}
 	e.frameHolderPlain = map[string]bool{}
+	e.valueRecv = ""
 	e.tmp, e.indent, e.deferReplay, e.defers, e.prologue = 0, 0, -1, nil, nil
 	e.curFunc, e.curArrayResult = cname, ""
 	e.scopeNames = nil
@@ -20377,7 +20393,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.bindOpaque, e.bindAliased, e.bindGotos, e.bindBody = saved.bindOpaque, saved.bindAliased, saved.bindGotos, saved.bindBody
 	e.bindSelfAddr, e.bindSelfCall = saved.bindSelfAddr, saved.bindSelfCall
 	e.bindViews = saved.bindViews
-	e.curParams, e.curParamOrder = saved.curParams, saved.curParamOrder
+	e.curParams, e.curParamOrder, e.valueRecv = saved.curParams, saved.curParamOrder, saved.valueRecv
 	if proto == "" {
 		return "", false
 	}
@@ -22128,6 +22144,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 	e.frameBacked = map[string]int{}
 	e.frameHolder = map[string]string{}
 	e.frameHolderPlain = map[string]bool{}
+	e.valueRecv = ""
 	e.tmpShown = nil
 	e.tmp = 0
 	e.defers = nil
