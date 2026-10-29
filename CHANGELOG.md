@@ -39,6 +39,23 @@ shipped section tells a reader on that version that they have behaviour they do 
   the value put into another defined type, a uint32 parameter or arithmetic with a
   uint32 -- each a program Go refuses -- across a package boundary too, `pos :=
   lib.Position.Pixel()`. In every release checked since v0.40.0.
+- **What a method hands back of what a parameter holds is the caller's**: `func
+  deep(v *V) *int { return v.w.ptr() }`, `ptr` handing back `w.p`, built where `gp
+  = deep(&v)` kept the address of a local `v.w.p` points at, and the package
+  variable read a dead frame; so did a value method, the result bound to a local
+  of the callee first, a method of V doing the same, `u.pv.w.ptr()` two pointers
+  past the parameter, and a slice handed back so. The callee's summary made no
+  edge for a receiver in what a parameter holds. Each is refused now, "cannot
+  store &v, whose contents hold a pointer into local x in package variable gp".
+  Two pointers past the parameter is refused over package storage too: what a
+  parameter holds is recorded one level deep. In every release checked since
+  v0.40.0.
+- **A Builder held in a struct holds the bytes it was made over**: `gs =
+  field(&w)`, `field` handing back `w.sb.String()` of a Builder made over a local
+  array, built, and the package string viewed the dead frame's bytes; so did a
+  method handing back the String and the same through a parameter's field. A
+  Builder was counted as holding no reference where a summary asked a struct's
+  fields. In every release checked since v0.40.0.
 
 ### Fixed
 

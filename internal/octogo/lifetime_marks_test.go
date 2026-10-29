@@ -563,3 +563,83 @@ func keepMarshal(m *M) {
 		})
 	}
 }
+
+// TestEmitCRecvInParamContents holds a callee handing back what a method hands
+// back of a receiver that is in what a PARAMETER holds, `return v.w.ptr()` of a `v
+// *V`, to the caller's local the method's receiver holds (dom83): the callee's
+// summary made no edge for such a receiver, and `gp = get(&v)` kept the local's
+// address. And a Builder's String reached so, `return v.w.name()` of a method
+// handing back `w.sb.String()`: a Builder counted as holding nothing, so its
+// field and a struct holding one reached nothing in the summaries, and `gs =
+// get(&w)` kept a view of the frame's bytes.
+func TestEmitCRecvInParamContents(t *testing.T) {
+	const head = `var gp *int
+
+var gs string
+
+var gx = 70
+
+type W struct {
+	p  *int
+	sb Builder
+}
+
+type V struct{ w W }
+
+type U struct{ pv *V }
+
+func (w *W) ptr() *int      { return w.p }
+func (w W) vptr() *int      { return w.p }
+func (w *W) name() string   { return w.sb.String() }
+func deep(v *V) *int        { return v.w.ptr() }
+func deepV(v *V) *int       { return v.w.vptr() }
+func twice(u *U) *int       { return u.pv.w.ptr() }
+func viaLocal(v *V) *int    { x := v.w.ptr(); return x }
+func field(w *W) string     { return w.sb.String() }
+func method(w *W) string    { return w.name() }
+func deepName(v *V) string  { return v.w.name() }
+func (v *V) handBack() *int { return v.w.ptr() }
+
+`
+	const local = "\tx := 7\n\tvar back [8]byte\n\tvar v V\n\tv.w.p = &x\n\tv.w.sb = NewBuilder(back[:])\n\tv.w.sb.WriteString(\"ab\")\n\tu := U{&v}\n\t_ = u\n"
+	const pkg = "\tvar v V\n\tv.w.p = &gx\n\tu := U{&v}\n\t_ = u\n"
+	for _, test := range []struct {
+		name   string
+		setup  string
+		run    string
+		refuse bool
+	}{
+		{"a method's result through a parameter's field", local, "gp = deep(&v)", true},
+		{"a value method's result through a parameter's field", local, "gp = deepV(&v)", true},
+		{"through two pointers", local, "gp = twice(&u)", true},
+		{"through a local of the callee", local, "gp = viaLocal(&v)", true},
+		{"a method handing back its receiver's field's method's", local, "gp = v.handBack()", true},
+		{"a Builder field's String", local, "gs = field(&v.w)", true},
+		{"a method handing back a Builder field's String", local, "gs = method(&v.w)", true},
+		{"the same through a parameter's field", local, "gs = deepName(&v)", true},
+		{"used where it is", local, "println(*deep(&v), deepName(&v))", false},
+		{"package storage through a parameter's field", pkg, "gp = deep(&v)", false},
+		// Two pointers past the parameter the summaries cannot say, being one
+		// level deep: what u holds stands for what it reaches, and v is a local.
+		// Refused, as a reference two pointers past a parameter is elsewhere; it
+		// was taken only because nothing was recorded, and over a local was a hole.
+		{"package storage through two pointers", pkg, "gp = twice(&u)", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := head + "func run() {\n" + test.setup + "\t" + test.run + "\n}\n\nfunc main() { run() }\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.refuse && err == nil:
+				t.Errorf("a reference to this frame left it:\n%s", src)
+			case test.refuse && !strings.Contains(err.Error(), "outlive") && !strings.Contains(err.Error(), "package scope"):
+				t.Errorf("refused, but not for its lifetime: %v", err)
+			case !test.refuse && err != nil:
+				t.Errorf("refused: %v\n%s", err, src)
+			}
+		})
+	}
+}

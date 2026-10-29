@@ -15353,6 +15353,14 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 								for _, i := range r.vals {
 									e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: callee, to: -1})
 								}
+								// A receiver in what a parameter holds, `return
+								// v.w.name()` of a `v *V`: what the method hands back of
+								// it is of v's contents. No edge, it was nothing, and
+								// `gs = get(&v)` kept a view of the frame's Builder
+								// bytes (dom83).
+								for _, i := range r.conts {
+									e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: callee, to: -1, contents: true})
+								}
 								if r.recvVal {
 									e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: -1, callee: callee, to: -1})
 								}
@@ -59072,6 +59080,14 @@ func (e *emitter) carriesReferenceIn(ctype string, seen map[string]bool) bool {
 	// An INTERFACE holds a pointer, whatever it is asked through, and a CHANNEL is
 	// one, to a cell a make in a function puts in its frame (emitMakeChan).
 	if e.isSliceCType(u) || e.isPointer(u) || e.isIfaceCType(u) || e.isChanCType(u) {
+		return true
+	}
+	// A BUILDER holds the backing it is made over, and is no struct of the
+	// program's to be asked through its fields: taken to hold nothing, a field of
+	// one and a struct holding one carried nothing to the summaries, and `return
+	// w.sb.String()` of a `w *W` handed back nothing of w -- `gs = get(&w)` kept a
+	// view of a dead frame's bytes in a package variable (dom83).
+	if u == "ogo_builder" {
 		return true
 	}
 	if !e.isStruct(u) {
