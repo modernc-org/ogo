@@ -9117,6 +9117,91 @@ func main() {
 `,
 			want: "does not outlive the block it is declared in",
 		},
+		// A declaration shadowing a variable dropped the variable's marks, and the
+		// block's end gave it the marks of the one declared (dom88): the address
+		// stored before the shadowing went out with the variable unmarked.
+		{
+			name: "an address stored before a declaration shadows the pointer",
+			src: `var gp *int
+
+func run() {
+	var x int
+	p := (*int)(nil)
+	{
+		p = &x
+		p := 5
+		_ = p
+	}
+	gp = p
+}
+
+func main() {
+	run()
+	println(gp != nil)
+}
+`,
+			want: "holds a pointer into local x",
+		},
+		{
+			name: "an address returned after a declaration shadowed the pointer",
+			src: `func run() *int {
+	var x int
+	p := (*int)(nil)
+	{
+		p = &x
+		p := 5
+		_ = p
+	}
+	return p
+}
+
+func main() { println(run() != nil) }
+`,
+			want: "holds a pointer into local x",
+		},
+		{
+			name: "a view stored before a clause's declaration shadows the slice",
+			src: `var gs []int
+
+func run(k int) {
+	var buf [4]int
+	s := []int(nil)
+	switch k {
+	case 1:
+		s = buf[:]
+		s := 3
+		_ = s
+	}
+	gs = s
+}
+
+func main() {
+	run(1)
+	println(len(gs))
+}
+`,
+			want: "does not outlive the function",
+		},
+		{
+			name: "a pointer declared over a parameter gives the parameter nothing",
+			src: `var gp *int
+
+func run(p *int) {
+	var x int
+	{
+		p := &x
+		println(*p)
+	}
+	gp = p
+}
+
+func main() {
+	var y int
+	run(&y)
+	println(gp != nil)
+}
+`,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}

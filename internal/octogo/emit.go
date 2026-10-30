@@ -8079,6 +8079,7 @@ type emitter struct {
 	chainDiscard        bool                         // the chain chainCText renders next is a statement's whose value is thrown away (chainFallback)
 	printArgs           []printArg                   // a print's arguments already bound to temporaries, so nothing the print itself emits can change state (see hoistPrintArgs)
 	scopeNames          []map[string]bool            // per open block, the local names visible entering it, so blockDepthOf can say which block declares a name
+	shadows             *blockShadows                // the innermost open block's: the frame marks of each outer variable a declaration in it shadows (see shadow)
 	valueRecv           string                       // the receiver of the method being emitted where it is a value, "" otherwise: by value a struct is a parameter like any other (ifaceOperand)
 	curParams           map[string]bool              // the parameter names of the function being emitted. A parameter's own storage is this frame's, but what it POINTS AT is the caller's, which isFrameVar deliberately does not distinguish and the receiver-leak rule must (see checkRecvLeak).
 	litPath             string                       // the C path from the composite literal being rendered to the element now being rendered -- "[1]", ".xs", "[0].xs". Empty outside one.
@@ -12354,9 +12355,46 @@ func (e *emitter) shadow(name string) {
 	if name == "" || name == "_" {
 		return
 	}
+	e.shadows.keep(name, e)
 	delete(e.frameBacked, name)
 	delete(e.frameHolder, name)
 	e.shadowKinds(name)
+}
+
+// blockShadows is what an open block knows of the outer variables a declaration in
+// it shadows: the names visible entering it, and the frame marks each name it
+// shadows had when it was shadowed, which are the outer variable's again at the
+// block's end (enterScope).
+type blockShadows struct {
+	entry map[string]bool
+	marks map[string]shadowedMarks
+}
+
+// shadowedMarks are an outer variable's frame marks: the depth of the storage it
+// views (frameBacked), if it views this frame's, and the local whose storage it
+// holds a reference to (frameHolder).
+type shadowedMarks struct {
+	backed bool
+	depth  int
+	holder string
+}
+
+// keep records the marks of name where a declaration of the block shadows a name
+// visible entering it, once: a second declaration of the name in the block shadows
+// the first, not the outer variable. A name not visible entering it is the
+// block's own, and nothing outside it can refer to it.
+func (s *blockShadows) keep(name string, e *emitter) {
+	if s == nil || !s.entry[name] {
+		return
+	}
+	if _, done := s.marks[name]; done {
+		return
+	}
+	if s.marks == nil {
+		s.marks = map[string]shadowedMarks{}
+	}
+	d, backed := e.frameBacked[name]
+	s.marks[name] = shadowedMarks{backed: backed, depth: d, holder: e.frameHolder[name]}
 }
 
 // shadowKinds is shadow without the frame marks, for a registration that comes
@@ -20272,6 +20310,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		// with them, a literal's parameter was a block outside its body's locals,
 		// and `p = a[:]` was refused (blockDepthOf).
 		scopeNames        []map[string]bool
+		shadows           *blockShadows
 		prologue          []string
 		w                 io.Writer
 		hoistedArrayCalls map[int32]string
@@ -20313,6 +20352,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		curFunc: e.curFunc, curResultNames: e.curResultNames, curResultTypes: e.curResultTypes,
 		curResultToks: e.curResultToks, curAddressed: e.curAddressed, gotoLast: e.gotoLast,
 		scopeNames:     e.scopeNames,
+		shadows:        e.shadows,
 		curArrayResult: e.curArrayResult,
 		prologue:       e.prologue, w: e.w,
 		hoistedArrayCalls: e.hoistedArrayCalls, pkgScope: e.pkgScope,
@@ -20361,7 +20401,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.valueRecv = ""
 	e.tmp, e.indent, e.deferReplay, e.defers, e.prologue = 0, 0, -1, nil, nil
 	e.curFunc, e.curArrayResult = cname, ""
-	e.scopeNames = nil
+	e.scopeNames, e.shadows = nil, nil
 	// A literal written in main is not main: its bare `return` returns nothing. Left
 	// set, the flag made it `return 0;` in a void function, which the host's C
 	// compiler refuses.
@@ -20423,7 +20463,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.tmp, e.indent, e.deferReplay, e.defers = saved.tmp, saved.indent, saved.deferReplay, saved.defers
 	e.curFunc, e.curResultNames, e.curResultTypes = saved.curFunc, saved.curResultNames, saved.curResultTypes
 	e.curResultToks, e.curAddressed, e.gotoLast = saved.curResultToks, saved.curAddressed, saved.gotoLast
-	e.scopeNames = saved.scopeNames
+	e.scopeNames, e.shadows = saved.scopeNames, saved.shadows
 	e.curArrayResult = saved.curArrayResult
 	e.aliasedLocals = saved.aliasedLocals
 	e.prologue, e.w = saved.prologue, saved.w
@@ -23489,7 +23529,10 @@ func (e *emitter) enterScope() func() {
 	// every outer one (see blockDepthOf). The block's end drops the snapshots taken
 	// inside it, a label's a goto goes back to among them (emitLabeledStatement).
 	depth := len(e.scopeNames)
-	e.scopeNames = append(e.scopeNames, e.visibleLocals())
+	entry := e.visibleLocals()
+	e.scopeNames = append(e.scopeNames, entry)
+	outerShadows := e.shadows
+	e.shadows = &blockShadows{entry: entry}
 	locals, arrays, sliceVars := maps.Clone(e.locals), maps.Clone(e.arrays), maps.Clone(e.sliceVars)
 	localConsts, localConstSpecs := maps.Clone(e.localConsts), maps.Clone(e.localConstSpecs)
 	frameBacked, frameHolder := maps.Clone(e.frameBacked), maps.Clone(e.frameHolder)
@@ -23516,7 +23559,19 @@ func (e *emitter) enterScope() func() {
 		// not conservatism lost: nothing can refer to them afterwards, and keeping
 		// them would make a later sibling block's same-named variable inherit a mark
 		// it never earned.
+		//
+		// A name a declaration in the block shadowed is the outer variable again, and
+		// gets back the marks it had when it was shadowed (blockShadows), not those
+		// of the variable that shadowed it. Merged by name, `{ p = &x; p := 5 }`
+		// handed the outer p nothing, shadow having dropped its mark, and `gp = p`
+		// stored the local's address -- and `{ g2 := R{1, g2} }` marked the int g2
+		// outside it, `return g2` refused (dom88).
+		shadowed := e.shadows.marks
+		e.shadows = outerShadows
 		outer := func(n string) bool {
+			if _, isShadowed := shadowed[n]; isShadowed {
+				return false
+			}
 			if _, ok := locals[n]; ok {
 				return true
 			}
@@ -23531,6 +23586,14 @@ func (e *emitter) enterScope() func() {
 		for n, origin := range e.frameHolder {
 			if origin != "" && outer(n) {
 				frameHolder[n] = origin
+			}
+		}
+		for n, m := range shadowed {
+			if m.backed {
+				mergeBacked(frameBacked, n, m.depth)
+			}
+			if m.holder != "" {
+				frameHolder[n] = m.holder
 			}
 		}
 		e.scopeNames = e.scopeNames[:depth]
@@ -37750,6 +37813,13 @@ func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
 // A trailing "fallthrough" emits nothing itself: it is realised by emitCaseFrom,
 // which appends the next clause's body.
 func (e *emitter) emitCaseBody(cc []int32) {
+	// A clause is a block of its own, and what it declares ends with it. The
+	// switch had one scope for all its clauses, so a name a clause declared kept
+	// its type in the clauses after: the parameter g2 a clause read after another
+	// declared `g2 := int8(-3)` was printed and divided as an int8, a uint32's
+	// 4000000000 printed -294967296 (dom88, orb's Equal: `g2, ok := g2.(*Ring)` in
+	// one case of a type switch, the same in the next, refused).
+	defer e.enterScope()()
 	// A break here names the switch. emitSwitch sets switchBreak (the break's goto
 	// target) around the whole chain, and emitLoopBody clears it inside a loop, so
 	// nothing to toggle here.
@@ -37775,21 +37845,23 @@ func (e *emitter) emitCaseBody(cc []int32) {
 // emission order: a default clause is hoisted to the trailing else wherever it was
 // written, yet "fallthrough" continues into whichever clause was written next.
 func (e *emitter) emitCaseFrom(clauses []Node, i int) {
-	e.emitCaseBody(clauses[i].ast)
 	if i+1 >= len(clauses) || !e.clauseFallsThrough(clauses[i].ast) {
+		e.emitCaseBody(clauses[i].ast)
 		return
 	}
-	// The appended body gets its own C block. Each clause is a scope of its own in
-	// the source, so two clauses may declare the same name; emitted into the block
-	// the falling-through clause already occupies, the second declaration would be
-	// a C redefinition of the first.
+	// The falling-through body gets a C block of its own, and the appended body
+	// follows it. Each clause is a scope of its own in the source, so what this one
+	// declares is not the next one's: appended inside this body's block, a name
+	// declared here was the C name the next body read, the outer g2 printed as the
+	// clause's `g2 := int8(3)` (dom88).
 	e.ind()
 	e.emit("{\n")
 	e.indent++
-	e.emitCaseFrom(clauses, i+1)
+	e.emitCaseBody(clauses[i].ast)
 	e.indent--
 	e.ind()
 	e.emit("}\n")
+	e.emitCaseFrom(clauses, i+1)
 }
 
 // clauseFallsThrough reports whether a case clause's last non-empty statement is

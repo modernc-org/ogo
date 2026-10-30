@@ -58,6 +58,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   it outlives every frame". A conversion that is all of a comparison's operand
   makes a bool and goes nowhere; one stored, handed on or computed with is still
   taken to keep what it reaches. In every release checked.
+- **A switch's clause may declare a name another clause declared**: `g2, ok :=
+  g2.(*Ring)` in one case of a type switch and `g2, ok := g2.(*Polygon)` in the
+  next, paulmach/orb's Equal, was refused, "multiple assignment requires a single
+  function call on the right-hand side": the second clause read g2 as the first
+  had declared it. In every release checked since v0.50.0.
+- **A block's local shadowing a variable leaves the variable its own**: `if k == 1
+  { n := Cells{1, 2, n}; ... }` and then `return n` of an int parameter n was
+  refused, "cannot return a slice backed by local n", and so was a pointer
+  parameter stored after an inner block declared a pointer of its name to a
+  local: the block's end gave the variable what the local held. In every release
+  checked since v0.50.0.
 
 ### Behaviour changes
 
@@ -93,6 +104,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   string; and so did `&(f())`, a call in parentheses. Each is refused as Go
   refuses it, "cannot take address of s[0] (value of type byte)". In rc.3, rc.2
   and v0.58.0; v0.40.0's backend refused the C.
+- **A pointer given a local's address before a declaration shadows it keeps the
+  address**: `p = &x` and then `p := 5` in a block, and `gp = p` after it, built
+  and stored the local's address in the package variable, the declaration having
+  dropped what p held; so did returning p, and a slice given a view of a local
+  array before a clause declared its name. Each is refused now. In every release
+  checked since v0.50.0.
 
 ### Fixed
 
@@ -109,6 +126,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   periph.io's mmr, wrote `0` for the nil slice, and a variadic method's arguments
   went unpacked; neither C compiler took it. The call on an interface variable
   was right.
+- **A switch clause's declarations end with the clause**: a clause reading a name
+  an earlier clause had declared read it by that declaration's type -- the uint32
+  parameter `n` of a `default:` after a `case *Rect:` declaring `n := int8(-3)`
+  printed -294967296 for 4000000000 and was divided as an int8, a float32 printed
+  as a uint64 -- in a type switch and a switch on a value alike; and in a switch
+  lowered to a chain, the body a fallthrough leads to read the name the falling
+  clause had declared, its `n := int8(3)` printed for the parameter. In every
+  release checked since v0.50.0.
 
 ## v1.0.0-rc.3
 

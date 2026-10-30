@@ -57182,6 +57182,122 @@ func main() { run() }
 		want: "true false false\nfalse true false\n4 1 19 55\n-1\n4 69 115\n",
 	},
 	{
+		// orb's Equal (dom88): `b, ok := b.(*Rect)` in one case of a type switch and
+		// the same in the next was refused, "multiple assignment requires a single
+		// function call", the switch's clauses having one scope: the second clause
+		// read b as the first had declared it. And a clause reading a name another
+		// clause had declared read it by that one's type -- the uint32 n printed and
+		// divided as the int8 n, the float32 f as the uint64 f -- and a body appended
+		// after a fallthrough read the name the falling clause declared.
+		name: "a switch clause's declarations are not the next clause's",
+		src: `type Shape interface{ Area() int }
+
+type Rect struct{ w, h int }
+
+func (r *Rect) Area() int { return r.w * r.h }
+
+type Path []int
+
+func (p *Path) Area() int { return len(*p) }
+
+func same(a, b Shape) bool {
+	switch a := a.(type) {
+	case *Rect:
+		b, ok := b.(*Rect)
+		if !ok {
+			return false
+		}
+		return *a == *b
+	case *Path:
+		b, ok := b.(*Path)
+		if !ok {
+			return false
+		}
+		return len(*a) == len(*b)
+	}
+	return false
+}
+
+func clause(s Shape, n uint32) {
+	switch s.(type) {
+	case *Rect:
+		n := int8(-3)
+		println("rect", n, n/2)
+	default:
+		println("other", n, n/3)
+		printf("%d %v\n", n, n)
+	}
+}
+
+func tagged(k int, f float32) {
+	switch k {
+	case 1:
+		f := uint64(1) << 63
+		println("one", f)
+	case 2:
+		println("two", f, float64(f)/3)
+	}
+}
+
+func falls(k int, n int) {
+	switch {
+	case k == 1:
+		n := int8(3)
+		println("first", n)
+		fallthrough
+	case k == 2:
+		println("second", n)
+	}
+}
+
+func main() {
+	r1, r2 := Rect{2, 3}, Rect{2, 3}
+	p1, p2 := Path{1, 2}, Path{3, 4, 5}
+	println(same(&r1, &r2), same(&p1, &p2), same(&r1, &p1), same(&p1, &r1))
+	clause(&r1, 4000000000)
+	clause(&p1, 4000000000)
+	tagged(1, 2.5)
+	tagged(2, 2.5)
+	falls(1, 1000)
+	falls(2, 1000)
+}
+`,
+		want: "true false false false\nrect -3 -1\nother 4000000000 1333333333\n4000000000 4000000000\none 9223372036854775808\ntwo 2.5 0.8333333333333334\nfirst 3\nsecond 1000\nsecond 1000\n",
+	},
+	{
+		// A block's declaration shadowing a variable gave the variable the marks of
+		// the one declared: the int n was "a slice backed by local n" after the
+		// block, and `return n` was refused (dom88).
+		name: "a block's local shadowing a parameter leaves the parameter its own marks",
+		src: `type Cells []int
+
+func last(k int, n int) int {
+	if k == 1 {
+		n := Cells{1, 2, n}
+		return len(n) + n[2]
+	}
+	return n
+}
+
+func pick(k int, n int) int {
+	switch k {
+	case 1:
+		n := Cells{4, n}
+		return n[0] + n[1]
+	case 2:
+		return n * 10
+	}
+	return n
+}
+
+func main() {
+	println(last(1, 7), last(2, 7))
+	println(pick(1, 7), pick(2, 7), pick(3, 7))
+}
+`,
+		want: "10 7\n11 70 7\n",
+	},
+	{
 		// `d.Conn.Tx([]byte{reg, v}, nil)` of periph.io's mmr (dom84): a method
 		// called through an interface a chain reached -- a field, an element, a
 		// call's result -- had its arguments converted to nothing, and a nil for a
