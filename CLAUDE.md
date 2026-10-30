@@ -192,7 +192,13 @@ candidate has passed three more clean rounds and two weeks in public with no
 silent fault found; a silent fault is fixed, the fix is the next candidate, and
 both counts start again. Each candidate and v1.0.0 publish their validation with
 their notes: the commit, the host suite's and `make board`'s results, p2-11's on
-the board, obeam's builds, the rounds since the last.
+the board, obeam's builds, the rounds since the last. **The next candidate is
+tagged when it has passed three clean rounds in a row**, as rc.1 was (2026-10-30,
+the call left to judgment by the user: rc.1, rc.2 and rc.3, each tagged on its
+fixes, met a silent round within two days, and a tag per fix pays a release's
+validation for a two-week clock the next silent round stops). Until then the
+candidate is `master` on its last fix, and the rounds count against it; its three
+more and its two weeks in public count from its tag.
 
 ## Language feature policy (read before assuming something is excluded)
 
