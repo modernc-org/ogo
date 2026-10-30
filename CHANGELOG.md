@@ -35,6 +35,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   arena.String()[m:]`, `nm := f()[m:]` of a function, a method or a function
   value was refused as a string argument, compared with a string or assigned to
   one, "it is a slice".
+- **A parameter, a named result or a receiver named like a package variable is
+  its own**: `modes = modes[:PinCount]` in TinyGo's mcp23017, whose parameter
+  `modes` shares a package constant's name, was taken for a store into the
+  package's name, and every caller handing it a local's slice was refused, "its
+  parameter 1 is stored where it outlives every frame". In every release checked.
+  A local of an inner block named so is still taken for the package's.
 
 ### Behaviour changes
 

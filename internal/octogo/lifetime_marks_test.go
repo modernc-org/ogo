@@ -643,3 +643,60 @@ func (v *V) handBack() *int { return v.w.ptr() }
 		})
 	}
 }
+
+// TestEmitCOwnNameShadowsPackage holds a callee's store to its own parameter,
+// named result or receiver, named like a package variable or constant, to the
+// parameter it is: the summaries read the name for the package's, `modes =
+// modes[:PinCount]` of TinyGo's mcp23017 kept the parameter in a package
+// variable, and every caller handing it a local's slice was refused (dom86). A
+// local of an inner block is still read by name, the summaries reading no
+// positions, and a store to the package variable itself is refused as before.
+func TestEmitCOwnNameShadowsPackage(t *testing.T) {
+	const head = `var g []int
+
+const modes = 4
+
+var gp *int
+
+type T struct{ p *int }
+
+func param(g []int) int      { g = g[1:]; return len(g) }
+func constName(modes []int) int { modes = modes[:2]; return len(modes) }
+func result(a []int) (g []int)  { g = a[1:]; return }
+func ptr(gp *int) int          { gp = nil; return 0 }
+func (gp *T) recv(p *int) int  { gp = &T{}; return 0 }
+func inner(a []int) int        { { g := a; g = a[1:]; _ = g }; return len(a) }
+func store(a []int) int        { g = a; return len(a) }
+
+`
+	for _, test := range []struct {
+		name   string
+		run    string
+		refuse bool
+	}{
+		{"a parameter named like a package variable", "println(param(a[:]))", false},
+		{"a parameter named like a package constant", "println(constName(a[:]))", false},
+		{"a named result named like a package variable", "println(len(result(a[:])))", false},
+		{"a pointer parameter named like a package variable", "x := 1\n\tprintln(ptr(&x))", false},
+		{"a receiver named like a package variable", "x := 1\n\tvar v T\n\tprintln(v.recv(&x))", false},
+		{"a local of an inner block named like a package variable", "println(inner(a[:]))", true},
+		{"the package variable itself", "println(store(a[:]))", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := head + "func run() {\n\tvar a [4]int\n\t_ = a\n\t" + test.run + "\n\tprintln(len(g), modes, gp == nil)\n}\n\nfunc main() { run() }\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.refuse && err == nil:
+				t.Errorf("a reference to this frame left it:\n%s", src)
+			case test.refuse && !strings.Contains(err.Error(), "outlive"):
+				t.Errorf("refused, but not for its lifetime: %v", err)
+			case !test.refuse && err != nil:
+				t.Errorf("refused: %v\n%s", err, src)
+			}
+		})
+	}
+}

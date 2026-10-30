@@ -7847,6 +7847,7 @@ type emitter struct {
 	callParams        []string                  // the parameter C types of the next call emitted through a function VALUE or an interface slot, which names no callee to look up; emitCallArgs takes them (see wideConstArg)
 	callFuncType      string                    // the function typedef of the next call emitted through a VALUE, taken beside callParams: which of them is variadic, which C's shape does not say
 	callVararg        int                       // 1 + the variadic parameter's position for the next call emitted through an INTERFACE slot, taken beside callParams; 0 for none
+	summaryOwn        map[string]bool           // the parameters, results and receiver of the function whose summary is being collected: never a package variable (outlivesByName)
 	localConsts       map[string]bool           // block-scope CONSTANTS in scope, by name: the locals a constant fold may still resolve (see constKey)
 	localConstSpecs   map[string]localConstSpec // ... and how each was declared, for a function literal to declare again what it reads (liftFuncLit)
 	localConstSeq     int                       // orders localConstSpecs as they were declared
@@ -13375,6 +13376,26 @@ type heldCallsT struct {
 func (e *emitter) collectFuncCross(fi funcInfo) {
 	cname, srcName, params, body, recvName := fi.cname, fi.srcName, fi.params, fi.body, fi.recvName
 	e.crossInfos[cname] = crossInfo{fi, e.f, e.curPkgPrefix, e.pkgOrd}
+	// The function's own names -- its parameters, its named results and its
+	// receiver -- are of the body's outermost block, so a store to one is never
+	// to the package variable of its name, wherever the body writes it. Asked by
+	// name alone, `modes = modes[:PinCount]` of a parameter named like a package
+	// constant, TinyGo's mcp23017, kept the parameter in a package variable, and
+	// every caller handing it a local's slice was refused (dom86). A local is
+	// asked as before: where it is written decides which name it is, and the
+	// summaries read no positions.
+	own := map[string]bool{}
+	for _, p := range params {
+		own[p] = true
+	}
+	for _, t := range fi.resultToks {
+		own[e.src(t)] = true
+	}
+	if recvName != "" {
+		own[recvName] = true
+	}
+	e.summaryOwn = own
+	defer func() { e.summaryOwn = nil }()
 	// A POINTER receiver is the address of whatever the method is called on; what
 	// the method keeps of it is summarised as a parameter's is (recvLeaks).
 	recvPtr := recvName != "" && e.isPointer(fi.recvCType)
@@ -17732,6 +17753,9 @@ func (e *emitter) storedInPackageVar(nodes []Node) [][]int32 {
 // isPackageVar alone, `lib.G = p` in a callee stored nothing, and `relay(&x)` left
 // x's address in lib where `lib.G = &x` was refused.
 func (e *emitter) outlivesByName(name string) bool {
+	if e.summaryOwn[name] {
+		return false
+	}
 	if e.isPackageVar(name) {
 		return true
 	}
