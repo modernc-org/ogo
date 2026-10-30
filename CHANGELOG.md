@@ -51,6 +51,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   or a uint8 was refused where a B goes -- a declaration, an argument, a result,
   a literal, a field, an append -- "cannot use v of type uint8 as type B", and so
   was another package's `lib.B`. In every release checked.
+- **A uintptr compared keeps nothing**: Go's own overlap check,
+  `uintptr(unsafe.Pointer(&x[0])) <= uintptr(unsafe.Pointer(&y[len(y)-1]))` as
+  AES's Encrypt calls it, made the function taken to keep its slices, and a
+  caller handing it a local buffer was refused, "its parameter 1 is stored where
+  it outlives every frame". A conversion that is all of a comparison's operand
+  makes a bool and goes nowhere; one stored, handed on or computed with is still
+  taken to keep what it reaches. In every release checked.
 
 ### Behaviour changes
 

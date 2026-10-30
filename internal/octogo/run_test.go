@@ -57133,6 +57133,55 @@ func main() {
 		want: "2 4 7 200 200\n2 -9 233 3 200 1\n2 207 7 -9 207 200 21 201\n",
 	},
 	{
+		// Go's own overlap check, crypto/internal/fips140/alias as AES's Encrypt
+		// calls it (dom87): a uintptr conversion is taken to keep what it reaches,
+		// and one compared went nowhere but into a bool, so every caller handing the
+		// cipher a local buffer was refused.
+		name: "an overlap check comparing addresses as numbers, handed a local's slices",
+		src: `import "unsafe"
+
+func AnyOverlap(x, y []byte) bool {
+	return len(x) > 0 && len(y) > 0 &&
+		uintptr(unsafe.Pointer(&x[0])) <= uintptr(unsafe.Pointer(&y[len(y)-1])) &&
+		uintptr(unsafe.Pointer(&y[0])) <= uintptr(unsafe.Pointer(&x[len(x)-1]))
+}
+
+func InexactOverlap(x, y []byte) bool {
+	if len(x) == 0 || len(y) == 0 || &x[0] == &y[0] {
+		return false
+	}
+	return AnyOverlap(x, y)
+}
+
+func xor(dst, a, b []byte) int {
+	if InexactOverlap(dst, a) || InexactOverlap(dst, b) {
+		return -1
+	}
+	for i := range dst {
+		dst[i] = a[i] ^ b[i]
+	}
+	return len(dst)
+}
+
+func run() {
+	var buf [12]byte
+	var other [4]byte
+	for i := range buf {
+		buf[i] = byte(i * 17)
+	}
+	other = [4]byte{1, 2, 3, 4}
+	println(AnyOverlap(buf[0:4], buf[3:8]), AnyOverlap(buf[0:4], buf[4:8]), AnyOverlap(buf[:], other[:]))
+	println(InexactOverlap(buf[0:4], buf[0:4]), InexactOverlap(buf[0:4], buf[2:6]), InexactOverlap(buf[:0], buf[:]))
+	println(xor(buf[0:4], buf[0:4], other[:]), buf[0], buf[1], buf[3])
+	println(xor(buf[1:5], buf[0:4], other[:]))
+	println(xor(buf[8:12], buf[4:8], other[:]), buf[8], buf[11])
+}
+
+func main() { run() }
+`,
+		want: "true false false\nfalse true false\n4 1 19 55\n-1\n4 69 115\n",
+	},
+	{
 		// `d.Conn.Tx([]byte{reg, v}, nil)` of periph.io's mmr (dom84): a method
 		// called through an interface a chain reached -- a field, an element, a
 		// call's result -- had its arguments converted to nothing, and a nil for a

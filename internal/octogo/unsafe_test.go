@@ -110,6 +110,52 @@ func run() {
 
 func main() { run() }
 `, true},
+		{"a callee comparing its parameters as numbers", `func overlap(x, y []byte) bool {
+	return len(x) > 0 && len(y) > 0 &&
+		uintptr(unsafe.Pointer(&x[0])) <= uintptr(unsafe.Pointer(&y[len(y)-1])) &&
+		uintptr(unsafe.Pointer(&y[0])) <= uintptr(unsafe.Pointer(&x[len(x)-1]))
+}
+
+func same(p, q *int) bool {
+	if uintptr(unsafe.Pointer(p)) == uintptr(unsafe.Pointer(q)) {
+		return true
+	}
+	b := uintptr(unsafe.Pointer(p)) < uintptr(unsafe.Pointer(q))
+	return b
+}
+
+func run() bool {
+	var a, b [4]byte
+	var x, y int
+	return overlap(a[:], b[:]) || same(&x, &y)
+}
+
+func main() { _ = run() }
+`, false},
+		{"a callee comparing one parameter as a number and keeping the other", `func keep(u uintptr) bool { gu = u; return true }
+
+func f(p, q *int) bool {
+	return uintptr(unsafe.Pointer(p)) == gu && keep(uintptr(unsafe.Pointer(q)))
+}
+
+func run() {
+	var x, y int
+	_ = f(&x, &y)
+}
+
+func main() { run() }
+`, true},
+		{"a callee comparing its parameter as a number after arithmetic", `func f(p *int) bool {
+	return uintptr(unsafe.Pointer(p))+4 > gu
+}
+
+func run() {
+	var x int
+	_ = f(&x)
+}
+
+func main() { run() }
+`, true},
 		{"a callee keeping an unsafe.Pointer", `func keep(p unsafe.Pointer) { gp = p }
 
 func run() {

@@ -21172,21 +21172,50 @@ func (e *emitter) unsafeSliceAddrOperand(ast []int32) ([]int32, bool) {
 // take each such conversion to keep what its operand reaches. Only an
 // unsafe.Pointer and a number convert to a uintptr (checkConversion), and a number
 // reaches nothing.
+//
+// A conversion that is all of a comparison's operand makes a bool, and the number
+// goes nowhere: `uintptr(unsafe.Pointer(&x[0])) <= uintptr(unsafe.Pointer(&y[n-1]))`,
+// Go's own overlap check (crypto/internal/fips140/alias), kept every slice AES's
+// Encrypt was handed, and a caller's local buffer was refused (dom87). An
+// Expression is its operands and operators in a row, and a comparison binds
+// tighter than && and ||, so an operand beside a comparison's operator is its.
 func (e *emitter) uintptrConvOperands(ast []int32) (out [][]int32) {
-	for n := range it(ast) {
+	kids := slices.Collect(it(ast))
+	for i, n := range kids {
 		if n.sym == 0 {
 			continue
 		}
 		if n.sym == Factor {
-			if recv, sfx, ok := e.factorCall(slices.Collect(it(n.ast))); ok && recv == "uintptr" && len(sfx) == 1 && sfx[0].sym == CallSuffix {
-				if args := e.callArgExprs(sfx[0].ast); len(args) == 1 {
-					out = append(out, args[0].ast)
+			if arg, ok := e.uintptrConvArg(n); ok {
+				out = append(out, arg)
+			}
+		}
+		if n.sym == SimpleExpr && (i > 0 && e.isComparisonOp(kids[i-1]) || i+1 < len(kids) && e.isComparisonOp(kids[i+1])) {
+			if fac, ok := e.f.soleFactorOf(n); ok {
+				if arg, ok := e.uintptrConvArg(fac); ok {
+					out = append(out, e.uintptrConvOperands(arg)...)
+					continue
 				}
 			}
 		}
 		out = append(out, e.uintptrConvOperands(n.ast)...)
 	}
 	return out
+}
+
+// uintptrConvArg is the operand of a Factor that is `uintptr(x)`.
+func (e *emitter) uintptrConvArg(fac Node) ([]int32, bool) {
+	if recv, sfx, ok := e.factorCall(slices.Collect(it(fac.ast))); ok && recv == "uintptr" && len(sfx) == 1 && sfx[0].sym == CallSuffix {
+		if args := e.callArgExprs(sfx[0].ast); len(args) == 1 {
+			return args[0].ast, true
+		}
+	}
+	return nil, false
+}
+
+// isComparisonOp reports whether n is a RelOp that compares, not && or ||.
+func (e *emitter) isComparisonOp(n Node) bool {
+	return n.sym == RelOp && !e.isLogicalOp(n)
 }
 
 // starLitCAt answers the C type of a type written out for an expression that is
