@@ -181,6 +181,12 @@ silent fault puts the count back to 0. Each round's account is in
   (printf's literal text past ASCII written as the runes of its bytes), one false
   refusal fixed (a parameter named like a package variable, a store to it taken for
   the package's in the summary), one listed (an inner block's local named so) -- 0
+- dom87 (2026-10-30), a LoRaWAN sensor node (TinyGo's lora, lorawan, region and
+  sx127x drivers over Go's crypto/aes, AES-CMAC over unsafe.Pointer, an SX1276
+  modelled under the driver, a network server on a cog), against master on dom86's
+  fixes: clean, two false refusals fixed (byte and uint8 in an append, and an alias
+  of a predeclared type anywhere; a uintptr compared, Go's overlap check, taken to
+  keep a local's slices) -- 1
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -849,8 +855,9 @@ had it on 2026-10-13"; the sections named in capitals below are its journal's.
   and nil (`catUnsafePointer`), and `void*` in C (`cUnsafePtr`). Its conversions
   are checked (`checkUnsafeConversion`, `checkPtrConvOperand`); `uintptr(x)` of
   what reaches the frame is refused and a summary keeps whatever x reaches
-  (`uintptrConvOperands`), a number going where no rule follows it; a store through
-  a conversion binds the converted pointer first (`bindPtrConv`). `Add` and `Slice`
+  (`uintptrConvOperands`), a number going where no rule follows it, but where it is
+  all of a comparison's operand, which makes a bool (dom87); a store through a
+  conversion binds the converted pointer first (`bindPtrConv`). `Add` and `Slice`
   since 2026-10-08 (`checkUnsafeAddSlice`, `emitUnsafeAddSlice`). `Sizeof`,
   `Alignof` and `Offsetof` (`unsafelayout.go`) are constants computed from the
   TARGET's layout (`targetLayout`; the emitter's copy is `cLayout`): spin2cpp lays
@@ -1044,7 +1051,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   mutations are the run cases' mutations for the shapes it brings**. **A batch's
   REJ/REJ list is a net too**. **When a mutant is taken, probe its line alone before
   writing a rule: what is missing may be the variable's type.** **A harness's
-  header is checked against what it runs** (run.py's twins, amd64 for 386).
+  header is checked against what it runs** (run.py's twins, amd64 for 386). **A
+  probe script runs bare as all.sh runs it: every argument has a default, and
+  nothing it writes lands where it is run** (dom87).
 - **A PROGRAM GO REJECTS IS A ROW** (`scripts/rejects.sh`): **What `ogo build` does
   with such a program is the measure** -- **And measure with a struct of MORE THAN
   ONE WORD, and RUN the binary**.
@@ -1067,7 +1076,8 @@ section. A new finding goes there; the rule it leaves goes here too.
   told: a panic it took for a call that returns made every function of a result
   ending in one a form nothing tested** (dom76). **The fuzzer's board sweep finds
   what the host oracle cannot: a spelling only the target's typing rule reads
-  wrong.**
+  wrong.** **The host's C is no model of the memory a uintptr takes: a program
+  reading storage as uintptrs is asked on the board** (dom87).
 - **When a new refusal fails an old test, ask Go about the test's program before
   doubting the refusal.** **A false refusal fixed in the checker is a program the
   emitter is handed next**. **A new summary rule is run over every program the
@@ -1135,7 +1145,8 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **One question, one helper**. **Two answers to one question are a false refusal or
   a hole, and the second answer hides what the first lacks**. **A rule that refuses
   an operand asks it through parentheses: the operand in them is the operand**
-  (dom84).
+  (dom84). **A rule comparing types by name asks what each name is: byte is uint8,
+  rune is int32, and an alias of a predeclared type is that type** (dom87).
 - **A table read by its value is asked by its key, and asked what else it holds: an
   empty struct's fields are nil, and so are an interface's** (isStruct, fieldEqCmp).
   **Two keys for one type are two tables: the reader asks by the key the writer
@@ -1275,7 +1286,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   name holds was walked in every order of them** (dom74).
 - **A WALK ASKS WHAT ITS VALUE CAN HOLD**: **A walk for what reaches the frame asks
   first whether the value can hold a reference: a number reaches nothing, and
-  walking it costs what the walk's branching costs.**
+  walking it costs what the walk's branching costs.** **A conversion taken to keep
+  what it reaches is asked where its value goes: a uintptr compared makes a bool,
+  and keeps nothing** (dom87).
 - **A slot a summary has for a parameter, it has for the receiver**. **WHAT GOES
   NOWHERE MAY STAY BEHIND**: **A store a summary drops for keeping nothing is asked
   what it leaves behind: the receiver into itself goes nowhere, and its storage holds

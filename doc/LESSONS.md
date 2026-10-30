@@ -4414,6 +4414,70 @@ printed the power cycle and before its boot, an order Go allows -- nothing order
 main's prints before the world's index -- and Go's own runs show the race, two
 outputs in 40. No fuzzer part changed since dom84. A silent round: the count is 0,
 and its fixes go into the next candidate with dom83's and dom84's.
+**dom87, a LoRaWAN sensor node with TinyGo's radio stack** (2026-10-30, a round
+against master on dom86's fixes): tinygo.org/x/drivers v0.37.0's lora, lora/lorawan
+(OTAA's join request and accept, the session keys, uplinks, its own AES-CMAC XORing
+a block as four uintptrs through unsafe.Pointer and checking blockSize against
+4*unsafe.Sizeof(uintptr(0)), which panics where a uintptr is 64 bits),
+lora/lorawan/region (EU868, US915 and AU915, each region's channel type embedding
+the channel struct, Settings handing back Channel values, US915's sweep) and sx127x
+(its registers, RadioControl over pins with interrupts, an interrupt handler sending
+on a buffered channel), ported as written, over Go's crypto/aes as
+crypto/internal/fips140/aes writes it (const.go's tables copied, newOutlined's
+storage, alias.InexactOverlap through uintptr), with Go's AES tests,
+jacobsa/crypto's CMAC tests and brocaar/lorawan's frames held to what TinyGo's code
+makes of them -- its join request byte for byte, its join accept refused for an
+invalid MIC (TinyGo takes the CFList's sixteen bytes into the MIC whether the accept
+has one or not), its uplink's keystream -- and a node: an SX1276 modelled under the
+driver, the air to a network server on a cog over channels of a struct holding an
+array, a US915 join no gateway answers where TinyGo listens (572 join requests of
+one DevNonce), an EU868 join, a pump's readings with a frame lost, one spoiled and
+one replayed, the counter past 16 bits, downlinks the node decrypts itself. A bug of
+the driver's fixed in the port: SX127X_MAP_DIO2_LORA_NOP is 0xC0, DIO0's field, so
+no TxDone or RxDone reaches the pin on the datasheet's chip. Its first build met the
+language's rules (a hash's storage declared in a loop a Hash outside it keeps,
+refused rightly) and two FALSE REFUSALS, both in every release checked. `b0 =
+append(b0, dir)` of a uint8 into a []byte, "cannot use dir (variable of type uint8)
+as byte value in append": append compared the value's type with the element's by
+name, and byte and uint8 are two names of one type; the row swept
+(sweeps/predeclared-alias, 105 rows) found every other position taking them, and an
+alias of a predeclared type, `type B = byte`, refused in every position, in one
+package and across two -- checkDefinedType named the alias by its target and a
+predeclared type by nothing. Fixed, one helper asked by both (namesPredeclared). **A
+rule comparing types by name asks what each name is: byte is uint8, rune is int32,
+and an alias of a predeclared type is that type.** And `h.ciph.Encrypt(result, y)`
+of a local result, "its parameter 1 is stored where it outlives every frame": AES's
+Encrypt calls Go's own overlap check, which compares uintptr conversions of its
+slices' addresses, and the summaries took any uintptr conversion to keep what it
+reaches. One that is all of a comparison's operand keeps nothing now; one stored,
+handed on or computed with still does (sweeps/uintptr-compare). **A conversion taken
+to keep what it reaches is asked where its value goes: a uintptr compared makes a
+bool, and keeps nothing.** The fixes' gate met the harness: all.sh runs every sweep
+bare, and fifteen written since took an OUT and a DUMPC, so its status had said
+nothing for a while, and one given no OUT wrote its 655 rows into build/probes,
+where the host suite's ./... built their twins -- those of programs Go rejects among
+them -- and failed; each takes defaults now, its rows under .work. **A probe script
+runs bare as all.sh runs it: every argument has a default, and nothing it writes
+lands where it is run.** Host and board print Go's 110 lines. The mutants' host run
+met the host itself: 321 of them died at once, the program with them, built at the
+harness's -O1 where probe.sh builds at -O0 -- the CMAC XORs a block as
+`(*[4]uintptr)`, sixteen bytes on the target and in the 386 twin, where
+unsafe.Sizeof says 4, and thirty-two in the host's C, whose uintptr is the 64-bit
+integer a host pointer needs: the stray writes at -O0 landed in dead stack slots and
+at -O1 broke a pointer. **The host's C is no model of the memory a uintptr takes: a
+program reading storage as uintptrs is asked on the board.** The host phase was run
+again at -O0 (run.py's HOST_OPT), and the board is the verdict. Its 400 mutants,
+drawn outside AES's tables: on the host, at -O0, 299 print what Go prints, 26 panic
+as Go does, 61 are refused alike and 14 differ; on the board all 325 the host
+matched print Go's output, and of the 14 two do too (m0345 and m0351, a block's XOR
+left a word short, which the host's wider words ran past) and twelve differ as
+DIFFERENCES.md says OctoGo does: seven write the gateway's line up to the divide by
+zero its last argument makes ("A print writes what it evaluated before a later
+argument panics"), three append past a capacity Go grows (a DevAddr of five bytes,
+an uplink's encryption buffer of another size twice: "`append` does not grow a slice
+past its capacity"), and two wait after Go's 82 lines where Go reports a deadlock
+("A deadlock is not reported"). No fuzzer part changed since dom86. A clean round:
+the count is 1.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
