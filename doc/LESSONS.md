@@ -4246,6 +4246,61 @@ does, 72 are refused alike, and the one that differs sends the stop after waitin
 for its answer and deadlocks, Go saying so and OctoGo waiting (DIFFERENCES.md). On
 the board all 325 that Go ends print Go's output. No fuzzer part changed since
 dom81. A clean round: 1 of 3 against rc.3.
+**dom83, QR codes on an instrument's labels and display** (2026-10-29, the second
+round against v1.0.0-rc.3): rsc.io/qr v0.2.0 ported as written, gf256's field,
+generators and Reed-Solomon encoder, coding's versions, encodings, bits and plan of
+every pixel's role and its masks, qr's Encode and png.go's PNG writer with its own
+deflate of fixed Huffman codes, adler32 and crc32 behind hash.Hash32, and the
+packages' tests; and beside it a scanner's side: the format bits read back to the
+nearest codeword, the codewords by the plan, each block's syndromes, the segments
+decoded to the text, modules flipped to see it caught, the mask Encode leaves as a
+TODO chosen by ISO/IEC 18004's four penalty rules, the PNG read back through
+dom75's inflate and zlib reader, every pixel held to the code's, and a label
+printer cog burning three codes a dot line at a time off a buffered channel. Its
+first build was refused at posBox's `p := pos` of a `pos := Position.Pixel()`,
+"cannot use p of type uint32 as type Pixel": a method of a typed CONSTANT was a
+call the checker's walk typed nothing for, and its variable had the flags' uint32
+and no name. The other way round, `var u uint32 = pos`, a Pixel into another
+defined type, into a uint32 parameter or into arithmetic with a uint32 -- programs
+Go rejects -- built, in rc.3 and every release checked since v0.40.0: a SILENT
+FAULT of the checker (callChainWalk asks callResults for a constant's method now,
+by constTypeName, the constant's spec's type or the one its initializer names, one
+helper for the walk, callResults and checkMethodCall; and `lib.K.M()` in the
+walk's import case). `Position.Pixel().Next()` named the constant in the C (a LOUD
+fault, fixed in chainCText). **A head a walk types is asked in every kind a name
+has: a constant is a receiver too, and its method's result was typed by nothing.**
+Swept, sweeps/const-method: 135 rows, nine shapes of the value by nine positions
+and six Go rejects, and 56 across a package boundary; 89 and 21 wrong before, none
+after. `png := c.PNG()` of a c pointing at a local QRCode, the bytes the package
+writer's, was "a slice backed by local png": a slice a method hands back through a
+pointer to a local is taken for the local's, whatever the method returns (a FALSE
+REFUSAL, listed; the program uses a package code). Making it build opened a hole
+(string-view b04), and the change went; the row's other side was the second silent
+fault. `func deep(v *V) *int { return v.w.ptr() }`, `ptr` handing back `w.p`, made
+no edge in deep's summary for a receiver in what a parameter holds, and `gp =
+deep(&v)` kept the address of the local v.w.p pointed at: the package variable read
+a dead frame, and so did a value method, the result bound to a local of the callee
+first, a method of V, two pointers past the parameter and a slice handed back so.
+And `return v.w.name()` of a method handing back `w.sb.String()` kept a view of a
+local array the Builder was made over: a Builder was counted as holding no
+reference where a summary asked a struct's fields -- the gate dom72's rule names,
+asked by the summaries without the Builder. Both in every release checked since
+v0.40.0; a receiver in a parameter's contents makes a contents edge now, and a
+Builder carries a reference. **A receiver a summary follows is asked where the call
+finds it: a method called on what a parameter holds hands back of the parameter's
+contents.** Swept, sweeps/recv-in-param, 41 rows: 17 read a dead frame before, none
+after; two pointers past the parameter is refused over package storage too, the
+summaries being one level deep. Not fixed, beside the listed refusal: the test's
+`var p Plan`, kept by NewPlan in views of its own grid, refused rightly (Go moves
+it to the heap); the printer's channels made in a function and handed to its cog,
+refused by design; and the cog's registers, lplan and testGaussJordan split, the
+split the program's. Host and board print Go's 127 lines. Its 400 mutants: on the
+host 302 print what Go prints and 3 run past the time on both sides, 56 panic as Go
+does, 38 are refused alike, and the one that differs starts the printer cog after
+main waits on it and deadlocks, Go saying so and OctoGo waiting (DIFFERENCES.md).
+On the board all 358 that Go ends print Go's output. No fuzzer part changed since
+dom82. A silent round: the count is 0, and its fixes are the next
+candidate's.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
@@ -5152,8 +5207,15 @@ compiles; dom81); a parenthesised element type in a composite literal,
 `[256](func(*Server, Framer) ([]byte, *Exception))` (dom82, mbserver's); a string
 conversion bound to a local, `str := string(b[0:1])`, "a string conversion needs
 allocation", where Go's compiler makes a conversion that does not escape on its
-stack up to 32 bytes (dom82, goburrow/modbus's ASCII Verify); a Builder passed by
-value, `count(sb)`
+stack up to 32 bytes (dom82, goburrow/modbus's ASCII Verify); a slice a method
+hands back through a pointer to a local, kept, `gb = png` for a `png := c.PNG()`
+of a `c := &qc` whose PNG returns package bytes, "cannot store a slice backed by
+local png", taken for the local's storage whatever the method returns (the
+summaries keep the receiver and the result as one; telling them apart opened
+string-view b04; dom83, rsc.io/qr's PNG); two pointers past a parameter handed
+back, `return u.pv.w.ptr()`, refused over package storage too (the summaries are
+one level deep; dom83, sweeps/recv-in-param); a Builder passed by value,
+`count(sb)`
 for a `func count(b Builder)`, "cannot use sb as Builder value in argument to count:
 it is a struct" (a pointer is the spelling that works); an
 array-returning call as a package literal element; a function returning an ARRAY

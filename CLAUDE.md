@@ -157,6 +157,13 @@ silent fault puts the count back to 0. Each round's account is in
   line that spoils frames), the first round against rc.3: clean, one false refusal
   fixed (an empty slice literal handed back), two listed (a string conversion bound
   to a local; a parenthesised element type in an array type) -- 1
+- dom83 (2026-10-29), QR codes on an instrument's labels (rsc.io/qr's gf256, coding
+  and PNG writer ported, a scanner's read-back, a label printer cog), the second
+  round against rc.3: silent (a typed constant's method's result typed by nothing,
+  so Go's rejects of it built; what a method hands back of a receiver in a
+  parameter's contents, and a Builder in a struct, unasked in a callee's summary),
+  one loud fault fixed (a chain past a constant's method), one listed (a method's
+  slice through a pointer to a local taken for the local's) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1147,7 +1154,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   to every rule, and a rule asked of a value asks the walk**. **A walk that passes a
   call hands the call to the argument check.** **A lowering that makes a shape
   writable makes it a row of the checker's walks.** **a shape the emitter learns to
-  read is a shape the checker must refuse the same way**.
+  read is a shape the checker must refuse the same way**. **A head a walk types is
+  asked in every kind a name has: a constant is a receiver too, and its method's
+  result was typed by nothing** (dom83).
 - **A new helper following type definitions goes through typeIdentDecl.** **a file
   is found from a qualified name's QUALIFIER**. **A name the checker reads off
   another package's declaration is resolved there whether or not it is exported;
@@ -1245,6 +1254,8 @@ section. A new finding goes there; the rule it leaves goes here too.
   what it leaves behind: the receiver into itself goes nowhere, and its storage holds
   a pointer into itself.** **A new way to
   reach a receiver is a row in methodCallOf, under a plain call, `defer` and `go`.**
+  **A receiver a summary follows is asked where the call finds it: a method called
+  on what a parameter holds hands back of the parameter's contents** (dom83).
   **A summary is asked what the value it records can hold**. **A new place a pointer
   can stand -- an operand, a header, a clause's name -- is a row in
   TestEmitCAssertLifetime's matrix, and a statement form a header can hold is a row
