@@ -82,6 +82,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 - **A chain past a typed constant's method builds**: `Position.Pixel().Next()` and
   `Position.Box().P` named the constant in the C, which has no such symbol, and no
   C compiler took it.
+- **printf's text past ASCII prints as written**: `printf("tilt %d µg\n", x)`
+  printed "Âµg": the format's literal text was copied a byte at a time, each
+  byte taken for the rune of its number, so every character past ASCII came out
+  as the two or three runes of its bytes -- on the host and the board, in rc.3,
+  rc.2 and v0.58.0. The text of an argument, `%s` of "µg", was right.
 - **A method called through an interface in a field, an element or a call's
   result is handed its arguments as its parameters are**: `d.Conn.Tx(b, nil)`,
   periph.io's mmr, wrote `0` for the nil slice, and a variadic method's arguments

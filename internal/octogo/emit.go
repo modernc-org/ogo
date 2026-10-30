@@ -44356,7 +44356,10 @@ func parsePrintfFormat(format string) (items []printfItem, verbs int, badVerb st
 	lit := ""
 	for i := 0; i < len(format); i++ {
 		if format[i] != '%' {
-			lit += string(format[i])
+			// The byte itself: string(format[i]) is the rune of that number, and a
+			// format's `µ` was written as the two runes of its two bytes, "Âµ", in
+			// every release checked (dom86's "µg").
+			lit += format[i : i+1]
 			continue
 		}
 		if i+1 == len(format) {
@@ -44396,7 +44399,7 @@ func parsePrintfFormat(format string) (items []printfItem, verbs int, badVerb st
 			items = append(items, printfItem{spec: spec, verb: c})
 			verbs++
 		default:
-			return nil, 0, "%" + spec + string(c), false
+			return nil, 0, "%" + spec + format[i:i+1], false
 		}
 	}
 	if lit != "" {

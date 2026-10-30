@@ -57073,6 +57073,26 @@ func main() {
 		want: "héllo true true 195 6\n0:104 1:233 3:108 4:108 5:111 \nhéllo éllo héllo abc abc 6\nmain.S héllo string \"180\"\n",
 	},
 	{
+		// `printf("tilt %d %d %d µg\n", ...)` of a front panel (dom86): the
+		// format's literal text was copied a byte at a time as string(byte), the
+		// rune of each byte's number, and a `µ` came out as "Âµ" -- on the host and
+		// the board, in every release checked.
+		name: "printf's literal text past ASCII",
+		src: `type Celsius int
+
+func main() {
+	x := 6
+	printf("%d µg\n", 3)
+	printf("µg %d\n", 4)
+	printf("µg\n")
+	printf("é€ %v ☺ %%\n", 5)
+	printf("%d°C %T·\n", x, Celsius(x))
+	printf("%5dÅ|%-4s|ø\n", x, "ab")
+}
+`,
+		want: "3 µg\nµg 4\nµg\né€ 5 ☺ %\n6°C main.Celsius·\n    6Å|ab  |ø\n",
+	},
+	{
 		// `d.Conn.Tx([]byte{reg, v}, nil)` of periph.io's mmr (dom84): a method
 		// called through an interface a chain reached -- a field, an element, a
 		// call's result -- had its arguments converted to nothing, and a nil for a
