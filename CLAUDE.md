@@ -164,6 +164,12 @@ silent fault puts the count back to 0. Each round's account is in
   parameter's contents, and a Builder in a struct, unasked in a callee's summary),
   one loud fault fixed (a chain past a constant's method), one listed (a method's
   slice through a pointer to a local taken for the local's) -- 0
+- dom84 (2026-10-29), an environmental station's sensors (periph.io's physic units,
+  I2C, mmr, 1-Wire and the bmxx80, ina219, mcp9808 and ds18b20 drivers with their
+  tests, a bus cog modelling the chips), against master on dom83's fixes: silent (a
+  slice of a call's string taken for a slice, so Go's rejects of it built; the
+  address of a string's byte), one loud fault fixed (an interface method through a
+  field, an element or a call's result given no parameter types) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1110,7 +1116,9 @@ section. A new finding goes there; the rule it leaves goes here too.
 **The checker**
 
 - **One question, one helper**. **Two answers to one question are a false refusal or
-  a hole, and the second answer hides what the first lacks**.
+  a hole, and the second answer hides what the first lacks**. **A rule that refuses
+  an operand asks it through parentheses: the operand in them is the operand**
+  (dom84).
 - **A table read by its value is asked by its key, and asked what else it holds: an
   empty struct's fields are nil, and so are an interface's** (isStruct, fieldEqCmp).
   **Two keys for one type are two tables: the reader asks by the key the writer

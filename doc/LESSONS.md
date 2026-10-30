@@ -4301,6 +4301,53 @@ main waits on it and deadlocks, Go saying so and OctoGo waiting (DIFFERENCES.md)
 On the board all 358 that Go ends print Go's output. No fuzzer part changed since
 dom82. A silent round: the count is 0, and its fixes are the next
 candidate's.
+**dom84, an environmental station's sensors** (2026-10-29, a round against master
+on dom83's fixes, the rc.4 candidate): periph.io/x/conn v3.7.2's physic units --
+eleven of them, each String and Set, the decimal parser and its overflow checks --
+conn, i2c, mmr's Dev8 over encoding/binary's byte orders, onewire's Dev, CRC and
+Search, and the Playbacks of conntest, i2ctest and onewiretest; periph.io/x/devices
+v3.7.4's bmxx80, ina219, mcp9808 and ds18b20; with the packages' tests and their
+recordings of real chips, physic's tables generated from units_test.go, and
+bmx280_test.go's float64 and int32 compensations. Then a station: a bus cog serving
+three clients over channels, modelling a BME280, a BMP180, an INA219, an MCP9808
+and three DS18B20s answering a ROM search bit by bit, read 24 times through the
+drivers with limits parsed by the units' Set, a sea-level pressure and a dew point
+in float64, and the BME280 in normal mode read by a cog of its own. Its first build
+was refused at bmxx80's wrap: `name := arena.String()[m:]`, "cannot use name as
+string value in argument to cat: it is a slice". The walk past a call typed nothing
+for a slice of a string -- its Index step gave up on anything but an array or a
+slice, where the walk without calls, stepsTypeIn, took a string's slice for the
+string's type -- and the flags called the variable a slice. The other way round,
+`nm[0] = 120`, `nm[0]++`, `nm = nil`, `nm == nil` and `var b []byte = nm` for an
+`nm := f()[m:]` built -- programs Go rejects -- in rc.3, rc.2 and v0.58.0: a SILENT
+FAULT. **One question, one helper** was the rule broken: two walks answered what a
+slice step yields, and the one past a call answered nothing. Probing it found the
+next: the address of a string's byte, `&s[0]`, `&d.s[1]`, `&f()[0]`, `&(g[0])`,
+built in every form, a pointer through which a store wrote the string, and
+`&(f())`, a call in parentheses -- programs Go rejects, a second SILENT FAULT, in
+the same releases. checkAddressable asked a constant, a function and a call, never
+what an index reaches, and nothing inside parentheses. **A rule that refuses an
+operand asks it through parentheses: the operand in them is the operand.** Swept,
+sweeps/string-slice-call: 630 rows, six heads by five bindings by 21 uses, and 25
+address forms, against Go's verdict; 222 and 12 parted from Go before, 150 of them
+programs Go rejects that built, and none after. Then mmr's `d.Conn.Tx([]byte{reg,
+v}, nil)` was C neither compiler took: a method called through an interface a chain
+reached -- a field, an element, a call's result -- had its arguments converted to
+nothing, nil for a slice written 0, a variadic's arguments unpacked (a LOUD fault,
+fixed: the chain sets the method's parameter types as the call on a variable does).
+**A call is asked of every head a call can follow** was the rule, and the head here
+was what the arguments are converted by. Not fixed: dom77's listed refusal of a
+slice literal written in an inner block (both literals made where they are read);
+and the target refused the goroutines a stack bound, mmr's Dev8 being a Conn whose
+Tx calls a Conn's, a recursion through the interface the call graph cannot rule out
+-- built with --gostack, as the message says. Host and board print Go's 201 lines.
+Its 400 mutants, drawn outside physic's tables: on the host 328 print what Go
+prints, 18 panic as Go does, 51 are refused alike, and three differ as the language
+says -- a printf verb that does not suit its argument refused where it is written,
+a deadlock Go reports and OctoGo waits out (DIFFERENCES.md), a NaN converted to an
+integer, which Go leaves to the implementation; on the board, built with --gostack,
+all 346 that Go ends print Go's output. No fuzzer part changed since dom83. A silent round: the count is 0, and its fixes go into the next
+candidate with dom83's.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
