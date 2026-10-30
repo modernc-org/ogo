@@ -1,0 +1,47 @@
+// A defined type over uint8 is no byte, an alias of int is no uint8, rune is not
+// byte, and a byte declared by the program is its own type: the rule taking byte
+// for uint8 asks what the name means where it is written.
+
+import "p"
+
+type MyByte uint8
+
+type I = int
+
+func defined() {
+	var v MyByte = 7
+	var back [4]byte
+	// ERROR "cannot use v .*MyByte.* as byte value in append"
+	_ = append(back[:0], v)
+	var by byte = 7
+	var mback [4]MyByte
+	// ERROR "cannot use by .*byte.* as MyByte value in append"
+	_ = append(mback[:0], by)
+}
+
+func aliasOfInt() {
+	var u uint8 = 7
+	var back [4]I
+	// ERROR "cannot use u of type uint8 as type I in append"
+	_ = append(back[:0], u)
+	// ERROR "cannot use u of type uint8 as type int in variable declaration"
+	var i I = u
+	_ = i
+}
+
+func runeIsNotByte() {
+	var r rune = 7
+	var back [4]byte
+	// ERROR "cannot use r of type int32 as type byte in append"
+	_ = append(back[:0], r)
+	// ERROR "cannot use r of type int32 as type (p\.)?Octet in argument to TakeOctet"
+	_ = p.TakeOctet(r)
+}
+
+func shadowed() {
+	type byte int16
+	var u uint8 = 7
+	var back [4]byte
+	// ERROR "cannot use u of type uint8 as type byte in append"
+	_ = append(back[:0], u)
+}

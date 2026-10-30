@@ -1,0 +1,68 @@
+// COMPILE
+
+// byte is uint8 and rune is int32, Go's two predeclared aliases, and an alias of
+// a predeclared type, `type Octet = byte`, is that type: a value of either name
+// goes where the other is wanted, in an append, a literal, a declaration, an
+// argument, a field and a result, here and across a package boundary. Compared
+// by name, a uint8 appended to a []byte was refused, and a byte was no value of a
+// `type B = byte` in any position (dom87).
+
+import "p"
+
+type B = byte
+
+type U = uint8
+
+type R = rune
+
+type BB = B
+
+type S struct {
+	b B
+	u uint8
+}
+
+func takeB(x B) int { return int(x) }
+
+func giveB(x uint8) B { return x }
+
+func giveU(x B) uint8 { return x }
+
+func main() {
+	var u uint8 = 7
+	var by byte = 8
+	var i32 int32 = 9
+	var r rune = 10
+
+	var back [4]byte
+	bs := append(back[:0], u, by)
+	var uback [4]uint8
+	us := append(uback[:0], by, u)
+	var rback [4]rune
+	rs := append(rback[:0], i32, r)
+	var iback [4]int32
+	is := append(iback[:0], r, i32)
+	ms := make([]byte, 0, 4)
+	ms = append(ms, u)
+
+	var bback [4]B
+	xs := append(bback[:0], u, by)
+	var uuback [4]U
+	ys := append(uuback[:0], by, u)
+	var pback [4]p.Octet
+	ps := append(pback[:0], u, by)
+	var gback [4]p.Glyph
+	gs := append(gback[:0], i32, r)
+
+	var vb B = u
+	var vu U = by
+	var vr R = i32
+	var vbb BB = u
+	var vp p.Octet = u
+	lit := []B{u, by}
+	plit := []p.Octet{u, by}
+	s := S{b: u, u: vb}
+	_ = takeB(u) + takeB(by) + p.TakeOctet(u) + p.TakeGlyph(i32) + int(giveB(u)) + int(giveU(by))
+	_ = len(bs) + len(us) + len(rs) + len(is) + len(ms) + len(xs) + len(ys) + len(ps) + len(gs)
+	_ = int(vb) + int(vu) + int(vr) + int(vbb) + int(vp) + len(lit) + len(plit) + int(s.b) + int(s.u)
+}

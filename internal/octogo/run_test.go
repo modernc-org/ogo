@@ -57093,6 +57093,46 @@ func main() {
 		want: "3 µg\nµg 4\nµg\né€ 5 ☺ %\n6°C main.Celsius·\n    6Å|ab  |ø\n",
 	},
 	{
+		// `b0 = append(b0, dir)` of a uint8 dir in TinyGo's lorawan (dom87): an
+		// append compared the value's type with the element's by NAME, and byte and
+		// uint8 are two names of one type; and an alias of a predeclared type,
+		// `type B = byte`, was taken for a defined type in every position.
+		name: "byte and uint8, rune and int32, and an alias of byte, each the other",
+		src: `type B = byte
+
+type R = rune
+
+type S struct{ b B }
+
+func takeB(x B) int { return int(x) * 3 }
+
+func giveB(x uint8) B { return x + 1 }
+
+func main() {
+	var u uint8 = 7
+	var by byte = 200
+	var i32 int32 = -9
+	var back [4]byte
+	bs := append(back[:0], u, by)
+	var rback [3]rune
+	rs := append(rback[:0], i32, 'é')
+	ms := make([]uint8, 0, 4)
+	ms = append(ms, by, u, 1)
+	var bback [4]B
+	xs := append(bback[:0], u, by+u)
+	var vb B = u
+	var vr R = i32
+	s := S{b: u}
+	s.b += by
+	lit := []B{u, by}
+	println(len(bs), cap(bs), bs[0], bs[1], back[1])
+	println(len(rs), rs[0], rs[1], len(ms), ms[0], ms[2])
+	println(len(xs), xs[1], vb, vr, s.b, lit[1], takeB(u), giveB(by))
+}
+`,
+		want: "2 4 7 200 200\n2 -9 233 3 200 1\n2 207 7 -9 207 200 21 201\n",
+	},
+	{
 		// `d.Conn.Tx([]byte{reg, v}, nil)` of periph.io's mmr (dom84): a method
 		// called through an interface a chain reached -- a field, an element, a
 		// call's result -- had its arguments converted to nothing, and a nil for a

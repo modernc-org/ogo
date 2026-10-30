@@ -15118,6 +15118,32 @@ func (f *File) canonicalName(s *Scope, name string) string {
 	return name
 }
 
+// namesPredeclared reports whether a type name, `lib.B` qualified, is a
+// predeclared type or an alias of one, `type B = byte`: either is a Kind and no
+// defined type, so a rule comparing defined types by name asks the Kind instead.
+// byte is uint8 and rune is int32, Go's own two aliases (decl.go). Compared by
+// name, `append(bs, v)` of a uint8 into a []byte was refused, and a byte was no
+// value of a `type B = byte` in any position (dom87).
+func (f *File) namesPredeclared(s *Scope, name string) bool {
+	if !strings.Contains(name, ".") {
+		if _, isPre := s.find(name).(*PredeclaredType); isPre {
+			return true
+		}
+	}
+	td, home, ok := f.typeDeclNamedIn(s, name, true)
+	if !ok || td.TypeSpec == nil || !td.TypeSpec.Alias {
+		return false
+	}
+	// typeDeclNamedIn stops at the last declaration: an alias still means its
+	// target is none, a predeclared type's.
+	tn, isIdent := td.TypeSpec.TypeNode.(*TypeNodeIdent)
+	if !isIdent || tn.Qualifier.IsValid() {
+		return false
+	}
+	_, isPre := home.find(tn.Name.Src()).(*PredeclaredType)
+	return isPre
+}
+
 func (f *File) canonicalType(s *Scope, name, qual Token) (Token, Token) {
 	// unsafe.Pointer is a Kind, and is named by it, as int is: a name recorded
 	// beside it would be read as a defined type's, and every message reading one
@@ -15838,6 +15864,11 @@ func (f *File) checkDefinedType(s *Scope, wantName string, value Node, what stri
 		if _, _, ok := f.typeDeclNamedIn(s, wantName, true); ok {
 			want = f.canonicalQualified(wantName)
 		}
+	}
+	// An alias of a predeclared type, `type B = byte`, is that type, whose
+	// identity is the empty string its Kind stands in for, the Kind asked above.
+	if want != "" && f.namesPredeclared(s, wantName) {
+		want = ""
 	}
 	if have == want {
 		return
@@ -28337,7 +28368,14 @@ func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
 		// names that are two types.
 		if nm, ql, ptr, ok := f.exprNamedType(s, v); ok && !ptr && !ql.IsValid() && p.name != "" && !f.namesAliasedLiteral(s, p.name) && !f.namesAliasedLiteral(s, nm.Src()) {
 			have, _ := f.canonicalType(s, nm, ql)
-			if want := f.canonicalName(s, p.name); have.IsValid() && have.Src() != want {
+			// A predeclared type or an alias of one on both sides is a Kind, and
+			// assignableKind compared the two above: a uint8 into a []byte, a rune
+			// into a []int32, a byte into a `[]B` of a `type B = byte`.
+			elemName := p.name
+			if elemTN != nil {
+				elemName = f.qualifiedTypeName(elemIn, f.typeNodeString(elemTN, false))
+			}
+			if want := f.canonicalName(s, p.name); have.IsValid() && have.Src() != want && !(f.namesPredeclared(s, have.Src()) && f.namesPredeclared(s, elemName)) {
 				f.err(f.tok(v.Pos()).Position(), "cannot use %s (variable of type %s) as %s value in append",
 					f.exprSource(v), have.Src(), p.name)
 			}

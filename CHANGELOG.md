@@ -41,6 +41,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   package's name, and every caller handing it a local's slice was refused, "its
   parameter 1 is stored where it outlives every frame". In every release checked.
   A local of an inner block named so is still taken for the package's.
+- **byte is uint8 and rune is int32 in an append**: `b0 = append(b0, dir)` of a
+  uint8 dir into a []byte, TinyGo's LoRaWAN MIC, was refused, "cannot use dir
+  (variable of type uint8) as byte value in append", and so was a byte appended
+  to a []uint8, a rune to a []int32 and an int32 to a []rune: the two names of
+  one type were compared as names. Every other position took them. In every
+  release checked.
+- **An alias of a predeclared type is that type**: for a `type B = byte`, a byte
+  or a uint8 was refused where a B goes -- a declaration, an argument, a result,
+  a literal, a field, an append -- "cannot use v of type uint8 as type B", and so
+  was another package's `lib.B`. In every release checked.
 
 ### Behaviour changes
 

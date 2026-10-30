@@ -134,3 +134,13 @@ var Readings = []Temp{20, 30}
 func Twice(t Temp) Temp { return t * 2 }
 
 func TakeCount(c Count) int { return int(c) }
+
+// Octet, Glyph, TakeOctet and TakeGlyph exist for an alias of a predeclared type
+// across the boundary (alias_predeclared.ogo): each is the type it names.
+type Octet = byte
+
+type Glyph = rune
+
+func TakeOctet(b Octet) int { return int(b) }
+
+func TakeGlyph(r Glyph) int { return int(r) }
