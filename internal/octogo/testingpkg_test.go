@@ -40,6 +40,11 @@ func TestTestingRefusals(t *testing.T) {
 		{`t.Logf()`, "not enough arguments in call to Logf: it takes a format"},
 		{`t.Errorf("%d")`, "Errorf: the format has 1 verb but 0 arguments given"},
 		{`t.Fatalf("%d", 1, 2)`, "Fatalf: the format has 1 verb but 2 arguments given"},
+		// A constant argument takes its default type, as a print's does (dom88).
+		{`t.Logf("%d", 1<<31)`, "constant 2147483648 overflows int"},
+		{`t.Log(1 << 40)`, "constant 1099511627776 overflows int"},
+		{`t.Errorf("%v", 1e309)`, "constant 1e+309 overflows float"},
+		{`t.Logf("%d %v", 1<<30, int64(1<<40))`, ""},
 		{`var x int = t.Log("v")
 	_ = x`, `t.Log("v") (no value) used as value`},
 		{`defer t.Log("x")`, "`defer t.Log(...)` is not supported yet; write `defer func(t *testing.T) { t.Log(...) }(t)`"},

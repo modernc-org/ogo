@@ -13837,7 +13837,12 @@ var testingFormatMethods = map[string]string{
 // The verbs are counted against the arguments, and each asked whether its verb
 // suits it, where the call is written (emitTestingCall), as printf's are.
 func (f *File) checkTestingFormatArgs(s *Scope, method string, at Token, args []Node) {
+	// A constant argument takes its default type as a print's does (printf's,
+	// dom88): `t.Log(1<<31)` built and `t.Errorf("%v", 1e309)` reached C.
 	if testingFormatMethods[method] != "format" {
+		for _, a := range args {
+			f.checkInferredOverflow(s, a)
+		}
 		return
 	}
 	if len(args) == 0 {
@@ -13853,6 +13858,7 @@ func (f *File) checkTestingFormatArgs(s *Scope, method string, at Token, args []
 	}
 	for _, a := range args[1:] {
 		f.noteChanTDirs(s, a)
+		f.checkInferredOverflow(s, a)
 	}
 }
 
@@ -27736,6 +27742,10 @@ func (f *File) checkCallee(s *Scope, callee Token, argList Node, args []Node) {
 		case "printf":
 			for _, a := range args[min(1, len(args)):] {
 				f.noteChanTDirs(s, a)
+				// An argument goes where fmt's `...any` takes it, so a constant one
+				// takes its default type as print's do: `printf("%d", 1<<31)` built
+				// and printed -2147483648, Go refusing it as overflowing int (dom88).
+				f.checkInferredOverflow(s, a)
 			}
 		case "append":
 			// The one whose element type IS reachable here: the destination names a

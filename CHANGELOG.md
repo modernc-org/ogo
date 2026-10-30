@@ -114,6 +114,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   dropped what p held; so did returning p, and a slice given a view of a local
   array before a clause declared its name. Each is refused now. In every release
   checked since v0.50.0.
+- **An untyped constant handed to printf takes its default type**:
+  `printf("%d", 1<<31)` built and printed -2147483648, and `printf("%v",
+  2<<30+1<<29)` -1610612736, each a program Go refuses, the constant overflowing
+  the int an `...any` argument takes it as; `printf("%v", 1e309)` reached C, which
+  refused it. And so did testing's Log, Logf, Error, Errorf and their kin. Each
+  is refused now, "constant 2147483648 overflows int", as print's and println's
+  were. In every release checked since v0.50.0.
 
 ### Fixed
 

@@ -1,0 +1,22 @@
+// An untyped constant handed to printf takes its default type, as one handed to
+// print does: Go's fmt.Printf takes it as an `any`, and refuses one past int or
+// float64 (dom88, where `printf("%v", 2<<30+1<<29)` built and printed
+// -1610612736). A typed constant, and one that fits, print as before.
+
+const big = 1 << 31
+
+func main() {
+	printf("%d %d %v\n", 1<<30, int64(1<<40), uint32(1<<31))
+	// ERROR "constant 2147483648 overflows int"
+	printf("%d\n", 1<<31)
+	// ERROR "constant 2684354560 overflows int"
+	printf("%v\n", 2<<30+1<<29)
+	// ERROR "constant 2147483648 overflows int"
+	printf("%d\n", big)
+	// ERROR "constant 1e\+309 overflows float"
+	printf("%v\n", 1e309)
+	// ERROR "constant 2147483648 overflows int"
+	defer printf("%d\n", 1<<31)
+	// ERROR "constant 2147483648 overflows int"
+	println(1 << 31)
+}
