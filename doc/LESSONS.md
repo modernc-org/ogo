@@ -4346,8 +4346,74 @@ prints, 18 panic as Go does, 51 are refused alike, and three differ as the langu
 says -- a printf verb that does not suit its argument refused where it is written,
 a deadlock Go reports and OctoGo waits out (DIFFERENCES.md), a NaN converted to an
 integer, which Go leaves to the implementation; on the board, built with --gostack,
-all 346 that Go ends print Go's output. No fuzzer part changed since dom83. A silent round: the count is 0, and its fixes go into the next
-candidate with dom83's.
+all 346 that Go ends print Go's output. No fuzzer part changed since dom83. A
+silent round: the count is 0, and its fixes go into the next candidate with dom83's.
+**dom85, a telemetry logger compressing with Snappy** (2026-10-30, a round against
+master on dom84's fixes): github.com/golang/snappy v1.0.0's block format
+(encodeBlock with its hash table, its skip and its forward goto, the literal and
+copy emitters, decode's overlapping copies) and framing format (Writer and
+NewBufferedWriter, the masked CRC-32C chunks, Reader's fill, Read and ReadByte),
+over io's ReadAtLeast and ReadFull, encoding/binary's varints and hash/crc32's
+Castagnoli table with its slicing-by-8 update, ported as written, with the package's
+29 tests -- TestDecode's hand-made inputs, the emitters' tables, the writer's golden
+output, Isaac Newton's Opticks encoded to the C++ encoder's 9290 bytes, byte for
+byte -- and a logger: a sampler cog's records of a pump's vibration over a buffered
+channel, framed into a flash cog's NOR flash page by page and replayed through a
+Reader, a flipped bit caught by its chunk's checksum, a write over an unerased flash
+showing bits cleared. Its first build met the language's rules: a defer in
+TestWriterReset's loop (a call of its own a pass), a package Writer keeping a local
+sink and a sink declared in a loop a Writer outside it keeps (both refused rightly,
+Go moving them to the heap), and on the target a function past the cog's registers
+(snappy's Reader.fill, split by the program) and a 32 KB block past Hub RAM (17 KB,
+still the golden input's one block). And a FALSE REFUSAL: `r := NewReader(&sr, nil,
+...); r.Reset(&rd)` of a local sr and rd, "it is stored in the receiver r, which
+outlives this function, or may" -- a store into storage a call hands back is refused
+whatever it is (checkOpaqueRecv), the summaries saying only that NewReader MAY hand
+back its first argument; the row probed (a method, a field store, a function, an
+identity call, a conditional rebinding, the call itself), all six refused, in rc.2
+and v0.58.0: one design, a pointer a call hands back is opaque to a store's permit
+(LISTED, of dom83's listed family). Host and board print Go's 49 lines. Its 400
+mutants, drawn outside the golden data and the tables: on the host 306 print what Go
+prints and 2 run past the time on both sides, one more, m0209, prints Go's output
+past the harness's time (its TestSlowForwardCopyOverrun runs o's doubling into an
+int32 wrap and a countdown of 2^28 a case, 38 s in Go where gcc folds the loop), 32
+panic as Go does, 59 are refused alike; on the board all 339 that Go ends print Go's
+output, two only when loaded again (the loader's "timeout waiting for initial
+checksum" and "Unknown version", the program never started) and m0209 only when read
+past the harness's time, 2310 s from the load. No fuzzer part changed since dom84.
+A clean round: the count is 1, and dom86, run beside it, puts it back to 0.
+**dom86, an instrument's front panel with TinyGo's drivers** (2026-10-30, a round
+against master on dom84's fixes): tinygo.org/x/drivers v0.37.0's ds3231 (BCD time,
+the century, both alarms, the square wave, the temperature), mcp23017 (a defined
+uint16 of pins with pointer methods), at24cx (page writes that wrap) and lis3dh
+(typed and untyped constants in one block, ranges by shifts), internal/regmap and
+internal/legacy, and the tester package the drivers' tests run on, ported as
+written, with the packages' tests and a panel: a world cog's seconds, keys, tilts
+and a power cycle applied to the fake chips, the panel run through the drivers,
+settings kept in the EEPROM across the power cycle. Its first build met dom75's
+listed per-variable marks (the tester's bus holding a slice of its own array made
+the Failer field copied out of it a view; the bus counts its devices) and a FALSE
+REFUSAL: `modes = modes[:PinCount]` in mcp23017's GetModes, its parameter named like
+the panel's constant `modes`, "its parameter 1 is stored where it outlives every
+frame" -- the summaries, collected before any local is declared, took a store to a
+parameter, a named result or a receiver named like a package variable or constant
+for a store into it (outlivesByName asked isPackageVar first), in every release
+checked; fixed, the function's own names asked first, a local of an inner block
+still read by name (listed). **A name a summary reads is asked what the function
+declares before what the package does: a parameter is of the body's outermost block,
+whatever the package names.** And the host printed "tilt ... Âµg" for Go's "µg":
+printf copied its format's literal text a byte at a time as string(format[i]), the
+rune of each byte's number -- a SILENT FAULT, on the host and the board, in rc.3,
+rc.2 and v0.58.0. **A byte converted to a string is a rune of its number: text is
+copied by slicing, never by converting its bytes.** Host and board print Go's 59
+lines. Its 400 mutants: on the host 317 print what Go prints, 16 panic as Go does,
+67 are refused alike; on the board, built on the fixes, all 333 that Go ends print
+Go's output but m0009, whose `||` for `&&` sends every step into the world cog's
+buffered channel at once and indexes past the last: the cog panicked after main
+printed the power cycle and before its boot, an order Go allows -- nothing orders
+main's prints before the world's index -- and Go's own runs show the race, two
+outputs in 40. No fuzzer part changed since dom84. A silent round: the count is 0,
+and its fixes go into the next candidate with dom83's and dom84's.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
@@ -5261,9 +5327,15 @@ local png", taken for the local's storage whatever the method returns (the
 summaries keep the receiver and the result as one; telling them apart opened
 string-view b04; dom83, rsc.io/qr's PNG); two pointers past a parameter handed
 back, `return u.pv.w.ptr()`, refused over package storage too (the summaries are
-one level deep; dom83, sweeps/recv-in-param); a Builder passed by value,
-`count(sb)`
-for a `func count(b Builder)`, "cannot use sb as Builder value in argument to count:
+one level deep; dom83, sweeps/recv-in-param); a store into storage a call hands back,
+`r := NewReader(&sr, nil); r.Reset(&rd)` of a local sr and rd, "it is stored in the
+receiver r, which outlives this function, or may", whatever the call returns
+(checkOpaqueRecv: a pointer a call hands back is opaque to a store's permit; dom85,
+golang/snappy's Reader); a store to a local of an inner block named like a package
+variable, taken for a store into the package's by the summaries, which are collected
+before any local is declared (dom86's fix asks the parameters, the results and the
+receiver first); a Builder passed by value, `count(sb)` for a `func count(b
+Builder)`, "cannot use sb as Builder value in argument to count:
 it is a struct" (a pointer is the spelling that works); an
 array-returning call as a package literal element; a function returning an ARRAY
 taken as a value, `mb := mkb`, "cannot infer a type" and, with the type written,

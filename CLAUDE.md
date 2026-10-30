@@ -170,6 +170,17 @@ silent fault puts the count back to 0. Each round's account is in
   slice of a call's string taken for a slice, so Go's rejects of it built; the
   address of a string's byte), one loud fault fixed (an interface method through a
   field, an element or a call's result given no parameter types) -- 0
+- dom85 (2026-10-30), a telemetry logger's records in Snappy (golang/snappy's block
+  and framing formats, io's readers, binary's varints and crc32's Castagnoli table
+  ported, a sampler cog and a flash cog's NOR flash), against master on dom84's
+  fixes: clean, one false refusal listed (a store into what a call hands back of a
+  local, opaque to the permit) -- 1
+- dom86 (2026-10-30), an instrument's front panel (TinyGo's ds3231, mcp23017,
+  at24cx and lis3dh drivers with regmap, legacy and the tester their tests run on, a
+  world cog's keys, tilts and power cycle), against master on dom84's fixes: silent
+  (printf's literal text past ASCII written as the runes of its bytes), one false
+  refusal fixed (a parameter named like a package variable, a store to it taken for
+  the package's in the summary), one listed (an inner block's local named so) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1226,24 +1237,26 @@ section. A new finding goes there; the rule it leaves goes here too.
   call site, in a callee's summary, through an interface, and where a return hands
   them on.** **A return is asked in every form, a forwarded call among them.**
   **A block is counted as Go declares it: the parameters are of the body's
-  outermost block.** **A loop is every way a statement runs again: a goto back is
-  one** (dom71). **A store through a name is asked what the name IS, not what it
-  holds: a pointer stored into it is reached only by a target that goes through
-  it.** **A value that may be a reference is asked at every gate that asks a type
-  whether it can carry one: a string a Builder hands out was followed only where
-  `sb.String()` stood written** (dom72). **What a spread keeps is what its
-  elements reach: append's last argument under `...` is read as copy reads its
-  source, never as the slice it spreads** (dom73). **A cost a comment calls rare
-  is swept before it is believed: the per-variable mark was to refuse one program,
-  and it refuses every field kept out of the holder** (dom75, sweeps/field-holder;
-  listed). **What a call hands back is asked where it is bound as where it is
-  written, and a method is asked what its receiver holds as well as what it is**
-  (dom77, sweeps/result-contents). **A rule a caller's statement asks of a call
-  is asked by a callee's summary too: what a method hands back of what its
-  receiver holds was followed where a statement read it and nowhere a summary
-  did.** **A summary kept one level deep is asked what the level holds: the
-  contents of a []byte are bytes, and a callee keeping them keeps nothing of the
-  struct they were copied from** (dom78, sweeps/callee-recv-contents).
+  outermost block.** **A name a summary reads is asked what the function declares
+  before what the package does: a parameter is of the body's outermost block,
+  whatever the package names** (dom86). **A loop is every way a statement runs
+  again: a goto back is one** (dom71). **A store through a name is asked what the
+  name IS, not what it holds: a pointer stored into it is reached only by a target
+  that goes through it.** **A value that may be a reference is asked at every gate
+  that asks a type whether it can carry one: a string a Builder hands out was
+  followed only where `sb.String()` stood written** (dom72). **What a spread keeps
+  is what its elements reach: append's last argument under `...` is read as copy
+  reads its source, never as the slice it spreads** (dom73). **A cost a comment
+  calls rare is swept before it is believed: the per-variable mark was to refuse one
+  program, and it refuses every field kept out of the holder** (dom75,
+  sweeps/field-holder; listed). **What a call hands back is asked where it is bound
+  as where it is written, and a method is asked what its receiver holds as well as
+  what it is** (dom77, sweeps/result-contents). **A rule a caller's statement asks
+  of a call is asked by a callee's summary too: what a method hands back of what its
+  receiver holds was followed where a statement read it and nowhere a summary did.**
+  **A summary kept one level deep is asked what the level holds: the contents of a
+  []byte are bytes, and a callee keeping them keeps nothing of the struct they were
+  copied from** (dom78, sweeps/callee-recv-contents).
 - **A PARENTHESISED HEAD IS A ROW OF EVERY SCAN**: **A new scan reads heads through
   them, and a new shape the emitter reads through parentheses is a row in each
   scan.**
@@ -1300,7 +1313,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   serves: two float32 helpers in the float64 runtime were missing from every
   program that called them and had no float64** (dom64).
 - **A method the compiler writes in C asks of its receiver what a body's dereference
-  would** (the Builder's helpers and a nil *Builder).
+  would** (the Builder's helpers and a nil *Builder). **A byte converted to a
+  string is a rune of its number: text is copied by slicing, never by converting
+  its bytes** (dom86, parsePrintfFormat).
 - **A call on the way to a value of several words is bound in the one word it
   yields: a pointer, or a struct element's address** (the target's compiler copies
   such a value a word at a time; A VIEW THROUGH A POINTER IS OF WHAT IT POINTS AT).
