@@ -57298,6 +57298,80 @@ func main() {
 		want: "10 7\n11 70 7\n",
 	},
 	{
+		// orb's Round(&last, 1000) (dom88): a variadic call's fixed arguments were
+		// emitted as they stood, so a pointer handed an interface parameter reached
+		// it bare, a nil was no slice header and another interface's value was not
+		// widened -- neither C compiler took them -- and an array call was refused;
+		// and the pack, filled ahead of the call, ran before them: `f(t(1), t(2),
+		// t(3))` called 2, 3 and 1.
+		name: "a variadic call's fixed arguments, handed over and evaluated first",
+		src: `var calls int
+
+func t(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func f(a int, xs ...int) int {
+	n := a
+	for _, x := range xs {
+		n = n*10 + x
+	}
+	return n
+}
+
+type Shape interface{ Area() int }
+
+type Wide interface {
+	Area() int
+	Side() int
+}
+
+type Sq struct{ s int }
+
+func (q *Sq) Area() int { return q.s * q.s }
+
+func (q *Sq) Side() int { return q.s }
+
+func area(s Shape, xs ...int) int { return s.Area() + len(xs) }
+
+func count(s []int, xs ...int) int { return len(s)*100 + len(xs) }
+
+type Flag struct {
+	on bool
+	n  int8
+}
+
+func mk(k int) Flag { return Flag{k > 0, int8(k)} }
+
+func flag(b Flag, xs ...int) int {
+	r := int(b.n)
+	if b.on {
+		r += 1000
+	}
+	return r + len(xs)
+}
+
+func row(k int) [3]int { return [3]int{k, k + 1, k + 2} }
+
+func sum(a [3]int, xs ...int) int { return a[0] + a[1]*10 + a[2]*100 + len(xs)*1000 }
+
+func main() {
+	println(f(t(1), t(2), t(3)), calls)
+	calls = 0
+	println(f(t(4)+t(5), t(6)*t(7)), calls)
+	calls = 0
+	fv := f
+	println(fv(t(8), t(9)), calls)
+	q := Sq{6}
+	var w Wide = &q
+	println(area(&q, 1, 2), area(&q), area(w, 3), count(nil, 4, 5), count(nil))
+	println(flag(mk(-5), 1, 2), flag(mk(7)), sum(row(1), 4, 5), sum(row(3)))
+}
+`,
+		want: "123 123\n132 4567\n89 89\n38 36 37 2 0\n-3 1007 2321 543\n",
+	},
+	{
 		// `d.Conn.Tx([]byte{reg, v}, nil)` of periph.io's mmr (dom84): a method
 		// called through an interface a chain reached -- a field, an element, a
 		// call's result -- had its arguments converted to nothing, and a nil for a

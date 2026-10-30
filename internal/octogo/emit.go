@@ -52877,6 +52877,20 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 			}
 			return deferArgName(e.deferReplay, i)
 		}
+		// Go evaluates the fixed arguments before the packed ones, and the pack is
+		// filled ahead of the call: where an argument can change state, each fixed
+		// one is bound to a temporary first, in order, as hoistArgs binds a plain
+		// call's. Emitted in the call, they ran after the pack's -- `f(t(1), t(2),
+		// t(3))` called 2, 3 and 1 (dom88).
+		var fixed []string
+		if e.deferReplay < 0 && len(args) > 1 && at > 0 {
+			for _, a := range args {
+				if e.exprHasEffect(a.ast) {
+					fixed, _ = e.hoistArgs(cname, params, args[:at])
+					break
+				}
+			}
+		}
 		var pack string
 		if e.deferReplay >= 0 {
 			var names []string
@@ -52887,24 +52901,17 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 		} else {
 			pack = e.packVariadic(elem, args[at:])
 		}
+		c := callArgs{params: params, sliceParams: sliceParams, indirect: indirect, throughValue: throughValue}
 		for i, arg := range args[:at] {
 			if i != 0 {
 				e.emit(", ")
 			}
-			if i < len(params) && e.byRefParam(params[i]) {
-				e.byRefArg(params[i], i, arg)
-				continue
-			}
-			if e.deferReplay >= 0 {
-				e.emit(replayed(i))
+			if fixed != nil {
+				e.emit(fixed[i])
 				continue
 			}
 			// A packed slice follows every fixed argument.
-			if lit, ok := e.wideConstArg(params, i, arg); ok {
-				e.emit(e.pairArg(params, i, false, e.valueCallArgC(throughValue, params, i, lit)))
-				continue
-			}
-			e.emit(e.pairArg(params, i, false, e.valueCallArgC(throughValue, params, i, e.captureC(func() { e.emitExpr(arg.ast) }))))
+			e.emitCallArg(c, i, arg, false)
 		}
 		if at != 0 {
 			e.emit(", ")
@@ -52936,115 +52943,134 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 			}
 		}
 	}
-	first := true
+	c := callArgs{params: params, sliceParams: sliceParams, indirect: indirect, throughValue: throughValue}
 	for i, arg := range args {
-		if !first {
+		if i != 0 {
 			e.emit(", ")
 		}
-		first = false
-		// A by-ref parameter (byRefParam) is handed the address of storage holding
-		// the value, which the callee copies.
-		if i < len(params) && e.byRefParam(params[i]) {
-			e.byRefArg(params[i], i, arg)
-			continue
-		}
-		// An ARRAY-returning call as an argument, `take(mk())`. The parameter is a
-		// pointer the callee memcpys from, so what the call site needs is storage:
-		// the result is bound to a temporary and that is passed.
-		if name, ok := e.hoistArrayCallArg(arg); ok {
-			e.emit(name)
-			continue
-		}
-		// A value of ANOTHER interface type where an interface is wanted, a call's
-		// result among them, `nameOf(get())`: widened. Asked before the struct-call
-		// binding below, which took the interface value for a struct and passed it
-		// as it stood.
-		if i < len(params) && e.isIfaceCType(params[i]) && e.deferReplay < 0 {
-			if from, ok := e.inferCType(arg.ast); ok && e.isIfaceCType(from) && from != params[i] {
-				if name, ok := e.ifaceWidenValue(params[i], arg.ast, from); ok {
-					e.emit(name)
-				}
-				continue
-			}
-		}
-		// A struct-returning CALL as an argument, `take(mk(3))`. Bound first: the
-		// target drops a member narrower than a machine word when such a call is
-		// passed where it stands -- `take(mk(-5))` answered true for a false bool on
-		// a P2-EDGE. Same defect as the direct return; see
-		// doc/return-nonword-struct.c.
-		if name, ok := e.hoistStructCallArg(arg); ok {
-			e.emit(name)
-			continue
-		}
-		// An ARRAY literal written as an argument, `take([3]int{1, 2, 3})`. The
-		// parameter is a pointer the callee memcpys from -- an array parameter is a
-		// copy, as Go says -- so what the call needs is an lvalue, and a temporary
-		// of this frame is one. The callee copies before the frame can go anywhere.
-		if name, ok := e.hoistArrayLitExpr(arg.ast); ok {
-			e.emit(name)
-			continue
-		}
-		// The predeclared nil has no type of its own: alone it emits the null
-		// pointer 0, which is not a slice header, so passing it to a slice
-		// parameter built a call whose argument count did not even match. The
-		// parameter is what says which nil this is, so here it becomes that slice
-		// type's zero value. This precedes the defer replay because nil is a
-		// constant -- there is nothing to capture and re-read at the return.
-		if i < len(sliceParams) && sliceParams[i] != "" && e.isNilExpr(arg.ast) {
-			e.emit("(" + sliceParams[i] + "){0}")
-			continue
-		}
-		// The same for a call through a function VALUE, whose parameters are the
-		// value's type's (see valueArgsCText) and not in the declared callees' table.
-		if i < len(params) && i >= len(sliceParams) && e.isSliceCType(e.underlyingCType(params[i])) && e.isNilExpr(arg.ast) {
-			e.emit("(" + params[i] + "){0}")
-			continue
-		}
-		// A concrete value handed to an interface parameter is wrapped where it
-		// stands: the two words the parameter is, made of the value's address and
-		// the table for that pair. The same thing the assignment writes in two
-		// statements, as one value, because a parameter has no name here to write
-		// them into. The parameters are this call's, a function VALUE's among them:
-		// asked of the declared callee alone, a call through a literal, a parameter,
-		// a package variable or a table's slot passed `&d` as one word where the
-		// interface is two -- the target's compiler refused it, "expected 2 found 1".
-		if i < len(params) && e.isIfaceCType(params[i]) && e.deferReplay < 0 {
-			if text, ok := e.ifaceValueC(params[i], arg.ast); ok {
-				e.emit(text)
-				continue
-			}
-		}
-		// A FUNCTION named as the argument of an indirect call is bound to a
-		// temporary first (indirectFuncArg).
-		if indirect && i < len(params) && e.isFuncCType(params[i]) && e.deferReplay < 0 {
-			if name, ok := e.indirectFuncArg(params[i], arg); ok {
-				e.emit(name)
-				continue
-			}
-		}
-		// A constant handed to a 64-bit parameter is spelled at that width, `3LL`
-		// (wideConstArg). Ahead of the defer replay, whose INLINE literal is the
-		// same constant in the same position; a constant the defer captured into a
-		// temporary is replayed from it, a variable being passed right.
-		if e.deferReplay < 0 || e.deferReplayArgs[i].inline {
-			if lit, ok := e.wideConstArg(params, i, arg); ok {
-				e.emit(e.pairArg(params, i, i == len(args)-1 && !throughValue, e.valueCallArgC(throughValue, params, i, lit)))
-				continue
-			}
-		}
-		// Replaying a deferred call reads the temporaries captured at the defer
-		// statement rather than re-evaluating the expressions, which may name a
-		// variable that has since changed or gone out of scope.
-		if e.deferReplay >= 0 {
-			if a := e.deferReplayArgs[i]; a.inline {
-				e.emitExpr(a.expr)
-			} else {
-				e.emit(deferArgName(e.deferReplay, i))
-			}
-			continue
-		}
-		e.emit(e.pairArg(params, i, i == len(args)-1 && !throughValue, e.valueCallArgC(throughValue, params, i, e.captureC(func() { e.emitExpr(arg.ast) }))))
+		e.emitCallArg(c, i, arg, i == len(args)-1)
 	}
+}
+
+// callArgs is what each argument of a call is emitted against (emitCallArg): the
+// parameters' C types, which of them are slices, and whether the call is made
+// through a function value or an interface slot.
+type callArgs struct {
+	params, sliceParams    []string
+	indirect, throughValue bool
+}
+
+// emitCallArg emits argument i of a call as its parameter takes it, last saying
+// that no argument follows it. A variadic call's fixed arguments go through it
+// as a plain call's do: they were emitted as they stood, and `Round(&last, 1000)`
+// handed orb's Geometry parameter the bare pointer, a nil there was no slice
+// header and another interface's value was not widened -- neither C compiler
+// took any of them (dom88).
+func (e *emitter) emitCallArg(c callArgs, i int, arg Node, last bool) {
+	params, sliceParams := c.params, c.sliceParams
+	indirect, throughValue := c.indirect, c.throughValue
+	// A by-ref parameter (byRefParam) is handed the address of storage holding
+	// the value, which the callee copies.
+	if i < len(params) && e.byRefParam(params[i]) {
+		e.byRefArg(params[i], i, arg)
+		return
+	}
+	// An ARRAY-returning call as an argument, `take(mk())`. The parameter is a
+	// pointer the callee memcpys from, so what the call site needs is storage:
+	// the result is bound to a temporary and that is passed.
+	if name, ok := e.hoistArrayCallArg(arg); ok {
+		e.emit(name)
+		return
+	}
+	// A value of ANOTHER interface type where an interface is wanted, a call's
+	// result among them, `nameOf(get())`: widened. Asked before the struct-call
+	// binding below, which took the interface value for a struct and passed it
+	// as it stood.
+	if i < len(params) && e.isIfaceCType(params[i]) && e.deferReplay < 0 {
+		if from, ok := e.inferCType(arg.ast); ok && e.isIfaceCType(from) && from != params[i] {
+			if name, ok := e.ifaceWidenValue(params[i], arg.ast, from); ok {
+				e.emit(name)
+			}
+			return
+		}
+	}
+	// A struct-returning CALL as an argument, `take(mk(3))`. Bound first: the
+	// target drops a member narrower than a machine word when such a call is
+	// passed where it stands -- `take(mk(-5))` answered true for a false bool on
+	// a P2-EDGE. Same defect as the direct return; see
+	// doc/return-nonword-struct.c.
+	if name, ok := e.hoistStructCallArg(arg); ok {
+		e.emit(name)
+		return
+	}
+	// An ARRAY literal written as an argument, `take([3]int{1, 2, 3})`. The
+	// parameter is a pointer the callee memcpys from -- an array parameter is a
+	// copy, as Go says -- so what the call needs is an lvalue, and a temporary
+	// of this frame is one. The callee copies before the frame can go anywhere.
+	if name, ok := e.hoistArrayLitExpr(arg.ast); ok {
+		e.emit(name)
+		return
+	}
+	// The predeclared nil has no type of its own: alone it emits the null
+	// pointer 0, which is not a slice header, so passing it to a slice
+	// parameter built a call whose argument count did not even match. The
+	// parameter is what says which nil this is, so here it becomes that slice
+	// type's zero value. This precedes the defer replay because nil is a
+	// constant -- there is nothing to capture and re-read at the return.
+	if i < len(sliceParams) && sliceParams[i] != "" && e.isNilExpr(arg.ast) {
+		e.emit("(" + sliceParams[i] + "){0}")
+		return
+	}
+	// The same for a call through a function VALUE, whose parameters are the
+	// value's type's (see valueArgsCText) and not in the declared callees' table.
+	if i < len(params) && i >= len(sliceParams) && e.isSliceCType(e.underlyingCType(params[i])) && e.isNilExpr(arg.ast) {
+		e.emit("(" + params[i] + "){0}")
+		return
+	}
+	// A concrete value handed to an interface parameter is wrapped where it
+	// stands: the two words the parameter is, made of the value's address and
+	// the table for that pair. The same thing the assignment writes in two
+	// statements, as one value, because a parameter has no name here to write
+	// them into. The parameters are this call's, a function VALUE's among them:
+	// asked of the declared callee alone, a call through a literal, a parameter,
+	// a package variable or a table's slot passed `&d` as one word where the
+	// interface is two -- the target's compiler refused it, "expected 2 found 1".
+	if i < len(params) && e.isIfaceCType(params[i]) && e.deferReplay < 0 {
+		if text, ok := e.ifaceValueC(params[i], arg.ast); ok {
+			e.emit(text)
+			return
+		}
+	}
+	// A FUNCTION named as the argument of an indirect call is bound to a
+	// temporary first (indirectFuncArg).
+	if indirect && i < len(params) && e.isFuncCType(params[i]) && e.deferReplay < 0 {
+		if name, ok := e.indirectFuncArg(params[i], arg); ok {
+			e.emit(name)
+			return
+		}
+	}
+	// A constant handed to a 64-bit parameter is spelled at that width, `3LL`
+	// (wideConstArg). Ahead of the defer replay, whose INLINE literal is the
+	// same constant in the same position; a constant the defer captured into a
+	// temporary is replayed from it, a variable being passed right.
+	if e.deferReplay < 0 || e.deferReplayArgs[i].inline {
+		if lit, ok := e.wideConstArg(params, i, arg); ok {
+			e.emit(e.pairArg(params, i, last && !throughValue, e.valueCallArgC(throughValue, params, i, lit)))
+			return
+		}
+	}
+	// Replaying a deferred call reads the temporaries captured at the defer
+	// statement rather than re-evaluating the expressions, which may name a
+	// variable that has since changed or gone out of scope.
+	if e.deferReplay >= 0 {
+		if a := e.deferReplayArgs[i]; a.inline {
+			e.emitExpr(a.expr)
+		} else {
+			e.emit(deferArgName(e.deferReplay, i))
+		}
+		return
+	}
+	e.emit(e.pairArg(params, i, last && !throughValue, e.valueCallArgC(throughValue, params, i, e.captureC(func() { e.emitExpr(arg.ast) }))))
 }
 
 // pairArg is the C of an argument to the parameter i of params, whose C text is

@@ -69,6 +69,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   parameter stored after an inner block declared a pointer of its name to a
   local: the block's end gave the variable what the local held. In every release
   checked since v0.50.0.
+- **A call returning an array may be a variadic call's fixed argument**:
+  `sum(row(1), 4, 5)` was refused, "a call returning an array must be bound to a
+  variable first", where a call that is not variadic took it. In every release
+  checked since v0.50.0.
 
 ### Behaviour changes
 
@@ -133,6 +137,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   as a uint64 -- in a type switch and a switch on a value alike; and in a switch
   lowered to a chain, the body a fallthrough leads to read the name the falling
   clause had declared, its `n := int8(3)` printed for the parameter. In every
+  release checked since v0.50.0.
+- **A variadic call evaluates its fixed arguments first**: the packed arguments
+  were evaluated ahead of the call and the fixed ones in it, so `f(t(1), t(2),
+  t(3))` for a `func f(a int, xs ...int)` called t(2), t(3) and then t(1), on the
+  host and the board. Each fixed argument is bound first, in order, where an
+  argument can change state, as a call's are. In every release checked since
+  v0.50.0.
+- **A variadic call's fixed arguments are handed over as a call's are**:
+  `Round(&last, 1000)`, paulmach/orb's Round of a Geometry, passed the pointer
+  where the interface value goes, and neither C compiler took it; nor a nil handed
+  to a slice parameter, nor another interface's value to be widened. In every
   release checked since v0.50.0.
 
 ## v1.0.0-rc.3
