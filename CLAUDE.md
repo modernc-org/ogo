@@ -211,6 +211,15 @@ silent fault puts the count back to 0. Each round's account is in
   the soil and the valves on a cog), against master on dom89's fixes: clean, one
   loud fault fixed (an empty literal of a struct leading with an aggregate, inside
   another literal, refused by the host's compiler) -- 1
+- dom91 (2026-10-31), a tunnel oven's recipes and batch log in CSV (Go's bufio and
+  encoding/csv ported with their tests, io's readers, strconv's ParseInt, a sensors
+  cog and a logger cog), against master on dom90's fix: silent (bytes.TrimSpace of
+  nothing but white space handed back an empty slice where Go's is nil, which a
+  Scanner takes for no token), one false refusal fixed (a method value of a type
+  defined over a scalar, and the emitter's of a defined slice type and of a
+  variable given a typed array's literal), one loud fault fixed (a package array of
+  a defined slice type given type-elided rows), one listed (a *Builder in an
+  interface) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1124,13 +1133,17 @@ section. A new finding goes there; the rule it leaves goes here too.
   is asked by every question of the type: the element's name was kept for its
   methods and not for its slices** (dom73). **A question whether a field is an
   array asks its type as well as its extents: an embedded defined array carries
-  them in its typedef's name** (dom78, fieldDim). **A PACKAGE BOUNDARY IS A ROW**: **A
+  them in its typedef's name** (dom78, fieldDim). **A walk that reads a type's
+  levels off its brackets asks what each name it stops at stands for: a defined
+  slice type is a slice level** (dom91). **A PACKAGE BOUNDARY IS A ROW**: **A
   boundary sweep crosses two packages and three**; **Every row swept in one package
   is swept across the boundary too, with the qualified spelling in every
   position**; **A row swept in one package is swept with the qualified spelling**.
 - **A C NAME IS A ROW**. **NIL IS A ROW**: **A cursor that carries a type by its
   element is asked for the type where a value of it is written whole: nil is the
-  header's zero** (dom89). **A VARIADIC CALL IS A ROW**: **A variadic call is a
+  header's zero** (dom89). **What a library function hands back is asked as Go's
+  is asked, `== nil` among the questions: an empty slice is no token to a Scanner,
+  and nil is** (dom91). **A VARIADIC CALL IS A ROW**: **A variadic call is a
   call: its fixed arguments are asked every question a call's are, and evaluated
   before what it packs** (dom88). **A FUNCTION VALUE'S CALL IS A ROW**. **AN ARRAY
   RESULT IS A ROW**. **PRINTING A VALUE IS A ROW**. **A CALL'S RESULTS FORWARDED
