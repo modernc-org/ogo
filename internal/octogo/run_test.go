@@ -57372,6 +57372,315 @@ func main() {
 		want: "123 123\n132 4567\n89 89\n38 36 37 2 0\n-3 1007 2321 543\n",
 	},
 	{
+		// Go's regexp/syntax parser (dom89): `t, err = p.parseClass(t)` and a dozen
+		// siblings rebind t, each handed it, and the summaries' walk kept what
+		// reached an argument by every SET of the calls on the way, the subsets of
+		// them: twelve took the compiler to 740 MB and fourteen past its memory.
+		name: "a name rebound by sixteen calls, each handed it",
+		src: `func f0(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	return s[1:], nil
+}
+
+func f1(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	return s[1:], nil
+}
+
+func f2(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	return s[1:], nil
+}
+
+func f3(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	return s[1:], nil
+}
+
+func f4(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	return s[1:], nil
+}
+
+func f5(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	return s[1:], nil
+}
+
+func f6(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	return s[1:], nil
+}
+
+func f7(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	return s[1:], nil
+}
+
+func f8(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	return s[1:], nil
+}
+
+func f9(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	return s[1:], nil
+}
+
+func f10(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	return s[1:], nil
+}
+
+func f11(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	return s[1:], nil
+}
+
+func f12(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	return s[1:], nil
+}
+
+func f13(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	return s[1:], nil
+}
+
+func f14(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	return s[1:], nil
+}
+
+func f15(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	return s[1:], nil
+}
+
+func steps(s string) (string, error) {
+	t := s
+	var err error
+	k := 0
+	for t != "" {
+		switch k % 16 {
+		case 0:
+			if t, err = f0(t); err != nil {
+				return "", err
+			}
+		case 1:
+			if t, err = f1(t); err != nil {
+				return "", err
+			}
+		case 2:
+			if t, err = f2(t); err != nil {
+				return "", err
+			}
+		case 3:
+			if t, err = f3(t); err != nil {
+				return "", err
+			}
+		case 4:
+			if t, err = f4(t); err != nil {
+				return "", err
+			}
+		case 5:
+			if t, err = f5(t); err != nil {
+				return "", err
+			}
+		case 6:
+			if t, err = f6(t); err != nil {
+				return "", err
+			}
+		case 7:
+			if t, err = f7(t); err != nil {
+				return "", err
+			}
+		case 8:
+			if t, err = f8(t); err != nil {
+				return "", err
+			}
+		case 9:
+			if t, err = f9(t); err != nil {
+				return "", err
+			}
+		case 10:
+			if t, err = f10(t); err != nil {
+				return "", err
+			}
+		case 11:
+			if t, err = f11(t); err != nil {
+				return "", err
+			}
+		case 12:
+			if t, err = f12(t); err != nil {
+				return "", err
+			}
+		case 13:
+			if t, err = f13(t); err != nil {
+				return "", err
+			}
+		case 14:
+			if t, err = f14(t); err != nil {
+				return "", err
+			}
+		case 15:
+			if t, err = f15(t); err != nil {
+				return "", err
+			}
+		}
+		k++
+	}
+	return t, err
+}
+
+func main() {
+	t, err := steps("abcdefghijklmnopqrstuvwxyz")
+	println(t == "", err == nil, len(t))
+}
+`,
+		want: "true true 0\n",
+	},
+	{
+		// cleanupOnePass's `prog.Inst[ix].Next = nil` (dom89): nil written to a
+		// slice through an element, a chain or a list's target was `= 0`, the
+		// cursor carrying a slice by its element and no type, which neither C
+		// compiler took.
+		name: "nil written to a slice an element or a chain reaches",
+		src: `type U struct{ s []int }
+
+type T struct {
+	n     int
+	s     []int
+	u     U
+	after int
+}
+
+type P struct {
+	ts []T
+	ta [3]T
+	ss [][]int
+}
+
+var back [5]int
+var tsBack [3]T
+var sb [3][]int
+var g P
+
+func at(i int) int { return i }
+
+func show(x []int) { println(x == nil, len(x), cap(x)) }
+
+func main() {
+	ts := tsBack[:]
+	ts[1].n, ts[1].after = 7, 8
+	ts[1].s = back[:]
+	ts[1].s = nil
+	show(ts[1].s)
+	println(ts[1].n, ts[1].after)
+	p := &g
+	p.ts = tsBack[:]
+	p.ts[2].s = back[1:]
+	p.ts[at(2)].s = nil
+	p.ta[1].u.s = back[:2]
+	p.ta[1].u.s = nil
+	show(p.ts[2].s)
+	show(p.ta[1].u.s)
+	p.ss = sb[:]
+	p.ss[1], p.ss[2] = back[:], back[2:]
+	p.ss[1] = nil
+	show(p.ss[1])
+	show(p.ss[2])
+	ts[0].s, ts[2].s = back[:3], back[:4]
+	ts[0].s, ts[2].s = nil, nil
+	show(ts[0].s)
+	show(ts[2].s)
+}
+`,
+		want: "true 0 0\n7 8\ntrue 0 0\ntrue 0 0\ntrue 0 0\nfalse 3 3\ntrue 0 0\ntrue 0 0\n",
+	},
+	{
+		// Go's regexp tests, `stringBytes(replFuncCurrent(bytesString(s)))` (dom89):
+		// a string or a slice a function value returns, handed on as an argument,
+		// was read by the target's compiler as one word ("Bad number of
+		// parameters"), and one of a call of a call handed TO a function value was
+		// passed wrong in silence, its length -83709610 on the board.
+		name: "a string and a slice a function value returns, and one handed to it",
+		src: `type F func(int) string
+
+type G func(string) int
+
+type H struct{ fn F }
+
+var names = [3]string{"zero", "one", "two"}
+
+var back = [5]int{10, 20, 30, 40, 50}
+
+var fv F
+
+var gv G
+
+var sv func(int) []int
+
+func mk(x int) string { return names[x%3] }
+
+func mks(x int) []int { return back[x%2 : 3+x%2] }
+
+func ln(s string) int { return len(s) }
+
+func lns(s []int) int { return len(s)*100 + s[0] }
+
+func pass(s string) string { return s }
+
+func echo(s string) int {
+	println(s, len(s))
+	return len(s)
+}
+
+func get() F { return mk }
+
+func main() {
+	fv, gv, sv = mk, echo, mks
+	h := H{mk}
+	fs := []F{mk, mk}
+	println(ln(fv(1)), ln(h.fn(2)), ln(fs[1](4)), ln(get()(5)), lns(sv(1)))
+	println(gv(pass(mk(7))), gv(mk(8)), gv(pass(fv(1))))
+}
+`,
+		want: "3 3 3 3 320\none 3\ntwo 3\none 3\n3 3 3\n",
+	},
+	{
 		// `d.Conn.Tx([]byte{reg, v}, nil)` of periph.io's mmr (dom84): a method
 		// called through an interface a chain reached -- a field, an element, a
 		// call's result -- had its arguments converted to nothing, and a nil for a

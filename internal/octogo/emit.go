@@ -14866,26 +14866,91 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		hitRecvVal
 		hitRecvCont
 	)
-	gateSetKey := func(gs []viaGate) string {
+	gateSet := func(gs []viaGate) []string {
 		set := make([]string, 0, len(gs))
 		for _, g := range gs {
 			set = append(set, fmt.Sprintf("%s/%d", g.callee, g.to))
 		}
 		slices.Sort(set)
-		return strings.Join(slices.Compact(set), " ")
+		return slices.Compact(set)
 	}
-	type hitKey struct {
-		kind  uint8
-		from  int
-		gates string
+	// subset reports whether every gate of the sorted set a is one of b's.
+	subset := func(a, b []string) bool {
+		j := 0
+		for _, x := range a {
+			for j < len(b) && b[j] < x {
+				j++
+			}
+			if j == len(b) || b[j] != x {
+				return false
+			}
+			j++
+		}
+		return true
+	}
+	// dedupHits keeps of the hits of one kind from one parameter those whose
+	// gates no other's stand for. An edge holds where each of its gates holds, and
+	// carries contents where its own flag or one of its gates says so, each gate by
+	// its own callee's summary (gatesHold): a hit whose gates hold another's adds no
+	// edge the other does not, but where a gate the other lacks hands back
+	// contents. So a hit is kept where it is minimal among the hits of its kind and
+	// parameter, which gives every edge holding without contents, or minimal among
+	// those holding one of its own gates, which gives every edge that gate makes a
+	// contents edge; a set kept once is kept once. Kept by their SETS alone, a name
+	// rebound by a dozen calls each handed it, `t, err = p.parseClass(t)` and its
+	// siblings in regexp/syntax's parser, was found through every subset of the
+	// calls, twelve took the compiler to 740 MB and fourteen past its memory
+	// (dom89).
+	//
+	// The hits are taken by the size of their sets, a set's subsets before it, and
+	// each is asked of the sets kept before it: a set not kept has a kept one under
+	// it for each of its gates, so what stands under a set stands under it through
+	// a kept one.
+	type groupKey struct {
+		kind uint8
+		from int
 	}
 	dedupHits := func(hs []hit) []hit {
-		seen := map[hitKey]bool{}
-		out := hs[:0]
-		for _, h := range hs {
-			k := hitKey{h.kind, h.from, gateSetKey(h.gates)}
-			if !seen[k] {
+		sets := make([][]string, len(hs))
+		seen := map[string]bool{}
+		order := make([]int, 0, len(hs))
+		for i, h := range hs {
+			sets[i] = gateSet(h.gates)
+			if k := fmt.Sprintf("%d %d %s", h.kind, h.from, strings.Join(sets[i], " ")); !seen[k] {
 				seen[k] = true
+				order = append(order, i)
+			}
+		}
+		slices.SortStableFunc(order, func(a, b int) int { return len(sets[a]) - len(sets[b]) })
+		kept := map[groupKey][]int{}
+		keep := make([]bool, len(hs))
+		for _, i := range order {
+			gk := groupKey{hs[i].kind, hs[i].from}
+			// under reports whether a set kept in i's group stands under i, one
+			// holding gate g where g is not "".
+			under := func(g string) bool {
+				for _, j := range kept[gk] {
+					if (g == "" || slices.Contains(sets[j], g)) && subset(sets[j], sets[i]) {
+						return true
+					}
+				}
+				return false
+			}
+			ok := !under("")
+			for _, g := range sets[i] {
+				if ok {
+					break
+				}
+				ok = !under(g)
+			}
+			if ok {
+				keep[i] = true
+				kept[gk] = append(kept[gk], i)
+			}
+		}
+		out := hs[:0]
+		for i, h := range hs {
+			if keep[i] {
 				out = append(out, h)
 			}
 		}
@@ -32064,6 +32129,16 @@ func (e *emitter) chainHoistPointAt(cur accessCur, steps []Node) (int, string, b
 	return 0, "", false
 }
 
+// curSliceCType is the C type of the slice a chain has reached, and "" where it
+// has reached no slice.
+func (e *emitter) curSliceCType(cur accessCur) string {
+	if !cur.slice {
+		return ""
+	}
+	ct, _ := e.chainValueCType(cur)
+	return ct
+}
+
 // chainValueCType names the C type a chain's value can be bound to. An array has
 // none -- C has no array value type -- which is what makes it unbindable.
 func (e *emitter) chainValueCType(cur accessCur) (string, bool) {
@@ -48220,6 +48295,7 @@ func (e *emitter) emitDerefAssign(name string, postfix []Node) {
 		return
 	}
 	t.targetCType = at.ctype
+	t.targetSlice = e.curSliceCType(at)
 	e.emitAssignTailOrCopy(func() { e.emitAccessChainAt(text, cur, chain, true) }, t)
 }
 
@@ -48797,6 +48873,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 				return
 			}
 			t.targetCType = cur.ctype
+			t.targetSlice = e.curSliceCType(cur)
 			if len(cur.dims) != 0 {
 				t.targetArray = arrDim{elem: cur.elem, bound: cur.dims[0], inner: cur.dims[1:], name: cur.name}
 			}
@@ -48853,6 +48930,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 				return
 			}
 			t.targetCType = cur.ctype
+			t.targetSlice = e.curSliceCType(cur)
 			e.emitAssignTailOrCopy(func() { e.emitAccessChain(name, rest) }, t)
 			return
 		}
@@ -48877,6 +48955,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 				return
 			}
 			t.targetCType = cur.ctype
+			t.targetSlice = e.curSliceCType(cur)
 			if len(cur.dims) != 0 {
 				t.targetArray = curArrDim(cur)
 			}
@@ -49912,6 +49991,10 @@ type assignTail struct {
 	// as an EXPRESSION: nothing may be declared in it. hoistCompoundTarget reads it
 	// and stands aside, as it always did there, the clauses having said no type.
 	clause bool
+	// targetSlice is the C type of a SLICE the target names, when it is one and the
+	// caller knows it: a chain's cursor carries a slice by its element, which
+	// leaves targetCType empty.
+	targetSlice string
 	// targetArray is the shape of the ARRAY the target names, when it is one -- an
 	// element of an array of arrays, an array-typed field of an element, anything a
 	// chain reaches through an index. C has no array assignment, so writing one is a
@@ -50037,6 +50120,16 @@ func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
 			e.emit(" = " + text + ";\n")
 			return
 		}
+	}
+	// nil written to a slice target is its zero header, as the bare and field
+	// targets write it: an element or a chain's, `p.Inst[ix].Next = nil` in Go's
+	// regexp, was written `= 0`, which neither C compiler takes for three words
+	// (dom89).
+	if t.op == "=" && t.rhs != nil && e.isNilExpr(t.rhs) && t.targetSlice != "" {
+		e.ind()
+		target()
+		e.emit(" = (" + t.targetSlice + "){0};\n")
+		return
 	}
 	if t.op == "=" {
 		if ct, ok := e.inferCType(t.rhs); ok && e.hasArrayField(ct) {
@@ -50784,6 +50877,19 @@ func (e *emitter) assignTargetCType(t assignTarget, declare bool) (string, bool)
 	return cur.ctype, ok && len(cur.dims) == 0
 }
 
+// assignTargetSliceCType is the C type of the slice a chain target reaches, and ""
+// where it reaches none.
+func (e *emitter) assignTargetSliceCType(t assignTarget) string {
+	if t.stars != "" || len(t.chain) == 0 {
+		return ""
+	}
+	cur, ok := e.accessChainType(t.name, t.chain)
+	if !ok {
+		return ""
+	}
+	return e.curSliceCType(cur)
+}
+
 // plain reports a target that is a bare variable name -- the only shape a `:=` can
 // declare, and the only one a declaration path ever passes.
 func (t assignTarget) plain() bool { return t.stars == "" && len(t.chain) == 0 }
@@ -51457,6 +51563,12 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 		// The predeclared nil has no type of its own and takes its target's, as it
 		// does standing alone: `p, k = nil, 1` was "cannot infer the type of a value".
 		if typedTarget && e.isNilExpr(r.ast) {
+			if tt == "" {
+				// A slice a chain reaches is carried by its element and has no
+				// ctype: `ts[0].s, ts[1].s = nil, nil` bound nil to a temporary of
+				// no type (dom89).
+				tt = e.assignTargetSliceCType(targets[i])
+			}
 			zero := e.zeroInitC(tt)
 			if e.isIfaceCType(tt) {
 				zero = "{0}"
@@ -53132,12 +53244,14 @@ func (e *emitter) pairArg(params []string, i int, last bool, text string) string
 // an element and a dereference are passed right, and so is anything through an
 // interface's slot or a variable's pointer called directly
 // (doc/call-arg-after-expr.c). The argument is bound in its turn, after the
-// arguments before it.
+// arguments before it. A string and a slice are passed wrong so too, in
+// silence: `cb(pass(mk(7)))`, a call of a call's result, handed the callee a
+// length of -83709610 (dom89; sweeps/fv-result-arg).
 func (e *emitter) valueCallArgC(throughValue bool, params []string, i int, text string) string {
 	if !throughValue || i >= len(params) || e.declInit || e.deferReplay >= 0 || isCIdent(strings.TrimSpace(text)) {
 		return text
 	}
-	if ut := e.underlyingCType(params[i]); ut != "int64_t" && ut != "uint64_t" && ut != cF64 {
+	if ut := e.underlyingCType(params[i]); ut != "int64_t" && ut != "uint64_t" && ut != cF64 && ut != cString && !e.isSliceCType(ut) {
 		return text
 	}
 	return e.hoist(params[i], func() { e.emit(text) })
@@ -53165,7 +53279,11 @@ func (e *emitter) valueResultC(ct, fn, call string) string {
 	if len(rets) != 1 {
 		return call
 	}
-	if ut := e.underlyingCType(rets[0]); ut != "int64_t" && ut != "uint64_t" && ut != cF64 {
+	// A string or a slice is read so too where it is a call's first argument:
+	// `ln(fv("abc"))` was "Bad number of parameters in call to ln" (dom89, Go's
+	// regexp tests; sweeps/fv-result-arg). A struct and an interface value are read
+	// right.
+	if ut := e.underlyingCType(rets[0]); ut != "int64_t" && ut != "uint64_t" && ut != cF64 && ut != cString && !e.isSliceCType(ut) {
 		return call
 	}
 	return e.hoist(rets[0], func() { e.emit(call) })

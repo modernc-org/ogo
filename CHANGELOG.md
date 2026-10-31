@@ -156,6 +156,26 @@ shipped section tells a reader on that version that they have behaviour they do 
   where the interface value goes, and neither C compiler took it; nor a nil handed
   to a slice parameter, nor another interface's value to be widened. In every
   release checked since v0.50.0.
+- **A string or a slice handed to a function value through a call of a call
+  arrives whole**: `cb(pass(mk(7)))`, cb a package variable, a field, an element
+  or a call's result of a function type and `pass(mk(7))` a string or a slice,
+  handed the callee garbage on the board, a length of -83709610, in silence; the
+  host was right. In every release checked since v0.58.0.
+- **A string or a slice a function value returns may be handed on**:
+  `ln(fv("abc"))`, fv a package variable, a field, an element or a call's result,
+  made the target's compiler read the result as one word, "Bad number of
+  parameters in call to ln", and the build was refused (Go's regexp tests,
+  `stringBytes(replFuncCurrent(...))`). In every release checked since v0.50.0.
+- **nil may be written to a slice an element or a chain reaches**:
+  `p.Inst[ix].Next = nil`, Go's regexp's cleanupOnePass, `ts[1].s = nil`,
+  `(*p).s = nil`, `ss[1] = nil` of a [][]int and `ts[0].s, ts[1].s = nil, nil`
+  were written as the integer 0, which neither C compiler took. In every release
+  checked since v0.50.0.
+- **A name rebound by many calls each handed it builds**: `t, err =
+  p.parseClass(t)` and a dozen siblings in Go's regexp/syntax parser took the
+  compiler past its memory: what reached an argument was followed through every
+  set of the calls on the way, and twelve calls were 740 MB, fourteen out of
+  memory. In every release checked since v0.50.0.
 
 ## v1.0.0-rc.3
 
