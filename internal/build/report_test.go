@@ -116,6 +116,17 @@ func main() {
 			t.Errorf("missing %q in\n%s", want, got)
 		}
 	}
+	// A program asking unsafe.Sizeof of a type has its layout checked after
+	// main, which the data's table did not build past (dom93).
+	sized := "import \"unsafe\"\n\n" + strings.Replace(src, "println(<-out, table[3], t.n)", "println(<-out, table[3], t.n, unsafe.Sizeof(t))", 1)
+	write(t, filepath.Join(dir, "sized", "main.ogo"), sized)
+	var sizedOut bytes.Buffer
+	if code, err := Build([]string{"--report", "-o", filepath.Join(dir, "sized.binary"), filepath.Join(dir, "sized")}, nil, &sizedOut, &sizedOut); err != nil || code != 0 {
+		t.Fatalf("code=%d err=%v\n%s", code, err, sizedOut.String())
+	}
+	if s := sizedOut.String(); !strings.Contains(s, "      400  table [100]uint32\n") || strings.Contains(s, "not itemized") {
+		t.Errorf("unsafe.Sizeof's program's data not itemized:\n%s", s)
+	}
 	// A go statement in a loop shares the pool, which the report says.
 	loop := strings.Replace(src, "\tgo work(1)\n\tprintln(<-out,", "\tfor i := 0; i < 2; i++ {\n\t\tgo work(i)\n\t}\n\tprintln(<-out+<-out,", 1)
 	write(t, filepath.Join(dir, "loop", "main.ogo"), loop)

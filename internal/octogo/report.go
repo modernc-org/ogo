@@ -185,6 +185,12 @@ func (e *emitter) fillReport(c []byte, pkgs []*Package) {
 	var objs []Storage
 	for _, m := range cStatic.FindAllSubmatch(c, -1) {
 		name := string(m[4])
+		if name == "ogo_layout_check" {
+			// unsafe.Sizeof's check of the target's layout, one byte written
+			// after main: the size probe's table, before main, cannot name it,
+			// and the whole table did not build (dom93).
+			continue
+		}
 		link(name, string(m[6]))
 		if seen[name] {
 			continue // a tentative definition again

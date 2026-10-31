@@ -203,6 +203,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   taken for used, and an import a package the main package imports did not use
   was not reported at all, so programs `go build` rejects built. A package's name
   is used where it heads a selector. In every release.
+- **`ogo build --report` itemizes the data of a program that asks
+  `unsafe.Sizeof`**: the check of the target's layout the build writes after main
+  was taken for one of the program's objects, and the table measuring their sizes,
+  written before main, did not build, so the report said "not itemized". Since
+  v0.58.0.
 
 ## v1.0.0-rc.3
 
