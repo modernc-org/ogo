@@ -197,6 +197,14 @@ silent fault puts the count back to 0. Each round's account is in
   false refusals fixed (sibling clauses' declarations of one name; a shadowing
   local's marks given to the variable outside), one listed (a literal's method of an
   array result) -- 0
+- dom89 (2026-10-31), a pump station's cellular modem (Go 1.20's regexp and
+  regexp/syntax ported, a SIM7000's AT commands on a cog, an SMS router), against
+  master on dom88's fixes: silent (a string or a slice from a call of a call handed
+  to a function value), three loud faults fixed (the summaries' walk of a name a
+  dozen calls rebind ran past the machine's memory; nil written to a slice an
+  element or a chain reaches; a string or a slice a function value returns handed
+  on), one listed (a call through an interface no type implements, taken to reach
+  every function whose address is taken) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1111,13 +1119,15 @@ section. A new finding goes there; the rule it leaves goes here too.
   boundary sweep crosses two packages and three**; **Every row swept in one package
   is swept across the boundary too, with the qualified spelling in every
   position**; **A row swept in one package is swept with the qualified spelling**.
-- **A C NAME IS A ROW**. **NIL IS A ROW**. **A VARIADIC CALL IS A ROW**: **A
-  variadic call is a call: its fixed arguments are asked every question a call's
-  are, and evaluated before what it packs** (dom88). **A FUNCTION VALUE'S CALL IS A
-  ROW**. **AN ARRAY RESULT IS A ROW**. **PRINTING A VALUE IS A ROW**. **A CALL'S
-  RESULTS FORWARDED WHOLE ARE A ROW**. **A DEFERRED OR STARTED CALL IS A ROW**: **a
-  new callee shape is swept under plain, `defer` and `go`, with a store into the
-  callee after the statement**.
+- **A C NAME IS A ROW**. **NIL IS A ROW**: **A cursor that carries a type by its
+  element is asked for the type where a value of it is written whole: nil is the
+  header's zero** (dom89). **A VARIADIC CALL IS A ROW**: **A variadic call is a
+  call: its fixed arguments are asked every question a call's are, and evaluated
+  before what it packs** (dom88). **A FUNCTION VALUE'S CALL IS A ROW**. **AN ARRAY
+  RESULT IS A ROW**. **PRINTING A VALUE IS A ROW**. **A CALL'S RESULTS FORWARDED
+  WHOLE ARE A ROW**. **A DEFERRED OR STARTED CALL IS A ROW**: **a new callee shape
+  is swept under plain, `defer` and `go`, with a store into the callee after the
+  statement**.
 - **WHAT HAS NO KIND IS ASKED NOTHING**: **when a rule is written against a Kind, ask
   what it says of each category that has none**. **FIFTEEN RULES ACROSS THE
   CATEGORIES**: **A new rule refusing on a category asks it of each way the checker
@@ -1299,7 +1309,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   parameter -- packed, received, bound -- is asked what it HOLDS.** **A walk over
   what names hold carries its path**; **A walk whose answer is a set is kept by
   what it answers, not by the path it took: a path through the calls a rebound
-  name holds was walked in every order of them** (dom74).
+  name holds was walked in every order of them** (dom74). **A walk kept by sets is
+  asked how many sets it can make: kept whole, a name rebound by n calls is its 2^n
+  subsets, and only the minimal ones say what the edge holds** (dom89).
 - **A WALK ASKS WHAT ITS VALUE CAN HOLD**: **A walk for what reaches the frame asks
   first whether the value can hold a reference: a number reaches nothing, and
   walking it costs what the walk's branching costs.** **A conversion taken to keep
@@ -1431,7 +1443,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   IS: a wrapper the emitter lifts for it is the value, and its frame is the call's**;
   **A bound a value's type gives is asked of every way memory is read as another
   type: a pointer converted, through unsafe.Pointer or not, makes a value of one
-  type a value of another** (A VALUE'S TYPE IS A STACK'S SIZE).
+  type a value of another** (A VALUE'S TYPE IS A STACK'S SIZE); **A call through an
+  interface no type implements reaches nothing: one taken to reach every taken
+  function closes cycles no run makes** (dom89, listed).
 - **Two programs that should cost the same are compared by their BINARIES**.
 - **What the backend makes of a library call is read in the listing for what it
   holds while the arguments run**; **A goroutine's output is asked with main
@@ -1462,7 +1476,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   (genPairs, valueCallArgC).
 - **A row is swept on both sides, what goes in and what comes back, before its fix
   is released**; **a fuzzer part widened to the shapes next to the fault finds the
-  faults next to it** (valueResultC, hoistArgs).
+  faults next to it** (valueResultC, hoistArgs). **A workaround written for one
+  width is asked of every value of several words: the function value's call read
+  a string and a slice as wrong as an int64** (dom89).
 - **A backend fault in a call is a row of every call the C makes, the emitter's own
   helpers among them**; **where the backend misreads a spelling everywhere it
   stands, the spelling is changed where it is written, not bound where it is used**

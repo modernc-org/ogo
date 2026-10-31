@@ -4551,7 +4551,67 @@ in every release checked since v0.50.0); each argument asks it now
 (checkInferredOverflow). **A builtin that prints is asked of its arguments what each
 of its siblings asks: printf's took what println's refused.** On the board, built on
 the fixes, all 351 that Go ends print Go's output. No fuzzer part changed since
-dom87. A silent round: the count is 0, and the candidate is master on its fixes..
+dom87. A silent round: the count is 0, and the candidate is master on its fixes.
+**dom89, a pump station's cellular modem over Go's regexp** (2026-10-31, a round
+against master on dom88's fixes): Go 1.20's regexp and regexp/syntax ported as
+written -- the parser with its limits, its four rounds of factoring and its classes
+folded over unicode's tables, the simplifier, the compiler and its dump, the
+backtracker, the one-pass machine and the NFA, the Find, Replace, Expand, Split and
+Subexp families -- over unicode/utf8, the parts of strconv, unicode and sort regexp
+asks, with the packages' tests and six of regexp's examples; and a station: a
+SIM7000's AT commands modelled on a cog, the line two buffered channels of bytes, a
+driver telling final result codes, information lines and unsolicited codes apart by
+patterns, and a controller answering SMS commands by patterns of named groups,
+trusting two numbers by a pattern of their quoted forms, its replies expanded from
+templates. What Go allocates comes from arenas a caller rewinds, as the collector
+reclaims; a function literal that captures is a function over a struct of its
+captures; maps are tables, a sync.Pool a free list. Its first build ran the compiler
+out of memory: parse.go's parseSteps rebinds `t` in a dozen statements, `t, err =
+p.parseClass(t)` and its siblings, each call handed t, and the summaries' walk kept
+what reached an argument by every SET of the calls on the way, so it found every
+subset of them -- twelve calls took 740 MB, fourteen past the machine's memory
+(LOUD, in every release checked since v0.50.0). An edge holds where all its gates
+hold and carries contents where its flag or a gate says so, each gate by its
+callee's summary: a set holding another's adds no edge but where a gate the other
+lacks hands back contents, so the walk keeps the sets minimal among their kind, and
+minimal among those holding each gate. **A walk kept by sets is asked how many sets
+it can make: kept whole, a name rebound by n calls is its 2^n subsets, and only the
+minimal ones say what the edge holds.** Then cleanupOnePass's `prog.Inst[ix].Next =
+nil` was written `= 0`, which neither C compiler takes: a chain's cursor carries a
+slice by its element and no C type, so the nil store asked for a slice and found
+none (LOUD, since v0.50.0; sweeps/nil-slice-target, 15 of 19 shapes: an element's
+field, an array's, a [][]int's element, a list's targets). **A cursor that carries a
+type by its element is asked for the type where a value of it is written whole: nil
+is the header's zero.** Then the tests'
+`stringBytes(replFuncCurrent(bytesString(s)))`: a string a function value returns,
+handed on as an argument, made the target's compiler count it as one parameter and
+ogo refuse the build (LOUD, since v0.50.0); sweeps/fv-result-arg, 315 rows, found it
+for a string or a slice through a function value held anywhere but a local, as a
+first argument, and on the row's other side a string or a slice from a call of a
+call handed TO such a value, `cb(pass(mk(7)))`, passed wrong on the board in
+silence, a length of -83709610 (SILENT, in v0.58.0 and rc.3; the host right). Each
+is bound first now, as a 64-bit value already was. **A workaround written for one
+width is asked of every value of several words: the function value's call read a
+string and a slice as wrong as an int64.** The program met the P2 as well: fit 480
+in the package initializer, findTests' rows each a build(n, x...) call whose pack
+took registers, written as the literals they make; and main's stack charged 35 KB
+for a cycle of 70 functions summed whole, closed through inputReader's ReadRune, an
+interface no type implemented once its implementer was left out, which the bound
+took to reach every function whose address is taken (LISTED). **A call through an
+interface no type implements reaches nothing: one taken to reach every taken
+function closes cycles no run makes.** Host and board print Go's 134 lines, 9.8 s on
+the P2. Its 400 mutants, drawn outside the arenas' boilerplate and the tables: on
+the host 261 print what Go prints, 59 panic as Go does, 69 are refused alike, three
+run past their time in both, two are refused where Go builds them, a statement moved
+past a goto ("Unreachable code is an error"), and six differ as DIFFERENCES.md says
+OctoGo does -- four append past the room a grow was asked for ("`append` does not
+grow a slice past its capacity"), one waits after Go's 71 lines on channels a swap
+left nil, where Go reports a deadlock ("A deadlock is not reported"), and one
+recurses without end ("A recursion stops at the end of its stack": Go's 29 lines,
+then the panic on the board, where the host's C stack has no check and its crash
+lost the buffered lines), the board printing the same. On the board, built on the
+fixes, all 320 that Go ends print Go's output. No fuzzer part changed since dom88. A
+silent round: the count is 0, and the candidate is master on its fixes.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
