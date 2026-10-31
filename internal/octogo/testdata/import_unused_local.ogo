@@ -1,0 +1,10 @@
+// An import whose name is only a local's is unused: the local shadows it, and was
+// taken for a use of the package (dom92).
+
+// ERROR "imported and not used"
+import "strings"
+
+func main() {
+	strings := 3
+	println(strings)
+}

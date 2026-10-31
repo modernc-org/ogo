@@ -1,3 +1,7 @@
 // Enforce line 3
 //
 import "import_cycle"
+
+func B() int { return 1 }
+
+func C() int { return import_cycle.A() }

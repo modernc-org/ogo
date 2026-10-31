@@ -1030,6 +1030,26 @@ func (f *File) collectIdentUses(n Node, declared, used map[string]bool, usedVar 
 	}
 }
 
+// collectQualifierUses records in used the name of each identifier under n that
+// may be a package's qualifier: one heading a selector, not a selector's member
+// itself, and resolved to no variable where the body read it (varNameToks).
+func (f *File) collectQualifierUses(n Node, used map[string]bool) {
+	for c := range it(n.ast) {
+		if c.sym != 0 {
+			f.collectQualifierUses(c, used)
+			continue
+		}
+		tok := f.tok(c.tok)
+		if Symbol(tok.Ch) != IDENT || f.tokAfter(tok.index) != PERIOD || f.varNameToks[tok.index] {
+			continue
+		}
+		if tok.index > 0 && f.ch(tok.index-1) == PERIOD {
+			continue
+		}
+		used[tok.Src()] = true
+	}
+}
+
 // rejectDotImports reports each dot import ("import . \"path\"") in the file. The
 // grammar admits the "." form, but OctoGo has no semantics for merging a package's
 // exported names into the file scope (which is not even on a body's resolution
@@ -1046,13 +1066,13 @@ func (f *File) rejectDotImports() {
 
 // reportUnusedImports reports each import of the file that resolved to a package
 // but whose qualifier is never referenced ("imported and not used"). Usage is
-// decided syntactically and deliberately generously, mirroring the unused-variable
-// report: a qualifier counts as used when its name appears as an identifier
-// anywhere in the top-level declarations, so a used import is never falsely
-// reported. The trade-off is a false negative when a same-named local, constant or
-// type shadows the qualifier (the shadowing occurrence marks the import used). Dot
-// and blank imports carry no qualifier and are exempt; an import that failed to
-// resolve (missing directory, cycle) is reported at import time, not here.
+// decided syntactically: a qualifier is used where its name heads a selector,
+// `bytes.Buffer`, the one way Go reads a package's name, and names no variable
+// there. A field, `s.bytes`, a local, `strings := 3`, or a local's selector,
+// `bytes.n` of a local bytes, is no use of the package: each was taken for one,
+// and an import Go reports unused was accepted (dom92). Dot and blank imports
+// carry no qualifier and are exempt; an import that failed to resolve (missing
+// directory, cycle) is reported at import time, not here.
 func (f *File) reportUnusedImports() {
 	var candidates []*ImportSpecNode
 	for _, is := range f.ImportSpecs {
@@ -1063,18 +1083,17 @@ func (f *File) reportUnusedImports() {
 	if len(candidates) == 0 {
 		return
 	}
-	// Collect every identifier used in the top-level declarations. Import
+	// Collect every selector head in the top-level declarations. Import
 	// declarations are skipped, so an explicit qualifier ("import x \"path\"")
 	// never counts as a use of itself.
 	used := map[string]bool{}
-	declared := map[string]bool{}
 	for n := range it(f.AST) {
 		if n.sym != SourceFile {
 			continue
 		}
 		for c := range it(n.ast) {
 			if c.sym == TopLevelDecl {
-				f.collectIdentUses(c, declared, used, nil)
+				f.collectQualifierUses(c, used)
 			}
 		}
 	}

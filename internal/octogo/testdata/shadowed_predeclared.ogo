@@ -9,6 +9,7 @@
 // local and a package-level variable are each named as themselves, a built-in
 // function is distinguished from a declared one, and a package is a "package name".
 
+// ERROR "imported and not used"
 import "p2"
 
 var taken = 7

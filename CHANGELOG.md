@@ -198,6 +198,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   function hands it, said otherwise than Go: a split function trimming the fields of
   a line handed back an empty token at every separator, and the scan never ended.
   Since v0.41.0.
+- **An unused import is reported wherever Go reports one**: an import whose name
+  was a field's, `s.bytes`, a local's, `strings := 3`, or a local's selector was
+  taken for used, and an import a package the main package imports did not use
+  was not reported at all, so programs `go build` rejects built. A package's name
+  is used where it heads a selector. In every release.
 
 ## v1.0.0-rc.3
 

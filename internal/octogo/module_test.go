@@ -166,6 +166,24 @@ func TestBuildModuleResolution(t *testing.T) {
 			},
 		},
 		{
+			name:   "an unused import in a dependency",
+			module: "example.com/proj", dir: ".",
+			files: map[string]string{
+				"main.ogo":    "import \"example.com/proj/lib\"\n\nfunc main() { println(lib.N) }",
+				"lib/lib.ogo": "import \"strings\"\n\nconst N = 7",
+			},
+			want: `imported and not used: "strings"`,
+		},
+		{
+			name:   "a dependency's import used in a type and a call",
+			module: "example.com/proj", dir: ".",
+			files: map[string]string{
+				"main.ogo":    "import \"example.com/proj/lib\"\n\nfunc main() { println(lib.Read().V) }",
+				"lib/lib.ogo": "import \"example.com/proj/base\"\n\nfunc Read() base.T { return base.New() }",
+				"base/b.ogo":  "type T struct{ V int }\n\nfunc New() T { return T{3} }",
+			},
+		},
+		{
 			name:   "an intrinsic import needs no module prefix",
 			module: "example.com/proj", dir: ".",
 			files: map[string]string{

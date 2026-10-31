@@ -1,0 +1,29 @@
+// COMPILE
+// A package's name heading a selector is a use of it in every position a
+// qualified name stands in: a constant, a package variable's initializer, a
+// field's type, a call, a type's size and a parameter's type (dom92).
+
+import (
+	"bytes"
+	"errors"
+	"math"
+	"p2"
+	"strings"
+	"unsafe"
+)
+
+const pi = math.Pi
+
+var errX = errors.New("x")
+
+type cell struct{ p unsafe.Pointer }
+
+func size() uintptr { return unsafe.Sizeof(cell{}) }
+
+func same(a, b []byte) bool { return bytes.Equal(a, b) }
+
+func main() {
+	p2.PinHigh(56)
+	b := []byte("x")
+	println(strings.Index("ab", "b"), pi > 3, errX != nil, size(), same(b, b))
+}

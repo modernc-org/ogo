@@ -8679,16 +8679,18 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 	}
 
 	// Semantic import diagnostics. Dot imports are unsupported and rejected in
-	// every package. Unused imports are reported only for the package under
-	// compilation (import path ""); a recursively-built dependency's own unused
-	// imports are reported when that dependency is compiled directly, not here.
+	// every package. Unused imports are reported in every package of the program,
+	// as go build reports them, but for the embedded and intrinsic ones, which are
+	// the compiler's: a dependency of the main package was reported only when it
+	// was compiled directly, which a build of the program never does (dom92).
 	// This runs after body checking, so usage in function bodies has been seen,
 	// and below the noDeclarationChecks early return, so a parse-only pass does
 	// not see these semantic diagnostics.
 	p.reportNeverMadeChans()
+	_, embedded := embeddedPkgs[p.ImportPath]
 	for _, v := range p.Files {
 		v.rejectDotImports()
-		if p.ImportPath == "" {
+		if !embedded && !intrinsicImports[p.ImportPath] {
 			v.reportUnusedImports()
 		}
 	}

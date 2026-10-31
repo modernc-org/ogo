@@ -1,3 +1,4 @@
+// ERROR "imported and not used"
 import "p"
 
 // ERROR "declare.*both"

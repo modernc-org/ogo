@@ -1,1 +1,3 @@
 import "import_cycle/b"
+
+func A() int { return b.B() }

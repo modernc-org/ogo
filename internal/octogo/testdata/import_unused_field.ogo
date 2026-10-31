@@ -1,0 +1,13 @@
+// An import whose name is only a field's is unused: `s.bytes` is the field, and
+// was taken for a use of the package (dom92).
+
+// ERROR "imported and not used"
+import "bytes"
+
+type S struct{ bytes int }
+
+func main() {
+	var s S
+	s.bytes = 1
+	println(s.bytes, S{bytes: 2}.bytes)
+}

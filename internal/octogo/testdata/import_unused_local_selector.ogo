@@ -1,0 +1,13 @@
+// An import whose name heads a selector only where a local shadows it is unused:
+// `strings.n` is the local's field (dom92).
+
+// ERROR "imported and not used"
+import "strings"
+
+type S struct{ n int }
+
+func main() {
+	var strings S
+	strings.n = 4
+	println(strings.n)
+}
