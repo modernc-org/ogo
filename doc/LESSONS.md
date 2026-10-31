@@ -4478,6 +4478,80 @@ an uplink's encryption buffer of another size twice: "`append` does not grow a s
 past its capacity"), and two wait after Go's 82 lines where Go reports a deadlock
 ("A deadlock is not reported"). No fuzzer part changed since dom86. A clean round:
 the count is 1.
+**dom88, a GNSS asset tracker with TinyGo's gps driver and paulmach/orb**
+(2026-10-30, a round against master on dom87's fixes): tinygo.org/x/drivers
+v0.37.0's gps (the Device over a UART and I2C, readNextSentence's buffer,
+validSentence through encoding/hex, the Parser of GGA, GLL, RMC and GSV over strconv
+and time, UBX-CFG-NAV5, CFG-MSG and CFG-GNSS, appendChecksum, SendCommand's ACK
+wait) and github.com/paulmach/orb v0.13.0 (Point a [2]float64, LineString, Ring a
+LineString, Polygon, the multis, Bound, Collection, the Geometry interface, Equal
+and Round; geo's distances, bearings, bounds, lengths and spherical areas; planar's
+containment by ray casting, distances, centroids and areas; simplify's
+Douglas-Peucker, radial and Visvalingam, its min-heap of pointers into a linked
+list; maptile's tiles, quadkeys and shared parents over the Web Mercator; project;
+clip), ported as written, with their tests, over dom76's strconv and dom78's time --
+and a tracker: a u-blox modelled on a cog, which answers UBX and sends NMEA at 9600
+baud as a van drives through Brno (a cold start, a tunnel with no fix, a spoiled
+byte, midnight), the line's time the tracker's clock; the main cog parsing the
+fixes, telling four geofences, simplifying the track three ways, naming the tiles it
+crosses and clipping it into each. Two bugs of TinyGo's met and kept, Go running
+them the same: SendCommand compares the ACK with its command's class and id, and the
+command of SetAutomotiveMode and its siblings is the receive buffer the wait
+overwrites, so no ACK of them is seen; SetGNSSDisable sends all 100 bytes of the
+buffer, its checksum over all of them, and the receiver drops it. Its first build
+met a listed refusal (a function value of an array result, orb's Projection, which
+hands back two floats here) and the language's rules (ToRing's and ToPolygon's slice
+literals returned), and a FALSE REFUSAL: orb's Equal, `g2, ok := g2.(*Ring)` in one
+case of a type switch and `g2, ok := g2.(*Polygon)` in the next, "multiple
+assignment requires a single function call on the right-hand side" -- a switch's
+clauses had one scope, the emitter's names and types made in one clause standing in
+the next. The row probed: a clause reading a name an earlier clause had declared
+read it by that declaration's type, the uint32 parameter printed -294967296 for
+4000000000 and divided as an int8, a float32 printed as a uint64 -- a SILENT FAULT,
+in a type switch and a switch on a value, on the host and the board -- and in a
+switch lowered to a chain, the body a fallthrough leads to, emitted inside the
+falling clause's C block, read the name that clause declared (SILENT). Each clause
+is a scope of its own now (emitCaseBody), and a falling body a C block of its own.
+**A clause is a block: what the emitter records of a name a clause declares ends
+with the clause, in C and in the emitter alike.** Beside it, the frame marks' end of
+a block: a declaration shadowing a variable dropped the variable's marks and the
+block's end merged in the shadowing local's, by name -- `p = &x; p := 5` in a block,
+then `gp = p`, stored a local's address in a package variable (SILENT, in every
+release checked since v0.50.0), and `n := Cells{1, 2, n}` in a block marked the int
+parameter n outside it, `return n` refused. A block keeps the marks of each outer
+variable a declaration in it shadows and gives them back at its end (blockShadows).
+**A mark is the variable's, not the name's: a declaration that shadows a name sets
+the outer variable's marks aside for the block's end, and the block's own variable
+takes its marks with it.** Then `p := Tile{...}.Center()`, "cannot infer a type for
+the declaration of p", a literal's method of an array result (a FALSE REFUSAL, in
+every release checked since v0.50.0, LISTED: the array result's out parameter names
+its callee by a variable or a chain), and `Radial(...).Simplify(g)` of a `g = &vis`,
+through an interface a pointer to a local taken to hold what the local views
+(dom83's listed family). And `Round(&last, 1000)`, orb's Round of a Geometry and a
+variadic factor: both C compilers refused the C, the fixed argument handed over as
+the bare pointer -- a LOUD FAULT. The row probed: a nil and another interface's
+value as a variadic call's fixed argument (loud), an array call refused, and the
+ORDER: the pack was filled ahead of the call and the fixed arguments evaluated in
+it, `f(t(1), t(2), t(3))` calling 2, 3 and 1 (SILENT, in every release checked since
+v0.50.0). A variadic call's fixed arguments go through the one argument emitter a
+call's do (emitCallArg), bound first, in order, where an argument can change state.
+**A variadic call is a call: its fixed arguments are asked every question a call's
+are, and evaluated before what it packs.** Four of the refusals named no position,
+"emit: cannot infer a type for the declaration of p" in a program of 10000 lines.
+Host and board print Go's 133 lines, 15.7 s on the P2. Its 400 mutants, drawn
+outside strconv and time: on the host 335 print what Go prints, 18 panic as Go does,
+43 are refused alike and three differ as DIFFERENCES.md says OctoGo does -- a stop
+of the route moved a degree east, the track past its 512 points and append's "out of
+capacity" where Go grows the slice ("`append` does not grow a slice past its
+capacity"), the board printing the same, and one Go rejects built: m0007, a test's
+`1<<30+1<<29` moved to `2<<30+1<<29` in a printf's argument, which overflows the int
+Go's `...any` takes an untyped constant as -- print and println refused it, printf
+printed -1610612736, and testing's Log and Logf and their kin took it too (SILENT,
+in every release checked since v0.50.0); each argument asks it now
+(checkInferredOverflow). **A builtin that prints is asked of its arguments what each
+of its siblings asks: printf's took what println's refused.** On the board, built on
+the fixes, all 351 that Go ends print Go's output. No fuzzer part changed since
+dom87. A silent round: the count is 0, and the candidate is master on its fixes..
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

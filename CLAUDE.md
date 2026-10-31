@@ -187,6 +187,16 @@ silent fault puts the count back to 0. Each round's account is in
   fixes: clean, two false refusals fixed (byte and uint8 in an append, and an alias
   of a predeclared type anywhere; a uintptr compared, Go's overlap check, taken to
   keep a local's slices) -- 1
+- dom88 (2026-10-30), a GNSS asset tracker (TinyGo's gps driver, paulmach/orb's
+  geometry, simplify, maptile, project and clip, a u-blox on a cog), against master
+  on dom87's fixes: silent (a switch clause's declarations read in the next clause
+  by their types, and in the body a fallthrough leads to; a shadowing declaration
+  dropping the outer variable's marks; a variadic call's fixed arguments evaluated
+  after what it packs; an untyped constant past int handed to printf), one loud
+  fault fixed (a variadic call's fixed arguments not converted as a call's are), two
+  false refusals fixed (sibling clauses' declarations of one name; a shadowing
+  local's marks given to the variable outside), one listed (a literal's method of an
+  array result) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1101,11 +1111,13 @@ section. A new finding goes there; the rule it leaves goes here too.
   boundary sweep crosses two packages and three**; **Every row swept in one package
   is swept across the boundary too, with the qualified spelling in every
   position**; **A row swept in one package is swept with the qualified spelling**.
-- **A C NAME IS A ROW**. **NIL IS A ROW**. **A VARIADIC CALL IS A ROW**. **A FUNCTION
-  VALUE'S CALL IS A ROW**. **AN ARRAY RESULT IS A ROW**. **PRINTING A VALUE IS A
-  ROW**. **A CALL'S RESULTS FORWARDED WHOLE ARE A ROW**. **A DEFERRED OR STARTED
-  CALL IS A ROW**: **a new callee shape is swept under plain, `defer` and `go`, with
-  a store into the callee after the statement**.
+- **A C NAME IS A ROW**. **NIL IS A ROW**. **A VARIADIC CALL IS A ROW**: **A
+  variadic call is a call: its fixed arguments are asked every question a call's
+  are, and evaluated before what it packs** (dom88). **A FUNCTION VALUE'S CALL IS A
+  ROW**. **AN ARRAY RESULT IS A ROW**. **PRINTING A VALUE IS A ROW**. **A CALL'S
+  RESULTS FORWARDED WHOLE ARE A ROW**. **A DEFERRED OR STARTED CALL IS A ROW**: **a
+  new callee shape is swept under plain, `defer` and `go`, with a store into the
+  callee after the statement**.
 - **WHAT HAS NO KIND IS ASKED NOTHING**: **when a rule is written against a Kind, ask
   what it says of each category that has none**. **FIFTEEN RULES ACROSS THE
   CATEGORIES**: **A new rule refusing on a category asks it of each way the checker
@@ -1146,7 +1158,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   a hole, and the second answer hides what the first lacks**. **A rule that refuses
   an operand asks it through parentheses: the operand in them is the operand**
   (dom84). **A rule comparing types by name asks what each name is: byte is uint8,
-  rune is int32, and an alias of a predeclared type is that type** (dom87).
+  rune is int32, and an alias of a predeclared type is that type** (dom87). **A
+  builtin that prints is asked of its arguments what each of its siblings asks:
+  printf's took what println's refused** (dom88).
 - **A table read by its value is asked by its key, and asked what else it holds: an
   empty struct's fields are nil, and so are an interface's** (isStruct, fieldEqCmp).
   **Two keys for one type are two tables: the reader asks by the key the writer
@@ -1244,7 +1258,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   of them: a view of a view is the view, at any length** (dom77). **A
   type a rule does not know is asked which rules read it as a default**. **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN**: **A mark is a fact about a
   variable at a point; a rule reading one asks what reaches that point -- a loop's
-  back edge and an alias both do.**
+  back edge and an alias both do.** **A mark is the variable's, not the name's: a
+  declaration that shadows a name sets the outer variable's marks aside for the
+  block's end, and the block's own variable takes its marks with it** (dom88).
 - **A summary of a call is asked by result: one answer for the whole call gives
   every result every argument** (resultPos). **A return is asked in every form: a
   bare one returns the named results, and under a defer every return does.** **A
@@ -1310,7 +1326,9 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **A walk that answers a question must not change the program**. **An owner of
   deferred work is the storage the literal fills, not whatever is being rendered
   when it is found.** **What a question forgets of what it minted, it forgets
-  whole: a name cached and a flag set are minting too** (dom72).
+  whole: a name cached and a flag set are minting too** (dom72). **A clause is a
+  block: what the emitter records of a name a clause declares ends with the clause,
+  in C and in the emitter alike** (dom88).
 - **Where a statement renders a part of itself that Go evaluates conditionally,
   later, or repeatedly, that part is rendered inside emitOwnPrologue**; **a
   statement that renders parts of itself asks where each part's hoisted statements
