@@ -57681,6 +57681,79 @@ func main() {
 		want: "3 3 3 3 320\none 3\ntwo 3\none 3\n3 3 3\n",
 	},
 	{
+		// paho's `return newSubscribeToken(SubscribeToken{})` for a tokenCompletor
+		// (dom90): an empty literal of a struct whose first member is an aggregate
+		// was written "{0}", and inside another brace initializer -- here a call's
+		// argument in the interface value `(I){newT((T){0}), &vt}` -- the host's
+		// compiler warned of the braces it leaves off, so no run case could hold
+		// a return, an argument, a send or a literal of one.
+		name: "an empty literal of a struct leading with an aggregate, inside another literal",
+		src: `type A struct{ w, r int }
+
+type T struct {
+	m A
+	n int
+}
+
+type U struct {
+	s string
+	e error
+	f float64
+	b []byte
+}
+
+type I interface{ ID() int }
+
+func (t *T) ID() int { return t.n + 1 + t.m.w }
+
+func (u *U) ID() int {
+	if u.e != nil {
+		return -1
+	}
+	return len(u.s) + len(u.b) + int(u.f) + 7
+}
+
+var ts [3]T
+
+var us [3]U
+
+var nt, nu int
+
+func newT(v T) *T {
+	p := &ts[nt]
+	nt++
+	*p = v
+	return p
+}
+
+func newU(v U) *U {
+	p := &us[nu]
+	nu++
+	*p = v
+	return p
+}
+
+type W struct {
+	i I
+	k int
+}
+
+var gw = W{newU(U{}), 4}
+
+func get() I { return newT(T{}) }
+
+func use(i I) int { return i.ID() * 10 }
+
+func main() {
+	ch := make(chan I, 1)
+	ch <- newU(U{})
+	w := W{newT(T{}), 2}
+	println(get().ID(), use(newU(U{})), (<-ch).ID(), w.i.ID(), w.k, gw.i.ID(), gw.k, nt, nu)
+}
+`,
+		want: "1 70 7 1 2 7 4 2 3\n",
+	},
+	{
 		// `d.Conn.Tx([]byte{reg, v}, nil)` of periph.io's mmr (dom84): a method
 		// called through an interface a chain reached -- a field, an element, a
 		// call's result -- had its arguments converted to nothing, and a nil for a

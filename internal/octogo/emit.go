@@ -3881,6 +3881,14 @@ func (e *emitter) zeroBraceC(ctype string) string {
 	return "{" + strings.Join(parts, ", ") + "}"
 }
 
+// zeroElidesBraces reports whether "{0}" for a struct leaves braces off: its first
+// field is an aggregate in C, a struct, an array or a header, which the 0 stands
+// in.
+func (e *emitter) zeroElidesBraces(ctype string) bool {
+	fields := e.structs[e.underlyingCType(ctype)]
+	return len(fields) != 0 && e.zeroFieldC(fields[0]) != "0"
+}
+
 // zeroFieldC is the written-out zero of one struct field. An array's extents live
 // on the declarator, so its zero is the element's wrapped in one brace per
 // dimension.
@@ -25488,8 +25496,15 @@ func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
 	if len(values) == 0 {
 		// No values: zero every field, written out where the first is of no
 		// elements, which "{0}" would name (leadsZeroSized): `z <- Z{}` of a
-		// `Z struct{ a [0]int; ... }` was refused by both compilers.
-		if zero := e.zeroInitC(name); zero != "0" {
+		// `Z struct{ a [0]int; ... }` was refused by both compilers. And written
+		// out where the first is itself an aggregate, whose braces "{0}" leaves
+		// off: the host's compiler checks those at the end of the outermost brace
+		// initializer around the literal, a call's argument inside one among them,
+		// so `return newT(T{})` for an interface result, `(I){newT((T){0}), &vt}`,
+		// drew -Wmissing-braces and no run case could hold it (dom90).
+		if zero := e.zeroInitC(name); zero == "{0}" && e.zeroElidesBraces(name) {
+			e.emit(e.zeroBraceC(e.underlyingCType(name)))
+		} else if zero != "0" {
 			e.emit(zero)
 		} else {
 			e.emit("{0}")

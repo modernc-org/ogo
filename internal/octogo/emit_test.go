@@ -7754,8 +7754,9 @@ func main() {
 		"\tmemcpy(&w.rows.ptr[ogo_bound(i, w.rows.len)], &s, sizeof(Row));\n",
 		"\tmemcpy(&arr[1], &s, sizeof(Row));\n",
 		// A literal is not addressable, so it initializes a temporary first --
-		// initialization being the one form flexcc does lower.
-		"\tRow _ogo_t0 = {0};\n\tmemcpy(&z, &_ogo_t0, sizeof(Row));\n",
+		// initialization being the one form flexcc does lower. Its zero is
+		// written out, the array's braces with it (zeroElidesBraces).
+		"\tRow _ogo_t0 = {{0}};\n\tmemcpy(&z, &_ogo_t0, sizeof(Row));\n",
 		"\tPlain q = p;\n", // no array, no memcpy
 	} {
 		if got := buf.String(); !strings.Contains(got, want) {
