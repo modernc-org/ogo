@@ -220,6 +220,11 @@ silent fault puts the count back to 0. Each round's account is in
   variable given a typed array's literal), one loud fault fixed (a package array of
   a defined slice type given type-elided rows), one listed (a *Builder in an
   interface) -- 0
+- dom92 (2026-10-31), a concrete plant's batching scale (Go's text/scanner and
+  text/tabwriter ported with their tests and examples, unicode's letter and digit
+  tables, a load cell's cog and a ticket printer's), against master on dom91's
+  fixes: silent (an import Go reports unused taken for used: a field or a local of
+  its name was a use, and a package the main package imports was never asked) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1247,7 +1252,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   asked through the one function that knows what the name means here.** **A
   dispatch on a name asks what the name means where it is written**. **A gate that
   takes "not found" for "a qualifier" is a row of every scope a name can be found
-  in: a function literal's finds the import itself** (foundOrQualifier, dom53).
+  in: a function literal's finds the import itself** (foundOrQualifier, dom53). **A
+  use is asked where the language reads one: a package's name is used heading a
+  selector, and every package of the program is asked, not only the one built**
+  (dom92).
 - **a rule that declares a variable is asked which type Go gives it**; **`%T`
   against Go is the cheap oracle for what type a declaration gives**.
 - **A LABELED BREAK REFERS FROM ANY DEPTH** (a termination rule is written into a
