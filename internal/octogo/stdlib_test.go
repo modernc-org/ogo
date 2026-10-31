@@ -271,6 +271,8 @@ var erb = [2]byte{'e', 'r'}
 
 var empty [0]byte
 
+var blank = [3]byte{' ', '\t', ' '}
+
 var aaa = [3]byte{'a', 'a', 'a'}
 
 var aa = [2]byte{'a', 'a'}
@@ -321,6 +323,10 @@ func trimming() {
 		bytes.TrimPrefix(gopher[:], goo[:]))
 	printf("[%s] [%s] %d\n", bytes.TrimSuffix(gopher[:], erb[:]), bytes.TrimPrefix(gopher[:], zz[:]),
 		len(bytes.TrimSpace(spaced[:])))
+	// Where nothing is left Go's TrimSpace is nil, and bufio's Scanner asks a
+	// token that (dom91).
+	printf("%t %t %t\n", bytes.TrimSpace(empty[:]) == nil, bytes.TrimSpace(blank[:]) == nil,
+		bytes.TrimSpace(spaced[:]) == nil)
 }
 
 func cutting() {

@@ -193,6 +193,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   ("request for member ptr in something not an object"), and a struct field of
   them was refused, "a type-elided slice literal is not supported here yet". In
   every release checked.
+- **bytes.TrimSpace of nothing but white space is nil, as Go's is**: it was an empty
+  slice, so a test of `== nil` on it, as bufio's Scanner makes of the token a split
+  function hands it, said otherwise than Go: a split function trimming the fields of
+  a line handed back an empty token at every separator, and the scan never ended.
+  Since v0.41.0.
 
 ## v1.0.0-rc.3
 

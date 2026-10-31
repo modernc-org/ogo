@@ -57885,6 +57885,45 @@ func main() {
 		want: "1 4 6 2 3\n2 6 1 2 0 2\n70 5\n",
 	},
 	{
+		// A split function's `bytes.TrimSpace(data[:i])` of a field of nothing but
+		// white space (dom91, a console's commands split on semicolons): Go's is
+		// nil, which bufio's Scanner takes for no token, and the embedded one was
+		// an empty slice, a token every time, and the scan never ended.
+		name: "bytes.TrimSpace of nothing but white space is nil",
+		src: `import "bytes"
+
+var line = [...]byte{'a', ';', ' ', ';', 'b', ' ', ';', ' ', '\t'}
+
+// onSemicolon is a split function: the token is the field trimmed, and a
+// field of nothing but white space trims to nil, which is no token.
+func onSemicolon(data []byte) (advance int, token []byte) {
+	if i := bytes.IndexByte(data, ';'); i >= 0 {
+		return i + 1, bytes.TrimSpace(data[:i])
+	}
+	return len(data), bytes.TrimSpace(data)
+}
+
+func main() {
+	data := line[:]
+	tokens, empties := 0, 0
+	for len(data) > 0 {
+		adv, tok := onSemicolon(data)
+		data = data[adv:]
+		if tok == nil {
+			empties++
+			continue
+		}
+		tokens++
+		printf("%q ", tok)
+	}
+	printf("\n%d %d\n", tokens, empties)
+	var none [0]byte
+	println(bytes.TrimSpace(none[:]) == nil, bytes.TrimSpace(nil) == nil, bytes.TrimSpace(line[1:2]) == nil, len(bytes.TrimSpace(line[4:6])))
+}
+`,
+		want: "\"a\" \"b\" \n2 2\ntrue true false 1\n",
+	},
+	{
 		// `d.Conn.Tx([]byte{reg, v}, nil)` of periph.io's mmr (dom84): a method
 		// called through an interface a chain reached -- a field, an element, a
 		// call's result -- had its arguments converted to nothing, and a nil for a

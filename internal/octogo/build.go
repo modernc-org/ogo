@@ -7688,7 +7688,9 @@ func TrimSuffix(s, suffix []byte) []byte {
 
 // TrimSpace returns s without leading and trailing white space, as Unicode defines
 // it -- not merely as ASCII does, which would leave a non-breaking space behind and
-// look right until it did not.
+// look right until it did not. Where nothing is left it is nil, as Go's is: a
+// split function handing bufio's Scanner the empty slice was a token every time,
+// and the scan never ended (dom91).
 func TrimSpace(s []byte) []byte {
 	start := 0
 	for start < len(s) {
@@ -7706,6 +7708,9 @@ func TrimSpace(s []byte) []byte {
 		if !isSpace(r) {
 			end = i
 		}
+	}
+	if start == end {
+		return nil
 	}
 	return s[start:end]
 }
