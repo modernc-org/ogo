@@ -16060,6 +16060,19 @@ func (f *File) operandTypeName(s *Scope, n Node, k Kind) string {
 	return kindName(k)
 }
 
+// reportBuilderInIface refuses the predeclared Builder as an interface's value,
+// and reports whether it did: its methods are written where they are called and
+// fill no method table, so no interface holds one yet. Asked by the method set,
+// it was "missing method Write", a method it has (dom91, a *Builder as an
+// io.Writer).
+func (f *File) reportBuilderInIface(s *Scope, pos token.Position, from, shown, ifaceName, what string) bool {
+	if from != "Builder" || !isPredeclaredBuilder(s, from) {
+		return false
+	}
+	f.err(pos, "cannot use %s as %s value in %s: a Builder is held by no interface yet; a parameter of type *Builder takes it", shown, ifaceName, what)
+	return true
+}
+
 // checkImplementsNamed is the tail of checkImplements for a value whose type is
 // known by NAME rather than through a local declaration -- a read from another
 // package. It asks the same two questions in the same order: an interface holds a
@@ -16085,6 +16098,9 @@ func (f *File) checkImplementsKind(s *Scope, ifaceName string, value Node, from,
 	}
 	missing, ptrRecv, wrong, have, want, ok := f.implements(s, from, valueIsPtr, ifaceName)
 	if ok {
+		return
+	}
+	if f.reportBuilderInIface(s, pos, from, shown, ifaceName, what) {
 		return
 	}
 	kind := "variable of type " + from
@@ -16502,6 +16518,9 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 		return
 	}
 	pos := f.tok(value.Pos()).Position()
+	if f.reportBuilderInIface(s, pos, from, shown, ifaceName, what) {
+		return
+	}
 	head := fmt.Sprintf("cannot use %s (%s) as %s value in %s: %s does not implement %s",
 		shown, kind, ifaceName, what, from, ifaceName)
 	switch {
@@ -16844,6 +16863,12 @@ func (f *File) checkFieldAccess(s *Scope, head, field Token, suffix Node) {
 // base: a variable, head, or a value with no name, head then being no token at all.
 func (f *File) checkFieldAccessOn(s *Scope, d *VarDeclaration, head Token, base string, field Token) {
 	if d.hasKind {
+		// A METHOD name is a method value, as for a struct type's below: a type
+		// defined over a scalar has methods too, `s.Split(c.split)` of bufio's
+		// `type countdown int` (dom91).
+		if f.isMethodValueSelector(s, d, head, field) {
+			return
+		}
 		f.err(field.Position(), "type %s has no field %s", d.typeName.Src(), field.Src())
 		return
 	}
@@ -16876,17 +16901,23 @@ func (f *File) checkFieldAccessOn(s *Scope, d *VarDeclaration, head Token, base 
 		return
 	}
 	if fields, ok := f.structFields(s, d.typeName); ok && !fields[field.Src()] {
-		// A METHOD name here is a method value, not a missing field. Whether this
-		// one can be given a meaning is reportUnsupportedFuncValue's question.
-		if head.IsValid() {
-			if _, _, _, isMV := f.methodValueParts(s, head, field); isMV {
-				return
-			}
-		} else if _, isMethod := f.methodOwnerNamed(s, d.typeName.Src(), field.Src()); isMethod {
+		if f.isMethodValueSelector(s, d, head, field) {
 			return
 		}
 		f.err(field.Position(), "type %s has no field %s", d.typeName.Src(), field.Src())
 	}
+}
+
+// isMethodValueSelector reports whether head.field, a value of the type d
+// describes, names a method: a method value, not a missing field. Whether this
+// one can be given a meaning is reportUnsupportedFuncValue's question.
+func (f *File) isMethodValueSelector(s *Scope, d *VarDeclaration, head, field Token) bool {
+	if head.IsValid() {
+		_, _, _, isMV := f.methodValueParts(s, head, field)
+		return isMV
+	}
+	_, isMethod := f.methodOwnerNamed(s, d.typeName.Src(), field.Src())
+	return isMethod
 }
 
 // fieldKind returns the predeclared Kind of "head.field" when head is a variable

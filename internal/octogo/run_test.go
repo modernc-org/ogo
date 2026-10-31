@@ -57754,6 +57754,137 @@ func main() {
 		want: "1 70 7 1 2 7 4 2 3\n",
 	},
 	{
+		// bufio's `s.Split(c.split)` of a `type countdown int` (dom91): the
+		// method value of a package variable of a type defined over a scalar was
+		// refused, "type countdown has no field split", and one whose receiver is
+		// a defined slice type a field or an element holds, `bx.l.trim`, by the
+		// emitter, "has no field".
+		name: "a method value of a type defined over a scalar, and of a slice a field or an element holds",
+		src: `type countdown int
+
+func (c *countdown) split(n int) int {
+	if *c > 0 {
+		*c--
+		return n
+	}
+	return 0
+}
+
+type flag bool
+
+func (f *flag) flip(n int) int {
+	*f = !*f
+	if *f {
+		return n
+	}
+	return -n
+}
+
+type name string
+
+func (s *name) chop(n int) int {
+	*s = (*s)[1:]
+	return len(*s) + n
+}
+
+type list []int
+
+func (l *list) trim(n int) int {
+	*l = (*l)[1:]
+	return len(*l)*10 + n
+}
+
+type box struct {
+	k int
+	l list
+}
+
+var (
+	cd   countdown = 2
+	fl   flag
+	nm   name = "abcdef"
+	bx        = box{1, list{1, 2, 3}}
+	ls        = [2]list{{9}, {8, 7, 6, 5}}
+	keep      = nm.chop
+)
+
+func use(f func(int) int) int { return f(3) + f(4) }
+
+func get() func(int) int { return cd.split }
+
+func main() {
+	println(use(cd.split), cd, use(get()), cd)
+	f := fl.flip
+	println(f(5), f(6), fl)
+	println(keep(1), use(nm.chop), nm)
+	println(use(bx.l.trim), len(bx.l), use(ls[1].trim), len(ls[1]), len(ls[0]))
+}
+`,
+		want: "7 0 0 0\n5 -6 false\n6 14 def\n37 1 57 2 1\n",
+	},
+	{
+		// `var g row = [3]int{1, 2, 3}` for a `type row [3]int` (dom91): the
+		// variable was registered by the literal's type, which carries no methods,
+		// and `g.bump(1)` was read as a call into a package named g.
+		name: "a variable of a defined array type given a literal of the type it is over",
+		src: `type row [3]int
+
+func (r *row) bump(k int) int {
+	r[1] += k
+	return r[0] + r[1] + r[2]
+}
+
+func (r row) sum() int { return r[0] + r[1] + r[2] }
+
+var g row = [3]int{1, 2, 3}
+
+func use(f func(int) int) int { return f(3) + f(4) }
+
+func main() {
+	var l row = [3]int{4, 5, 6}
+	println(g.bump(1), g.sum(), l.bump(2), l.sum())
+	println(use(g.bump), g[1])
+	printf("%T %T %v %v\n", g, l, g, l)
+}
+`,
+		want: "7 7 17 17\n24 10\nmain.row main.row [1 10 3] [4 7 6]\n",
+	},
+	{
+		// `var ls = [2]list{{9}, {8, 7, 6, 5}}` for a `type list []int` (dom91): the
+		// rows' type, named, was no level of the literal, so the array was written
+		// as a static initializer reading the rows' headers, which neither C
+		// compiler takes, and a struct field of them was refused.
+		name: "type-elided rows of a defined slice type in package literals",
+		src: `type list []int
+
+type P struct{ a, b int }
+
+type plist []P
+
+type S struct {
+	n  int
+	ls [2]list
+}
+
+var (
+	ls = [2]list{{9}, {8, 7, 6, 5}}
+	ns = [1][2]list{{{1, 2}, {3}}}
+	ps = [2]plist{{{1, 2}}, {{3, 4}, {5, 6}}}
+	s  = S{1, [2]list{{4, 4}, {}}}
+)
+
+var lt [2]list = [2]list{{2}, {3, 3}}
+
+func main() {
+	println(len(ls[0]), len(ls[1]), ls[1][2], len(ns[0][0]), ns[0][1][0])
+	println(len(ps[1]), ps[1][1].b, s.n, len(s.ls[0]), len(s.ls[1]), len(lt[1]))
+	ls[1][0] = 70
+	println(ls[1][0], ls[1][3])
+}
+`,
+		want: "1 4 6 2 3\n2 6 1 2 0 2\n70 5\n",
+	},
+	{
 		// `d.Conn.Tx([]byte{reg, v}, nil)` of periph.io's mmr (dom84): a method
 		// called through an interface a chain reached -- a field, an element, a
 		// call's result -- had its arguments converted to nothing, and a nil for a

@@ -1,0 +1,25 @@
+// A *Builder is held by no interface yet: its methods are written where they are
+// called and fill no method table. Asked by the method set it was "missing method
+// Write", a method it has (dom91, a *Builder handed to an io.Writer).
+
+type Writer interface {
+	Write(p []byte) (int, error)
+}
+
+var back [32]byte
+
+var b Builder
+
+func put(w Writer, s string) {
+	w.Write([]byte(s))
+}
+
+func main() {
+	b = NewBuilder(back[:])
+	// ERROR a Builder is held by no interface yet
+	put(&b, "hello")
+	var w Writer
+	// ERROR a Builder is held by no interface yet
+	w = &b
+	println(w != nil, b.String())
+}

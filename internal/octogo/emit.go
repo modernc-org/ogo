@@ -11119,7 +11119,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 						e.emitPkgArrayVar(e.globalC(names[0]), names[0], a, initExpr)
 						continue
 					}
-					e.emitArrayLitVar(e.globalC(names[0]), litType, lit, true)
+					e.emitArrayLitVarNamed(e.globalC(names[0]), litType, lit, true, a.name)
 					continue
 				}
 				if initExpr != nil {
@@ -20700,6 +20700,12 @@ func (e *emitter) methodValueRecv(base string, steps []Node) (mvRecv, bool) {
 	switch {
 	case len(cur.dims) != 0 && cur.name != "":
 		r.ct = cur.name // a defined array type, its methods taking it by address
+	case cur.slice && cur.name != "":
+		// A defined slice type the steps END at, a field's or an element's,
+		// `g.c.m` of a `c C` for a `type C []int`: its header is at an address the
+		// steps fixed, which is what Go takes. A slice on the way is refused above,
+		// what it holds moving with its backing (dom91).
+		r.ct = cur.name
 	case cur.slice || len(cur.dims) != 0 || cur.ctype == "":
 		return mvRecv{}, false
 	default:
@@ -24954,7 +24960,7 @@ func (e *emitter) emitVarSpec(names []string, typeAST []int32, initExprs [][]int
 				if !e.sameArrayType(a, litType) {
 					return
 				}
-				e.emitArrayLitVar(nm, litType, lit, false)
+				e.emitArrayLitVarNamed(nm, litType, lit, false, a.name)
 				continue
 			}
 			// `var c [3]int = mk()`: the declaration is the storage the callee
@@ -26493,6 +26499,16 @@ func (e *emitter) rowValues(v Node, row arrDim) ([]*Node, bool) {
 // needs no run-time init step, unlike a package variable whose initializer is a
 // call.
 func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static bool) {
+	e.emitArrayLitVarNamed(name, typeAST, lit, static, "")
+}
+
+// emitArrayLitVarNamed is emitArrayLitVar for a variable declared with a defined
+// array type and given a literal of the type it is defined over, `var g C =
+// [3]int{1, 2, 3}`: the literal says the extents and declared names the type,
+// which carries the methods. Registered by the literal's type alone, the
+// variable had no methods, and `g.m(1)` was read as a call into a package named
+// g (dom91).
+func (e *emitter) emitArrayLitVarNamed(name string, typeAST []int32, lit Node, static bool, declared string) {
 	values, length, ok := e.litPositions(lit)
 	if !ok {
 		return
@@ -26520,6 +26536,9 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 		e.ind()
 	}
 	if a, ok := e.arrayDim(typeAST); ok {
+		if a.name == "" {
+			a.name = declared
+		}
 		// Fewer values than the length is legal and zeroes the rest, as in Go; more
 		// is not. C only warns about the excess, and the extra values are dropped,
 		// so saying so here is the difference between a diagnostic and a surprise.
@@ -60610,7 +60629,7 @@ func (e *emitter) elemLitLevels(typeAST []int32) (levels []litLevel) {
 		}
 		kids := slices.Collect(it(inner))
 		if len(kids) == 0 || kids[0].sym != 0 {
-			return levels
+			return append(levels, e.namedTypeLevel(inner)...)
 		}
 		switch e.f.ch(kids[0].tok) {
 		case MUL:
@@ -60623,10 +60642,22 @@ func (e *emitter) elemLitLevels(typeAST []int32) (levels []litLevel) {
 			}
 			typeAST = inner
 		default:
-			return levels
+			return append(levels, e.namedTypeLevel(inner)...)
 		}
 	}
 	return levels
+}
+
+// namedTypeLevel is elemLitLevels' level of an element type written by name: a
+// defined slice type, `[2]list` of a `type list []int`, is a slice level, its
+// elided rows slice literals as `[2][]int`'s are. With no level, a package
+// array of them was written as a static initializer reading the rows' headers,
+// which no C compiler takes (dom91). Any other name is no level.
+func (e *emitter) namedTypeLevel(typeAST []int32) []litLevel {
+	if _, _, isSlice := e.namedSliceType(typeAST); isSlice {
+		return []litLevel{levelSlice}
+	}
+	return nil
 }
 
 // litChainFrameRef is frameRefOf for a bracketed literal read through a chain of

@@ -73,6 +73,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   `sum(row(1), 4, 5)` was refused, "a call returning an array must be bound to a
   variable first", where a call that is not variadic took it. In every release
   checked since v0.50.0.
+- **A method value of a type defined over a scalar may be taken**: `s.Split(c.split)`
+  for a `type countdown int`, bufio's own test, was refused, "type countdown has no
+  field split", and so was `g.c.m` and `g[1].m` of a defined slice type a field or
+  an element holds. In every release checked.
+- **A variable of a defined array type may be given a literal of the type it is
+  over**: after `var g C = [3]int{1, 2, 3}` for a `type C [3]int`, `g.m(1)` was
+  refused, "unknown package g", at package scope and in a function. In every
+  release checked.
+- **A `*Builder` handed to an interface is refused as what it is**: the message
+  said "missing method Write", a method the Builder has; no interface holds a
+  Builder yet, and the message says so.
 
 ### Behaviour changes
 
@@ -176,6 +187,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   compiler past its memory: what reached an argument was followed through every
   set of the calls on the way, and twelve calls were 740 MB, fourteen out of
   memory. In every release checked since v0.50.0.
+- **Type-elided rows of a defined slice type in a package literal build**: `var ls =
+  [2]list{{9}, {8, 7, 6, 5}}` for a `type list []int` was written as a static
+  initializer reading the rows' headers, which the target's compiler refused
+  ("request for member ptr in something not an object"), and a struct field of
+  them was refused, "a type-elided slice literal is not supported here yet". In
+  every release checked.
 
 ## v1.0.0-rc.3
 
