@@ -205,6 +205,12 @@ silent fault puts the count back to 0. Each round's account is in
   element or a chain reaches; a string or a slice a function value returns handed
   on), one listed (a call through an interface no type implements, taken to reach
   every function whose address is taken) -- 0
+- dom90 (2026-10-31), a greenhouse's irrigation over MQTT (paho.mqtt.golang's
+  packets, router, store and message identifiers ported with their tests, Go's
+  bytes.Buffer and container/list, a broker and three clients over in-memory links,
+  the soil and the valves on a cog), against master on dom89's fixes: clean, one
+  loud fault fixed (an empty literal of a struct leading with an aggregate, inside
+  another literal, refused by the host's compiler) -- 1
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1095,7 +1101,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   ending in one a form nothing tested** (dom76). **The fuzzer's board sweep finds
   what the host oracle cannot: a spelling only the target's typing rule reads
   wrong.** **The host's C is no model of the memory a uintptr takes: a program
-  reading storage as uintptrs is asked on the board** (dom87).
+  reading storage as uintptrs is asked on the board** (dom87). **A spelling a
+  compiler checks at the end of an initializer is asked of everything written
+  inside its braces: a call's argument in a compound literal is inside them**
+  (dom90).
 - **When a new refusal fails an old test, ask Go about the test's program before
   doubting the refusal.** **A false refusal fixed in the checker is a program the
   emitter is handed next**. **A new summary rule is run over every program the

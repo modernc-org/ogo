@@ -4612,6 +4612,44 @@ then the panic on the board, where the host's C stack has no check and its crash
 lost the buffered lines), the board printing the same. On the board, built on the
 fixes, all 320 that Go ends print Go's output. No fuzzer part changed since dom88. A
 silent round: the count is 0, and the candidate is master on its fixes.
+**dom90, a greenhouse's irrigation over MQTT** (2026-10-31, a round against master
+on dom89's fixes): paho.mqtt.golang v1.5.1's packets package ported as written --
+the fourteen control packets behind one interface, their fixed header and remaining
+length, NewControlPacket's switch and ReadPacket -- with its tests; of the client
+the topic validation, the router and the topic match it dispatches by, the message,
+the tokens, the message identifiers, the store's rules for what is persisted, type
+switches of several types a case over the packets, and the ordered memory store,
+with their unit tests; under them Go 1.27's bytes.Buffer, io's ReadFull,
+container/list with its tests and encoding/binary's BigEndian. And a greenhouse: a
+broker over in-memory links keeping sessions, retained messages and wills and
+cutting off a silent client; a sensor node publishing the soil every minute and
+switching the valves it is told to; a controller watering below 30 % and dosing
+fertilizer once through QoS 2 across a link that drops as its PUBREL leaves, its
+PUBLISH sent again with DUP on the reconnect and taken once by the broker; a
+dashboard refused its first password; and the soil, the valves and the dosing pump
+on a cog, a second at a time. Maps are tables indexed by the code, a token's channel
+a flag, the client's goroutines a loop that steps the links. Its first build was
+refused by the host's compiler: `return newSubscribeToken(SubscribeToken{})` for a
+tokenCompletor wrote `(I){newT((T){0}), &vt}`, and "{0}" of a struct whose first
+member is an aggregate leaves that member's braces off, which gcc checks at the end
+of the outermost brace initializer around the literal, a call's argument inside one
+among them -- the target's compiler took the C and the board printed Go's output,
+but no run case could hold a return, an argument, a send or a literal of one (LOUD,
+host only, in every release checked; sweeps/zero-lit-nested, 56 of 132 rows: a
+struct, a nested or embedded one, a string, a slice, an interface or a float64
+first, in a return, an argument, a send, four literals and a package variable's;
+written out in full now, as a nested literal's zero was). **A spelling a compiler
+checks at the end of an initializer is asked of everything written inside its
+braces: a call's argument in a compound literal is inside them.** The program met
+the P2: TestEncoding's 139 locals past the cog's registers, split in four, and its
+last part, 131 KB to encode a string past 2^16 bytes, left out. Host and board print
+Go's 176 lines. Its 400 mutants, drawn outside the arenas: on the host 257 print
+what Go prints, 31 panic as Go does, 108 are refused alike, three run past their
+time in both, and one differs as DIFFERENCES.md says OctoGo does -- an append past
+the room a grow was asked for, its check made `len(s)/n` ("`append` does not grow a
+slice past its capacity"), the board printing the same. On the board, built on the
+fix, all 288 that Go ends print Go's output. No fuzzer part changed since dom89. A
+clean round: the count is 1, against master on its fix.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
