@@ -231,6 +231,20 @@ silent fault puts the count back to 0. Each round's account is in
   concentrator's select over their lines), against master on dom92's fix: clean,
   one loud fault fixed (`ogo build --report` left the data of a program asking
   unsafe.Sizeof unitemized) -- 1
+- dom94 (2026-11-01), a cash register's fiscal module (Go 1.27's math/big ported
+  with its tests -- nat, Karatsuba, the recursive division, the conversions, Int,
+  the Miller-Rabin and Lucas tests -- EAN-13 codes off a scanner cog, receipts
+  signed by RSA and chained, a printer cog, the Z report), against master on
+  dom93's fix: silent (a value receiver handed on whole, `return z` of a `func (z
+  nat)`, was taken to hand on nothing of what the method is called on, and a
+  method called on a conversion was no method call to the summaries; a part read
+  out of a holder was asked for its contents by nothing), two false refusals fixed
+  (a list of pointer bindings; a method of several results on a conversion), two
+  loud faults fixed (a slice declared without a value under a name C's library
+  has; an anonymous struct's typedef a summary's question minted and forgot),
+  three listed (a field read through a pointer to a composite literal; a Word
+  stored past a pointer; a field of what a method on a literal's address hands
+  back) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1360,6 +1374,8 @@ section. A new finding goes there; the rule it leaves goes here too.
   reach a receiver is a row in methodCallOf, under a plain call, `defer` and `go`.**
   **A receiver a summary follows is asked where the call finds it: a method called
   on what a parameter holds hands back of the parameter's contents** (dom83).
+  **A receiver is a parameter: a value method's copy is what the method is called
+  on holds, taken whole as well as by its parts** (dom94).
   **A summary is asked what the value it records can hold**. **A new place a pointer
   can stand -- an operand, a header, a clause's name -- is a row in
   TestEmitCAssertLifetime's matrix, and a statement form a header can hold is a row
