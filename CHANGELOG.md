@@ -20,6 +20,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A pointer bound in a list is bound as one declared alone**: `p2, p :=
+  &powers[i/2], &powers[i]` and then `*p = p.sqr(stk, *p2)`, math/big's
+  expNNWindowed, was refused, "cannot store p.sqr(stk, *p2), which holds a pointer
+  into local powers through *p: what it reaches is not known to be this
+  function's storage", where the two declared one at a time built: a list's
+  values were not each its name's. A list whose value names one of its targets,
+  `p, q := &gs, p`, still binds nothing. In every release checked.
+- **A method of several results on a conversion builds**: `_, x =
+  nat(nil).div(stk, nil, x, m)`, math/big's, was refused, "multiple-assignment
+  target/result count mismatch", and so were `return nat(b).two()` and a call
+  handed its results, "a return supplying every result needs a call whose results
+  are exactly ...". In every release checked.
 - **An empty slice literal may be handed back**: `return []byte{},
   &IllegalDataAddress`, a Modbus server's answer to a bad request, was refused,
   "cannot return a slice literal, whose backing array is this function's", and so
@@ -132,6 +144,26 @@ shipped section tells a reader on that version that they have behaviour they do 
   refused it. And so did testing's Log, Logf, Error, Errorf and their kin. Each
   is refused now, "constant 2147483648 overflows int", as print's and println's
   were. In every release checked since v0.50.0.
+- **A method's receiver holds what it is called on, taken whole**: `keep =
+  a[0].id()` for an `id` handing back its value receiver, `func (z nat) id() nat
+  { return z }`, and `a[0]` a slice over a local array, built, and the package
+  variable read a dead frame; so did a field's, a pointer's target's and a
+  local's, `lx := nat(buf[:]); keep = lx.id()`, a method keeping its receiver,
+  `lx.store()` of a `keep = z`, sending it, deferred or started on a cog, a
+  pointer method keeping `*z`, and the same through a function the receiver is a
+  parameter of, `fstore(buf[:])` of a `p.store()`, or on a conversion,
+  `nat(buf[:]).store()` and `return nat(b).id()`. A value receiver taken whole
+  was summarised as handing on nothing of it, its parts alone being what it
+  holds; a slice's view of a local array, which no holder mark says, was not
+  asked of a receiver at all; and a method called on a conversion was no method
+  call to the summaries. And a store through a value receiver's view,
+  `gp.set(&x)` of a `func (z ptrs) set(p *int) { z[0] = p }`, which v0.40.0
+  refused, built too. Each is refused now, "cannot store a slice backed by local
+  lx in package variable keep". In rc.3, rc.2 and v0.58.0.
+- **A part read out of a holder holds what the holder may**: `fsaveS(hs[0])` for
+  an `fsaveS(h H)` keeping `h.s`, `hs[0]` an element of a local array holding a
+  local's view, built, and the package slice viewed the dead frame; `fsaveS(h)`
+  of a local was refused. In rc.3, rc.2 and v0.58.0.
 
 ### Fixed
 
@@ -203,6 +235,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   taken for used, and an import a package the main package imports did not use
   was not reported at all, so programs `go build` rejects built. A package's name
   is used where it heads a selector. In every release.
+- **A slice declared without a value builds under a name C's library has**: `var
+  abs []Word`, math/big's NewInt, was declared as `abs` and read as `ogo_kw_abs`,
+  and no C compiler took it; so was `var printf []int = nil`. In every release
+  checked.
+- **A method on a field of a pointer to an anonymous struct builds**: `p :=
+  &struct{ v nat }{...}; p.v.id()` named a type `ogo_anon0` nothing declared, the
+  question the lifetime rules asked of the call having minted its typedef and
+  forgotten it while keeping its name. In rc.3, rc.2 and v0.58.0; v0.40.0 did
+  not parse the literal.
 - **`ogo build --report` itemizes the data of a program that asks
   `unsafe.Sizeof`**: the check of the target's layout the build writes after main
   was taken for one of the program's objects, and the table measuring their sizes,

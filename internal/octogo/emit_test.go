@@ -15414,6 +15414,235 @@ func (w W) send() { gch <- w.xs }
 	}
 }
 
+// TestEmitCValueRecvWhole: a VALUE receiver is a copy of what the method is
+// called on, and its value is what that storage holds, as its parts are (dom94).
+// A method handing it back or keeping it whole, `return z`, `keep = z`, was taken
+// to hand on nothing of it, and a store through its view, `z[0] = p`, to land
+// nowhere: called on an element, a field or a pointer's target, or through a
+// function the receiver is a parameter of, each kept a local's view past the
+// frame. And a plain function keeping a part of a struct, handed a part read out
+// of a holder, `fsaveS(hs[0])`: its contents were asked of nothing. Each row
+// beside a control over package storage; build/probes/sweeps/value-recv has 97.
+func TestEmitCValueRecvWhole(t *testing.T) {
+	const head = `type nat []int
+
+type H struct{ s []int }
+
+type ptrs []*int
+
+var keep nat
+
+var keepS []int
+
+var ch = make(chan nat, 1)
+
+var gb [4]int
+
+var pb [2]*int
+
+var gp = ptrs(pb[:])
+
+func (z nat) id() nat { return z }
+
+func (z nat) sub() nat {
+	y := z
+	return y[1:]
+}
+
+func (z nat) store() { keep = z }
+
+func (z nat) send() { ch <- z }
+
+func (h H) saveS() { keepS = h.s }
+
+func (z ptrs) set(p *int) { z[0] = p }
+
+func (z ptrs) swap() { z[0], z[1] = z[1], z[0] }
+
+func (z *nat) pid() nat { return *z }
+
+func (z *nat) pstore() { keep = *z }
+
+func fid(p nat) nat { return p.id() }
+
+func fstore(p nat) { p.store() }
+
+func fsaveS(h H) { keepS = h.s }
+
+func (z nat) two() (nat, int) { return z, len(z) }
+
+func fconv(b []int) { nat(b).store() }
+
+func fconvID(b []int) nat { return nat(b).id() }
+
+func fconvTwo(b []int) nat {
+	a, _ := nat(b).two()
+	return a
+}
+
+func fparamTwo(p nat) nat {
+	a, _ := p.two()
+	return a
+}
+
+var gout [8]int
+
+func (z nat) flush() { copy(gout[:], z) }
+
+func (z nat) flushVia() { z[:1].flush() }
+
+type Writer interface{ Write(p []int) (int, error) }
+
+type W struct{ err error }
+
+func (w *W) Write(p []int) (int, error) { return len(p), w.err }
+
+func copyTo(dst Writer) error {
+	_, err := dst.Write(nil)
+	return err
+}
+
+func through() error {
+	var lw W
+	return copyTo(&lw)
+}
+
+`
+	for _, test := range []struct {
+		name, call, want string // want "" means the program must be accepted
+	}{
+		{"an element's method handing back its receiver", "var a [2]nat\n\ta[0] = b[:]\n\tkeep = a[0].id()", "which holds a pointer into local b in package variable keep"},
+		{"a pointer's target's", "var a [2]nat\n\ta[0] = b[:]\n\tp := &a[0]\n\tkeep = (*p).id()", "which holds a pointer into local b in package variable keep"},
+		{"a field's", "var s struct{ v nat }\n\ts.v = b[:]\n\tkeep = s.v.id()", "which holds a pointer into local b in package variable keep"},
+		{"a method on its result", "var a [2]nat\n\ta[0] = b[:]\n\tkeep = a[0].id().id()", "which holds a pointer into local b in package variable keep"},
+		{"a resliced copy", "var a [2]nat\n\ta[0] = b[:]\n\tkeep = a[0].sub()", "which holds a pointer into local b in package variable keep"},
+		{"a local's method keeping its receiver", "x := nat(b[:])\n\tx.store()", "cannot call store on x: what its receiver holds is stored"},
+		{"a local's method handing it back", "x := nat(b[:])\n\tkeep = x.id()", "cannot store a slice backed by local x in package variable keep"},
+		{"a local's method started on a cog", "x := nat(b[:])\n\tgo x.send()\n\tkeep = <-ch", "cannot pass a slice backed by local x to a goroutine"},
+		{"a local's method deferred", "x := nat(b[:])\n\tdefer x.store()", "cannot call store on x: what its receiver holds is stored"},
+		{"a local's pointer method handing back what it points at", "x := nat(b[:])\n\tkeep = x.pid()", "cannot store a slice backed by local x in package variable keep"},
+		{"a local's pointer method keeping it", "x := nat(b[:])\n\tx.pstore()", "cannot call pstore on x: what its receiver holds is stored"},
+		{"an element's", "var a [2]nat\n\ta[0] = b[:]\n\ta[0].store()", "cannot call store on a: what its receiver holds is stored"},
+		{"an element's, sent", "var a [2]nat\n\ta[0] = b[:]\n\ta[0].send()\n\tkeep = <-ch", "cannot call send on a: what its receiver holds is handed to another cog"},
+		{"through a function's parameter, kept", "fstore(b[:])", "cannot pass a slice backed by local b to fstore: its parameter 1 is stored"},
+		{"through a function's parameter, handed back", "keep = fid(b[:])", "cannot store a slice backed by local b in package variable keep"},
+		{"a conversion's method keeping its receiver", "nat(b[:]).store()", "cannot call store on nat(b[:]): what its receiver holds is stored"},
+		{"a conversion's method handing it back", "keep = nat(b[:]).id()", "cannot store a slice backed by local b in package variable keep"},
+		{"a conversion's method of several results", "a, n := nat(b[:]).two()\n\tkeep = a\n\tprintln(n)", "cannot store a slice backed by local a in package variable keep"},
+		{"a function's conversion of its parameter, kept", "fconv(b[:])", "cannot pass a slice backed by local b to fconv: its parameter 1 is stored"},
+		{"a function's conversion of its parameter, handed back", "keep = fconvID(b[:])", "cannot store a slice backed by local b in package variable keep"},
+		{"one of several results of a conversion's method, handed back", "keep = fconvTwo(b[:])", "cannot store a slice backed by local b in package variable keep"},
+		{"one of several results of a parameter's method, handed back", "keep = fparamTwo(b[:])", "cannot store a slice backed by local b in package variable keep"},
+		{"a part read out of a holder", "var hs [2]H\n\ths[0].s = b[:]\n\tfsaveS(hs[0])", "cannot pass hs[0], whose contents hold a pointer into local b to fsaveS"},
+		{"a part read out of a holder, through a method", "var hs [2]H\n\ths[0].s = b[:]\n\ths[0].saveS()", "cannot call saveS on hs: what its receiver holds is stored"},
+	} {
+		for _, frame := range []bool{true, false} {
+			name, call, want := test.name, test.call, test.want
+			decl := "\tvar b [4]int\n"
+			if !frame {
+				name, call, want, decl = name+" (control)", strings.ReplaceAll(call, "b[:]", "gb[:]"), "", ""
+			}
+			t.Run(name, func(t *testing.T) {
+				src := head + "func use() {\n" + decl + "\t" + call + "\n}\n\nfunc main() {\n\tuse()\n\tprintln(len(keep), len(keepS), gp[0] == nil)\n}\n"
+				fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+				pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+				if err == nil {
+					err = EmitC(pkg, io.Discard, Checked())
+				}
+				switch {
+				case want == "" && err != nil:
+					t.Errorf("refused: %v\n%s", err, src)
+				case want != "" && err == nil:
+					t.Errorf("accepted, want %q\n%s", want, src)
+				case want != "" && !strings.Contains(err.Error(), want):
+					t.Errorf("got %v, want %q", err, want)
+				}
+			})
+		}
+	}
+	// A store through the receiver's view lands in what the method is called on
+	// holds: a package array's is refused, and the elements a Swap exchanges land
+	// where they were.
+	for _, test := range []struct{ name, call, want string }{
+		{"a store through the receiver's view", "x := 5\n\tgp.set(&x)", "cannot pass the address of local variable x to set"},
+		{"an error a Write through an interface hands back of what its receiver holds", "println(through() == nil)", ""},
+		{"a method copying its receiver's numbers out, on a local's view", "var lb [4]int\n\tnat(lb[:]).flush()\n\tx := nat(lb[:])\n\tx.flush()\n\tx.flushVia()", ""},
+		{"a swap through a local's", "var lb [2]*int\n\tx, y := 5, 6\n\tlb[0], lb[1] = &x, &y\n\tps := ptrs(lb[:])\n\tps.swap()\n\tprintln(*lb[0])", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := head + "func use() {\n\t" + test.call + "\n}\n\nfunc main() {\n\tuse()\n\tprintln(len(keep), len(keepS), gp[0] == nil)\n}\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.want == "" && err != nil:
+				t.Errorf("refused: %v\n%s", err, src)
+			case test.want != "" && err == nil:
+				t.Errorf("accepted, want %q\n%s", test.want, src)
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
+				t.Errorf("got %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+// TestEmitCListBindings: a pointer bound in a list of as many values as names,
+// `p2, p := &pw[0], &pw[1]`, is bound as one declared alone (bindValues): a store
+// through it into the local it points at was taken for one into storage not known
+// to be the frame's and refused (dom94, math/big's expNNWindowed); a store through
+// the other, at a package variable, still is, and so is one through a name a value
+// of the list names, Go's variable before the statement.
+// build/probes/sweeps/multi-bind has 61 rows.
+func TestEmitCListBindings(t *testing.T) {
+	const head = `var gs []int
+
+var gs2 []int
+
+func use() {
+	var a [4]int
+	var lb []int
+	BODY
+	println(len(lb))
+}
+
+func main() {
+	use()
+	println(len(gs), len(gs2))
+}
+`
+	for _, test := range []struct{ name, body, want string }{
+		{"one name", "p := &lb\n\tq := &gs\n\t*p = a[:]\n\t_ = q", ""},
+		{"a list", "p, q := &lb, &gs\n\t*p = a[:]\n\t_ = q", ""},
+		{"a list, reversed", "q, p := &gs, &lb\n\t*p = a[:]\n\t_ = q", ""},
+		{"a var list", "var p, q = &lb, &gs\n\t*p = a[:]\n\t_ = q", ""},
+		{"a list with a blank", "p, _ := &lb, &gs\n\t*p = a[:]", ""},
+		{"through the package variable's", "p, q := &lb, &gs\n\t*q = a[:]\n\t_ = p", "cannot store a slice backed by local a through *q"},
+		{"carried out", "p, q := &lb, &gs\n\t*p = a[:]\n\t_ = q\n\tgs2 = lb", "cannot store a slice backed by local lb in package variable gs2"},
+		{"given again", "p, q := &lb, &gs\n\tp = q\n\t*p = a[:]", "cannot store a slice backed by local a through *p"},
+		{"swapped", "p, q := &lb, &gs\n\tp, q = q, p\n\t*p = a[:]\n\t_ = q", "cannot store a slice backed by local a through *p"},
+		{"a value naming a target", "p := &lb\n\tp, q := &gs, p\n\t*p = a[:]\n\t_ = q", "cannot store a slice backed by local a through *p"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := strings.Replace(head, "BODY", test.body, 1)
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.want == "" && err != nil:
+				t.Errorf("refused: %v\n%s", err, src)
+			case test.want != "" && err == nil:
+				t.Errorf("accepted, want %q\n%s", test.want, src)
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
+				t.Errorf("got %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCPtrConvEscape: a conversion to a pointer type, `(*T)(&x)`, is the
 // address it converts, written straight into every sink -- a store, a return, a
 // send, a goroutine's argument, a callee that keeps it, now or deferred -- and

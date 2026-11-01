@@ -54,6 +54,76 @@ const hangsFor = 3 * time.Second
 
 var emitRunCases = []emitRunCase{
 	{
+		// math/big's `_, x = nat(nil).div(stk, nil, x, m)`: a method of several
+		// results on a conversion, in an assignment, a return and a call handed
+		// its results, was refused, "multiple-assignment target/result count
+		// mismatch" and "a return supplying every result needs a call ..." (dom94).
+		name: "a method of several results on a conversion",
+		src: `type nat []uint32
+
+var back = [4]uint32{3, 4, 5, 6}
+
+func (z nat) two(x nat) (nat, int) { return x, len(z) }
+
+func (z nat) pair() (int, int) { return len(z), cap(z) }
+
+func three() (nat, int) { return nat(back[:3]).two(back[1:]) }
+
+func sum(a nat, n int) int { return len(a) + n }
+
+func main() {
+	var x nat
+	x, _ = nat(nil).two(back[:2])
+	a, b := nat(back[:3]).pair()
+	y, n := three()
+	println(len(x), a, b, len(y), n, sum(nat(back[:1]).two(back[:])))
+}
+`,
+		want: "2 3 4 3 3 5\n",
+	},
+	{
+		// math/big's NewInt, `var abs []Word`: a slice declared without a value was
+		// declared under its own name and read under the one C's library leaves it,
+		// `ogo_kw_abs`, which no C compiler took (dom94).
+		name: "a slice declared without a value, named like a C library function",
+		src: `var back [3]int
+
+func f(n int) int {
+	var abs []int
+	var printf []int = nil
+	if n > 0 {
+		abs = back[:n]
+		printf = back[:1]
+	}
+	return len(abs)*10 + len(printf)
+}
+
+func main() { println(f(2), f(0)) }
+`,
+		want: "21 0\n",
+	},
+	{
+		// A method called on a field of a pointer to an anonymous struct: the
+		// summaries' question about the call minted the struct's typedef and
+		// forgot it, and the name stayed cached, so the C named an ogo_anon0
+		// nothing declared (dom94).
+		name: "a method on a field of a pointer to an anonymous struct",
+		src: `type nat []uint32
+
+var back [4]uint32
+
+func (z nat) id() nat { return z }
+
+func run() int {
+	p := &struct{ v nat }{v: back[:3]}
+	return len(p.v.id())
+}
+
+func main() { println(run()) }
+`,
+		want: "3\n",
+	},
+	{
 		// specs.go's "Memory shared between cogs": a cog's writes before Unlock
 		// reach Hub RAM before the lock is free, and its reads after a TryLock that
 		// answered true are made after the lock was taken, so a record of several
