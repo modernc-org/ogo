@@ -225,6 +225,12 @@ silent fault puts the count back to 0. Each round's account is in
   tables, a load cell's cog and a ticket printer's), against master on dom91's
   fixes: silent (an import Go reports unused taken for used: a field or a local of
   its name was a use, and a package the main package imports was never asked) -- 0
+- dom93 (2026-10-31), an electricity meters' data concentrator (Go 1.27's strconv
+  ported with its tests -- the unrounded scaling, the decimal's slow path, ftoa and
+  atof over Paxson's and testbase's data -- four IEC 62056-21 meters on cogs, a
+  concentrator's select over their lines), against master on dom92's fix: clean,
+  one loud fault fixed (`ogo build --report` left the data of a program asking
+  unsafe.Sizeof unitemized) -- 1
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
