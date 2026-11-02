@@ -251,6 +251,10 @@ silent fault puts the count back to 0. Each round's account is in
   chained by HMAC), against master on dom94's fix: clean, one loud fault fixed (a
   name C leaves to the implementation, `asm` or `__restrict`, declared as
   written), one listed (an append to a make) -- 1
+- dom96 (2026-11-02), a warehouse tug localized by UWB ranges (Go 1.27's
+  math/rand/v2 and internal/chacha8rand ported with their tests, a plant and a
+  radio on cogs, a particle filter, orders by Zipf's law toured by 2-opt),
+  against master on dom95's fix: clean -- 2
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
