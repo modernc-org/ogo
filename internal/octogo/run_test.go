@@ -12091,6 +12091,137 @@ func main() {
 		want: "6 5 5\n",
 	},
 	{
+		// An initializer waits on the methods its functions call, of the
+		// receiver's type: a receiver the ordering pass could not type stood for
+		// every method of its name, so `sb.String()` of a Builder, `b.Get()` of a
+		// B declared by :=, a field's, an element's and a call's waited on an A's
+		// method reading y, and ran after y where Go runs them before; and a :=
+		// in a header read nothing, `if v := z; ...` running before z and reading
+		// 0. Its position against the := was a token's, which a non-terminal has
+		// not (dom97, sweeps/init-methods).
+		name: "an initializer waits on the methods it calls, of the receiver's type",
+		src: `// The order the initializers ran in, by the steps they note.
+var order [16]int
+
+var norder int
+
+func note(k int) {
+	order[norder] = k
+	norder++
+}
+
+type A struct{ n int }
+
+type B struct{ n int }
+
+func (A) Get() int {
+	note(1)
+	return y
+}
+
+func (B) Get() int {
+	note(2)
+	return 5
+}
+
+type H struct{ b B }
+
+var gH = H{b: B{1}}
+
+var bs = []B{{1}, {2}}
+
+var back [8]byte
+
+func (A) String() string {
+	note(1)
+	if y == 0 {
+		return "zero"
+	}
+	return "y"
+}
+
+func newB() B { return B{1} }
+
+func viaLit() int {
+	b := B{}
+	return b.Get()
+}
+
+func viaCtor() int {
+	b := newB()
+	return b.Get()
+}
+
+func viaField() int {
+	return gH.b.Get()
+}
+
+func viaRange() int {
+	n := 0
+	for _, b := range bs {
+		n += b.Get()
+	}
+	return n
+}
+
+func viaChain() int {
+	return newB().Get()
+}
+
+func viaBuilder() int {
+	sb := NewBuilder(back[:])
+	sb.WriteString("ab")
+	note(4)
+	return len(sb.String())
+}
+
+func viaHeader() int {
+	if v := z; v > 0 {
+		note(6)
+		return v
+	}
+	return -1
+}
+
+var x1 = viaLit()
+
+var x2 = viaCtor()
+
+var x3 = viaField()
+
+var x4 = viaRange()
+
+var x5 = viaChain()
+
+var x6 = viaBuilder()
+
+var x7 = viaHeader()
+
+var y = mark(7)
+
+var z = mark(8)
+
+func mark(v int) int {
+	note(3)
+	return v
+}
+
+func run() {
+	println(x1, x2, x3, x4, x5, x6, x7, y, z)
+	for _, k := range order[:norder] {
+		print(k)
+	}
+	println()
+	println(A{}.Get(), A{}.String())
+}
+
+func main() {
+	run()
+}
+`,
+		want: "5 5 5 10 5 2 8 7 8\n2222224336\n7 y\n",
+	},
+	{
 		// The accepting side of the block-lifetime rule, which exists because Go's
 		// loop variable is per ITERATION (since 1.22) and a body-scoped local has
 		// been per iteration since 1.0. Keeping a reference to either past the

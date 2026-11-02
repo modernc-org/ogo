@@ -173,6 +173,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A package variable is initialized when Go initializes it, by the methods
+  its initializer calls**: a variable declared in an `if`, a `for` or a `switch`
+  header, `if v := z; v > 0`, in a function an initializer calls, read nothing
+  to the ordering pass, and the initializer ran before z and read its zero
+  value; and a method called on a receiver the pass could not type -- declared
+  by `:=` from a literal or a call, a field, an element, a range value, what a
+  call hands back, a Builder -- was taken for every method of its name, so an
+  initializer ran after a variable another type's method of that name reads,
+  where Go runs it before, or was refused as a cycle Go does not see. In every
+  release checked.
 - **A name C leaves to the implementation builds**: `gen, asm :=
   New().(*digest), New().(*digest)`, Go's crypto/md5 test, was declared `asm` in
   the C, which GNU C takes for a keyword, and the host's compiler refused it; and

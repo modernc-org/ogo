@@ -19,11 +19,16 @@
 //     shadow inside a block does not hide a read after it (probe g5).
 //
 //   - A selector member may be a METHOD reference, which Go also counts. The
-//     walker records it as a marker resolved at assembly time: exactly, when the
-//     receiver is a package variable or a local of known type (probe g7 -- two
-//     types with a same-named method must not blur into each other); as the union
-//     of all same-named methods when the receiver's type is unknown (a chain, a
-//     call result), which errs toward more ordering. A receiver of interface
+//     walker records it as a marker resolved at assembly time, against the
+//     receiver's type: the walk follows a value's type through every step of a
+//     chain -- a local's, as its declaration gives it, a field's, an element's,
+//     what a method or a function value hands back -- so two types with a
+//     same-named method do not blur into each other (probe g7). Only where no
+//     step can be typed does the union of all same-named methods stand in, and
+//     that is no safe default: Go orders an initializer by exactly the methods it
+//     calls, and a method of another type is a dependency it does not have, which
+//     moves the initializer after a variable Go initializes later, or refuses a
+//     cycle Go does not see (dom97, sweeps/init-methods). A receiver of interface
 //     type resolves to no method, which is Go's rule too: dispatch through an
 //     interface is not a dependency.
 //
@@ -140,32 +145,22 @@ func (w *refWalker) ident(name string) {
 	w.add(w.e.globalC(name))
 }
 
-// memberRef records what a selector member may depend on. resolvable says the
-// member hangs directly off the base identifier; deeper in a chain the static
-// type is not tracked and the union marker stands in.
-func (w *refWalker) memberRef(baseName string, resolvable bool, m string) {
+// memberRef records what a selector member m of a value of type t may depend
+// on: the method of t's method base, when t is known (a typed marker, which
+// names no method where m is a field); nothing when t is known and carries no
+// methods, an interface's call being no dependency in Go; and the union of every
+// same-named method only where t is unknown.
+func (w *refWalker) memberRef(t string, m string) {
 	if m == "" || m == "_" {
 		return
 	}
-	if !resolvable || baseName == "" {
+	if t == "" {
 		w.add(refMarkUnion + m)
 		return
 	}
-	if base, isLocal := w.local(baseName); isLocal {
-		if base == "" {
-			w.add(refMarkUnion + m)
-		} else {
-			w.add(refMarkTyped + base + "\x01" + m)
-		}
-		return
+	if base, ok := w.methodBase(t); ok {
+		w.add(refMarkTyped + base + "\x01" + m)
 	}
-	if _, isImport := w.quals[baseName]; isImport {
-		// A qualified reference into another package. Its package's own steps
-		// precede this one structurally, and an import cycle cannot exist, so
-		// there is nothing to order and nothing that can cycle.
-		return
-	}
-	w.add(refMarkGlobal + w.e.globalC(baseName) + "\x01" + m)
 }
 
 // selectorMember reads a Selector's member identifier; a type assertion
@@ -180,27 +175,63 @@ func (w *refWalker) selectorMember(n Node) (string, bool) {
 }
 
 // chain walks a suffix run -- Selector, Index, CallSuffix -- hanging off
-// baseName. Only the first selector can resolve against the base's static type;
-// after any hop the type is no longer tracked.
+// baseName, the value's type followed through each step (chainSteps): a method
+// called on what a field, an element or a call hands back resolves against that
+// value's type, not against every method of its name (dom97).
 func (w *refWalker) chain(baseName string, nodes []Node) {
-	first := true
-	for _, n := range nodes {
+	t := ""
+	if baseName != "" {
+		if _, isLocal := w.local(baseName); !isLocal {
+			if _, isImport := w.quals[baseName]; isImport {
+				// A qualified reference into another package. Its package's own
+				// steps precede this one structurally, and an import cycle cannot
+				// exist, so there is nothing to order and nothing that can cycle.
+				t := w.qualifiedType(baseName, nodes)
+				rest := nodes[min(1, len(nodes)):]
+				if len(rest) > 0 && rest[0].sym == CallSuffix {
+					w.expr(rest[0].ast)
+					rest = rest[1:]
+				}
+				w.chainSteps(t, rest)
+				return
+			}
+		}
+		t = w.nameType(baseName)
+		// A method expression, `T.m`: the method of T, which Go counts as a
+		// reference to it.
+		if _, isLocal := w.local(baseName); !isLocal && t == "" && w.isTypeName(w.e.globalC(baseName)) {
+			t = w.e.globalC(baseName)
+		}
+	}
+	w.chainSteps(t, nodes)
+}
+
+// chainSteps walks the steps after a value of type t, "" where unknown.
+func (w *refWalker) chainSteps(t string, nodes []Node) {
+	for i, n := range nodes {
 		switch n.sym {
 		case Selector:
-			if m, ok := w.selectorMember(n); ok {
-				w.memberRef(baseName, first, m)
+			m, ok := w.selectorMember(n)
+			if !ok {
+				// A type assertion: its type is the asserted one, read nowhere here.
+				t = ""
+				continue
 			}
+			w.memberRef(t, m)
 			// Nothing inside is walked: the member is a field or method name,
 			// not a variable, and an assertion's type is not one either. That
 			// distinction is load-bearing: reading members as plain references
 			// once made `var a = s.a` report "a refers to itself".
-			first = false
+			call := i+1 < len(nodes) && nodes[i+1].sym == CallSuffix
+			t = w.memberType(t, m, call)
 		case Index:
 			w.expr(n.ast)
-			first = false
+			t = w.elemType(t)
 		case CallSuffix:
 			w.expr(n.ast)
-			first = false
+			if i == 0 || nodes[i-1].sym != Selector {
+				t = w.callType(t) // a function value's call
+			}
 		}
 	}
 }
@@ -215,7 +246,7 @@ func (w *refWalker) expr(ast []int32) {
 			// A suffix reached outside a factor or a paired statement head:
 			// nothing tracks its base here.
 			if m, ok := w.selectorMember(n); ok {
-				w.memberRef("", false, m)
+				w.memberRef("", m)
 			}
 		case Element:
 			// A keyed element's KEY names a field or a constant index, so only
@@ -251,15 +282,26 @@ func (w *refWalker) expr(ast []int32) {
 func (w *refWalker) factor(n Node) {
 	kids := slices.Collect(it(n.ast))
 	base := ""
+	// What the steps after a literal or a parenthesised operand hang off:
+	// `B{}.Get()` and `(b).Get()` resolve against B and b's type, not against
+	// every Get (dom97).
+	head, headTyped := "", false
 	for i, c := range kids {
 		switch {
 		case c.sym == 0 && i == 0 && w.e.f.ch(c.tok) == IDENT:
 			base = w.e.src(c.tok)
 			w.ident(base)
 		case c.sym == FactorSuffix:
-			w.chain(base, slices.Collect(it(c.ast)))
+			if headTyped {
+				w.chainSteps(head, slices.Collect(it(c.ast)))
+				continue
+			}
+			w.chainAfterIdent(base, slices.Collect(it(c.ast)))
 		case c.sym == CompositeLit:
 			w.expr(c.ast)
+			if base != "" {
+				head, headTyped = w.e.mangle(w.e.curPkgPrefix, base), true
+			}
 		case c.sym == FuncLiteral:
 			w.funcLit(c)
 		case c.sym == Type:
@@ -268,6 +310,9 @@ func (w *refWalker) factor(n Node) {
 			// parens, brackets, literals, "chan"
 		default:
 			w.expr(c.ast)
+			if i == 1 && kids[0].sym == 0 && w.e.f.ch(kids[0].tok) == LPAREN {
+				head, headTyped = w.exprType(c), true
+			}
 		}
 	}
 }
@@ -306,6 +351,25 @@ func (w *refWalker) declareSig(sig []int32) {
 // else -- a slice, a channel, a literal struct -- carries no method set worth
 // resolving and yields "".
 func (w *refWalker) typeBaseName(t Node) string {
+	// `[]T` and `[N]T` of a named T, or of a pointer to one: the slice's C name,
+	// and an array's element, which a range or an index types. Read off the
+	// syntax, never asked of the emitter's arrayDim: the walk runs after the
+	// bodies, where a type a function declares is out of the emitter's scope,
+	// and arrayDim refused `[5]subtest` as an "unsupported type" (dom97).
+	if kids := slices.Collect(it(t.ast)); len(kids) >= 3 && kids[0].sym == 0 && w.e.f.ch(kids[0].tok) == LBRACK && kids[len(kids)-1].sym == Type {
+		elem := kids[len(kids)-1]
+		el := w.typeBaseName(elem)
+		if el == "" || strings.HasPrefix(el, "[") || strings.HasPrefix(el, sliceTypePrefix) {
+			return ""
+		}
+		if w.pointerType(elem) {
+			el += "*"
+		}
+		if len(kids) == 3 && kids[1].sym == 0 && w.e.f.ch(kids[1].tok) == RBRACK {
+			return sliceCName(el)
+		}
+		return "[" + el
+	}
 	var idents []string
 	var walk func([]int32)
 	walk = func(ast []int32) {
@@ -335,6 +399,12 @@ func (w *refWalker) typeBaseName(t Node) string {
 		}
 	}
 	return ""
+}
+
+// pointerType reports whether a written type is a pointer, `*T`.
+func (w *refWalker) pointerType(t Node) bool {
+	kids := slices.Collect(it(t.ast))
+	return len(kids) == 2 && kids[0].sym == 0 && w.e.f.ch(kids[0].tok) == MUL
 }
 
 // stmts walks a statement list (a Block's or a clause's).
@@ -409,6 +479,8 @@ func (w *refWalker) declSpecs(ast []int32, spec Symbol) {
 		}
 		var names []string
 		base := ""
+		typed := false
+		var value Node
 		sawType := false
 		for d := range it(c.ast) {
 			switch {
@@ -422,16 +494,26 @@ func (w *refWalker) declSpecs(ast []int32, spec Symbol) {
 				}
 			case d.sym == Type:
 				sawType = true
+				typed = true
 				base = w.typeBaseName(d)
 			case d.sym == ExpressionList || d.sym == Expression:
 				sawType = true
+				value = d
 				w.expr(d.ast)
 			case d.sym != 0:
 				sawType = true
 				w.expr(d.ast)
 			}
 		}
-		for _, nm := range names {
+		// `var b = B{}`, `var b, err = mk()`: the value's type, as `:=` takes it.
+		var types []string
+		if !typed && value.sym != 0 && len(names) > 0 {
+			types = w.rhsTypes(value, len(names))
+		}
+		for k, nm := range names {
+			if types != nil {
+				base = types[k]
+			}
 			w.declare(nm, base)
 		}
 	}
@@ -446,10 +528,15 @@ func (w *refWalker) declSpecs(ast []int32, spec Symbol) {
 // is Go's rule too (probe g3).
 func (w *refWalker) headerConstruct(nodes []Node) {
 	flat := flattenHeader(nodes)
-	defineAt := int32(-1)
-	for _, n := range flat {
+	// Where the DEFINE stands in flat: a node before it is a declaration
+	// position. Its index, not its token -- a non-terminal's tok is 0, and read so
+	// every node after a header's `:=` was one too, its references dropped and its
+	// type unread: `if v := y; ...` in a function an initializer calls ordered
+	// that initializer before y's, which it read as zero (dom97).
+	defineAt := -1
+	for i, n := range flat {
 		if n.sym == 0 && w.e.f.ch(n.tok) == DEFINE {
-			defineAt = n.tok
+			defineAt = i
 			break
 		}
 	}
@@ -471,7 +558,7 @@ func (w *refWalker) headerConstruct(nodes []Node) {
 		if n.sym == 0 {
 			continue
 		}
-		if n.tok < defineAt {
+		if i < defineAt {
 			// a declaration position: its sole identifier is the new name
 			if nm, ok := w.declNodeName(n); ok {
 				decls = append(decls, nm)
@@ -484,16 +571,24 @@ func (w *refWalker) headerConstruct(nodes []Node) {
 			// the right side, read before the names exist
 			w.exprNode(n)
 			rhsWalked = true
-			// `v := T{...}`: one name over a sole composite literal tracks the
-			// receiver type for exact method resolution later in the body.
-			if len(decls) == 1 {
-				if base, ok := w.soleLitType(n); ok {
-					declareNow()
-					w.frames[len(w.frames)-1][decls[0]] = base
-					continue
+			// One name over a value whose type the walk can tell -- `v := T{...}`,
+			// `v := &T{...}`, `v := NewT()`, a conversion, a name -- tracks the
+			// receiver type for exact method resolution later in the body; several
+			// names over one call, each result's.
+			var types []string
+			if defineAt+1 < len(flat) && flat[defineAt+1].sym == 0 && w.e.f.ch(flat[defineAt+1].tok) == RANGE {
+				// `for k, v := range x`: v is an element of x.
+				types = make([]string, len(decls))
+				if len(types) == 2 {
+					types[1] = w.elemType(w.exprType(n))
 				}
+			} else {
+				types = w.rhsTypes(n, len(decls))
 			}
 			declareNow()
+			for k, t := range types {
+				w.frames[len(w.frames)-1][decls[k]] = t
+			}
 			continue
 		}
 		if !declared {
@@ -578,7 +673,7 @@ func (w *refWalker) headRun(nodes []Node) {
 			for j < len(nodes) && (nodes[j].sym == Selector || nodes[j].sym == Index || nodes[j].sym == CallSuffix) {
 				j++
 			}
-			w.chain(base, nodes[i+1:j])
+			w.chainAfterIdent(base, nodes[i+1:j])
 			i = j
 			continue
 		}
@@ -599,27 +694,368 @@ func (w *refWalker) headRun(nodes []Node) {
 	}
 }
 
-// soleLitType recognises a right side that is exactly `T{...}` and names T's
-// mangled base, for local receiver-type tracking.
-func (w *refWalker) soleLitType(n Node) (string, bool) {
+// The walk's types. A frame names each local's type, a C type the emitter's
+// registries speak ("B", "B*", "ogo_slice_B", "ogo_builder"), or "[" before
+// the element's for an array, which has no C value type here, or "" where the
+// walk cannot tell. A call through a value of unknown type depends on every
+// method of its name -- the union, which is no safe default: Go orders an
+// initializer by the methods it calls, and one of another type is a step it
+// does not wait for (a Builder's String waited on a Stringer's package
+// variable, and an initializer ran after one Go runs it before, dom97). So the
+// forms a program declares a receiver by are typed here, and the union is left
+// to what none of them reaches.
+
+// nameType is the type of a bare name: a local's, a package variable's.
+func (w *refWalker) nameType(name string) string {
+	if t, isLocal := w.local(name); isLocal {
+		return t
+	}
+	gn := w.e.globalC(name)
+	if ct, ok := w.e.globals[gn]; ok {
+		return ct
+	}
+	if a, ok := w.e.globalArrays[gn]; ok {
+		return arrayWType(a)
+	}
+	return ""
+}
+
+// arrayWType is an array's type: its defined type's name, which carries its
+// methods, or "[" and the element of a one-dimensional one.
+func arrayWType(a arrDim) string {
+	if a.name != "" {
+		return a.name
+	}
+	if len(a.inner) == 0 && a.elem != "" {
+		return "[" + a.elem
+	}
+	return ""
+}
+
+// methodBase is the method base of a value of type t, when it has one.
+func (w *refWalker) methodBase(t string) (string, bool) {
+	if t == "" || strings.HasPrefix(t, "[") {
+		return "", false
+	}
+	base := methodBaseType(w.e.unaliased(t))
+	if w.e.isMethodBase(base) {
+		return base, true
+	}
+	return "", false
+}
+
+// memberType is the type of t.m: a method's one result where call says it is
+// called, a field's type, "" for anything else.
+func (w *refWalker) memberType(t, m string, call bool) string {
+	if t == "" || strings.HasPrefix(t, "[") {
+		return ""
+	}
+	base := methodBaseType(w.e.unaliased(t))
+	if rets, isMethod := w.e.funcRet[w.e.methodCName(base, m)]; isMethod {
+		if call && len(rets) == 1 {
+			return rets[0]
+		}
+		return ""
+	}
+	ft := w.fieldType(base, m, 0)
+	if call {
+		// A field holding a function value, called: its type's one result.
+		return w.callType(ft)
+	}
+	return ft
+}
+
+// callType is the one result of a call through a value of function type t.
+func (w *refWalker) callType(t string) string {
+	if t == "" {
+		return ""
+	}
+	if rets := w.e.funcTypeRet[w.e.underlyingCType(t)]; len(rets) == 1 {
+		return rets[0]
+	}
+	return ""
+}
+
+// fieldType is the type of a struct's field f, promoted through embedded
+// fields as Go promotes it, the shallowest first.
+func (w *refWalker) fieldType(base, f string, depth int) string {
+	fields, ok := w.e.structs[base]
+	if !ok || depth > 4 {
+		return ""
+	}
+	for _, fd := range fields {
+		if fd.name == f {
+			if fd.dim.bound != "" {
+				return arrayWType(fd.dim)
+			}
+			return fd.ctype
+		}
+	}
+	for _, fd := range fields {
+		if fd.embedded && fd.dim.bound == "" {
+			if t := w.fieldType(methodBaseType(w.e.unaliased(fd.ctype)), f, depth+1); t != "" {
+				return t
+			}
+		}
+	}
+	return ""
+}
+
+// elemType is the type of an element of a value of type t: an array's, a
+// slice's.
+func (w *refWalker) elemType(t string) string {
+	if el, isArr := strings.CutPrefix(t, "["); isArr {
+		return el
+	}
+	if a, ok := w.e.namedArrays[t]; ok {
+		if len(a.inner) == 0 {
+			return a.elem
+		}
+		return ""
+	}
+	u := w.e.underlyingCType(t)
+	if strings.HasPrefix(u, sliceTypePrefix) {
+		return w.e.sliceElemFromCName(u)
+	}
+	return ""
+}
+
+// qualifiedType is the type of pkg.X followed by the step after it: a
+// variable's, a function's one result, a conversion's.
+func (w *refWalker) qualifiedType(pkg string, nodes []Node) string {
+	if len(nodes) == 0 || nodes[0].sym != Selector {
+		return ""
+	}
+	m, ok := w.selectorMember(nodes[0])
+	if !ok {
+		return ""
+	}
+	mangled := w.e.mangle(w.quals[pkg], m)
+	if len(nodes) > 1 && nodes[1].sym == CallSuffix {
+		if rets, isFunc := w.e.funcRet[mangled]; isFunc {
+			if len(rets) == 1 {
+				return rets[0]
+			}
+			return ""
+		}
+		if w.isTypeName(mangled) {
+			return mangled
+		}
+		return ""
+	}
+	if ct, ok := w.e.globals[mangled]; ok {
+		return ct
+	}
+	if a, ok := w.e.globalArrays[mangled]; ok {
+		return arrayWType(a)
+	}
+	return ""
+}
+
+func (w *refWalker) isTypeName(mangled string) bool {
+	_, isStruct := w.e.structs[mangled]
+	_, isArr := w.e.namedArrays[mangled]
+	return isStruct || isArr || w.e.namedTypes[mangled]
+}
+
+// chainAfterIdent walks the steps after an identifier, a call of a package
+// function or a conversion typed by what it yields: `newB().Get()`.
+func (w *refWalker) chainAfterIdent(base string, nodes []Node) {
+	if t, ok := w.callOfName(base, nodes); ok {
+		w.expr(nodes[0].ast)
+		w.chainSteps(t, nodes[1:])
+		return
+	}
+	w.chain(base, nodes)
+}
+
+// callOfName types `name(...)` heading a run of steps: a package function's one
+// result, a conversion's type, NewBuilder's Builder.
+func (w *refWalker) callOfName(name string, nodes []Node) (string, bool) {
+	if name == "" || len(nodes) == 0 || nodes[0].sym != CallSuffix {
+		return "", false
+	}
+	if _, isLocal := w.local(name); isLocal {
+		return "", false
+	}
+	gn := w.e.globalC(name)
+	if rets, isFunc := w.e.funcRet[gn]; isFunc {
+		if len(rets) == 1 {
+			return rets[0], true
+		}
+		return "", true
+	}
+	if w.isTypeName(gn) {
+		return gn, true
+	}
+	if name == "NewBuilder" {
+		return "ogo_builder", true
+	}
+	return "", false
+}
+
+// exprType is the type of a right side that is one operand: a composite
+// literal, a name, a chain off one, through parentheses, `&` and `*`.
+func (w *refWalker) exprType(n Node) string {
+	ast := n.ast
+	stars, addr := 0, false
+	for {
+		kids := slices.Collect(it(ast))
+		if len(kids) == 2 && kids[0].sym == UnaryOp {
+			tok, ok := w.e.unaryOpTok(kids[0].ast)
+			if !ok {
+				return ""
+			}
+			switch w.e.f.ch(tok) {
+			case AND:
+				if stars > 0 || addr {
+					return ""
+				}
+				addr = true
+			case MUL:
+				if addr {
+					return ""
+				}
+				stars++
+			default:
+				return ""
+			}
+			kids = kids[1:]
+		}
+		if len(kids) != 1 {
+			return ""
+		}
+		switch kids[0].sym {
+		case Expression, HeaderExpression, SimpleExpr, HeaderSimpleExpr, Term, HeaderTerm,
+			UnaryExpr, HeaderUnaryExpr, ExpressionList:
+			ast = kids[0].ast
+			continue
+		case Factor, HeaderFactor:
+		default:
+			return ""
+		}
+		fk := slices.Collect(it(kids[0].ast))
+		// (x) is x.
+		if len(fk) == 3 && fk[0].sym == 0 && w.e.f.ch(fk[0].tok) == LPAREN && fk[2].sym == 0 && w.e.f.ch(fk[2].tok) == RPAREN {
+			ast = fk[1].ast
+			continue
+		}
+		t := w.factorType(fk)
+		for ; stars > 0 && t != ""; stars-- {
+			var isPtr bool
+			if t, isPtr = strings.CutSuffix(w.e.unaliased(t), "*"); !isPtr {
+				return ""
+			}
+		}
+		if addr && t != "" {
+			t += "*"
+		}
+		return t
+	}
+}
+
+// factorType types a Factor's parts, its references walked elsewhere.
+func (w *refWalker) factorType(fk []Node) string {
+	if len(fk) == 0 || fk[0].sym != 0 || w.e.f.ch(fk[0].tok) != IDENT {
+		return ""
+	}
+	name := w.e.src(fk[0].tok)
+	if len(fk) == 1 {
+		return w.nameType(name)
+	}
+	if len(fk) == 2 && fk[1].sym == CompositeLit {
+		return w.e.mangle(w.e.curPkgPrefix, name)
+	}
+	if len(fk) != 2 || fk[1].sym != FactorSuffix {
+		return ""
+	}
+	nodes := slices.Collect(it(fk[1].ast))
+	t := ""
+	rest := nodes
+	if ct, ok := w.callOfName(name, nodes); ok {
+		t, rest = ct, nodes[1:]
+	} else if _, isLocal := w.local(name); !isLocal {
+		if _, isImport := w.quals[name]; isImport {
+			t = w.qualifiedType(name, nodes)
+			rest = nodes[min(1, len(nodes)):]
+			if len(rest) > 0 && rest[0].sym == CallSuffix {
+				rest = rest[1:]
+			}
+		} else {
+			t = w.nameType(name)
+		}
+	} else {
+		t = w.nameType(name)
+	}
+	for i, n := range rest {
+		switch n.sym {
+		case Selector:
+			m, ok := w.selectorMember(n)
+			if !ok {
+				return ""
+			}
+			t = w.memberType(t, m, i+1 < len(rest) && rest[i+1].sym == CallSuffix)
+		case Index:
+			t = w.elemType(t)
+		case CallSuffix:
+			if i == 0 || rest[i-1].sym != Selector {
+				t = w.callType(t)
+			}
+		}
+	}
+	return t
+}
+
+// rhsTypes types each of count names a right side declares: one name its
+// value's, several names a call's results.
+func (w *refWalker) rhsTypes(n Node, count int) []string {
+	types := make([]string, count)
+	if count == 1 {
+		types[0] = w.exprType(n)
+		return types
+	}
+	if fac, ok := w.soleFactor(n); ok {
+		fk := slices.Collect(it(fac.ast))
+		if len(fk) == 2 && fk[0].sym == 0 && w.e.f.ch(fk[0].tok) == IDENT && fk[1].sym == FactorSuffix {
+			name := w.e.src(fk[0].tok)
+			nodes := slices.Collect(it(fk[1].ast))
+			var rets []string
+			_, local := w.local(name)
+			if !local && len(nodes) == 1 && nodes[0].sym == CallSuffix {
+				rets = w.e.funcRet[w.e.globalC(name)]
+			} else if len(nodes) == 2 && nodes[0].sym == Selector && nodes[1].sym == CallSuffix {
+				if m, ok := w.selectorMember(nodes[0]); ok {
+					if prefix, isImport := w.quals[name]; isImport && !local {
+						rets = w.e.funcRet[w.e.mangle(prefix, m)]
+					} else if base, ok := w.methodBase(w.nameType(name)); ok {
+						rets = w.e.funcRet[w.e.methodCName(base, m)]
+					}
+				}
+			}
+			if len(rets) == count {
+				copy(types, rets)
+			}
+		}
+	}
+	return types
+}
+
+// soleFactor unwraps a right side that is one operand to its Factor.
+func (w *refWalker) soleFactor(n Node) (Node, bool) {
 	ast := n.ast
 	for {
 		kids := slices.Collect(it(ast))
 		if len(kids) != 1 {
-			return "", false
+			return Node{}, false
 		}
 		switch kids[0].sym {
 		case Expression, HeaderExpression, SimpleExpr, HeaderSimpleExpr, Term, HeaderTerm,
 			UnaryExpr, HeaderUnaryExpr, ExpressionList:
 			ast = kids[0].ast
 		case Factor, HeaderFactor:
-			fk := slices.Collect(it(kids[0].ast))
-			if len(fk) == 2 && fk[0].sym == 0 && w.e.f.ch(fk[0].tok) == IDENT && fk[1].sym == CompositeLit {
-				return w.e.mangle(w.e.curPkgPrefix, w.e.src(fk[0].tok)), true
-			}
-			return "", false
+			return kids[0], true
 		default:
-			return "", false
+			return Node{}, false
 		}
 	}
 }
