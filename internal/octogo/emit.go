@@ -4441,6 +4441,20 @@ func (e *emitter) staticLitElementsOKLevels(lit Node, levels []litLevel) bool {
 // pkgInitDefs renders the synthesized initializer, or "" when there is nothing to
 // do. It is emitted after the prototypes, since it calls user functions.
 func (e *emitter) pkgInitDefs() string {
+	if len(e.pkgInit) == 0 && len(e.chanSiteInit) == 0 {
+		return ""
+	}
+	// Ordered even where no step writes anything: a cycle through variables C
+	// initializes statically is Go's to refuse as well (pkgVarPlaces).
+	e.resolveFuncRefs()
+	names := make([]string, len(e.pkgInit))
+	deps := make([][]string, len(e.pkgInit))
+	pkgOf := make([]int, len(e.pkgInit))
+	for i, st := range e.pkgInit {
+		names[i], deps[i], pkgOf[i] = st.target, e.flattenDeps(st.deps), st.pkg
+	}
+	order, cyclic := initOrderCycle(names, deps, pkgOf)
+	e.reportInitCycle(cyclic)
 	if !e.needsPkgInit() {
 		return ""
 	}
@@ -4451,15 +4465,6 @@ func (e *emitter) pkgInitDefs() string {
 	for _, stmt := range e.chanSiteInit {
 		fmt.Fprintf(&b, "\t%s\n", stmt)
 	}
-	e.resolveFuncRefs()
-	names := make([]string, len(e.pkgInit))
-	deps := make([][]string, len(e.pkgInit))
-	pkgOf := make([]int, len(e.pkgInit))
-	for i, st := range e.pkgInit {
-		names[i], deps[i], pkgOf[i] = st.target, e.flattenDeps(st.deps), st.pkg
-	}
-	order, cyclic := stableTopoOrderCycle(names, deps, pkgOf)
-	e.reportInitCycle(cyclic)
 	for _, i := range order {
 		for _, stmt := range e.pkgInit[i].stmts {
 			fmt.Fprintf(&b, "\t%s\n", stmt)
@@ -4469,8 +4474,11 @@ func (e *emitter) pkgInitDefs() string {
 	return b.String()
 }
 
-// needsPkgInit reports whether the package has anything to initialize.
-func (e *emitter) needsPkgInit() bool { return len(e.pkgInit) != 0 || len(e.chanSiteInit) != 0 }
+// needsPkgInit reports whether the package has anything to initialize: a step that
+// writes something, a place (pkgVarPlaces) being none.
+func (e *emitter) needsPkgInit() bool {
+	return len(e.chanSiteInit) != 0 || slices.ContainsFunc(e.pkgInit, func(st pkgInitStep) bool { return len(st.stmts) != 0 })
+}
 
 // chanType recognises a channel type `chan T`, returning its element C type. A
 // directional one, `chan<- T` or `<-chan T`, is the same cell: the direction is
@@ -4900,8 +4908,8 @@ func stableTopoOrder(names []string, deps [][]string) []int {
 
 // stableTopoOrderCycle is stableTopoOrder with the items it could not place named
 // too. They are exactly the ones in a dependency CYCLE, and whether that is an error
-// is the caller's to decide -- the typedef ordering leaves it to the C compiler,
-// while package initialization reports it as Go does.
+// is the caller's to decide -- the typedef ordering leaves it to the C compiler.
+// It is not Go's order of package initialization, which initOrderCycle is.
 func stableTopoOrderCycle(names []string, deps [][]string, pkgs []int) (order, cyclic []int) {
 	provides := make(map[string]bool, len(names))
 	for _, n := range names {
@@ -4955,6 +4963,59 @@ func stableTopoOrderCycle(names []string, deps [][]string, pkgs []int) (order, c
 			return append(out, deferred...), deferred // a cycle
 		}
 		rest = deferred
+	}
+	return out, nil
+}
+
+// initOrderCycle orders the steps of package initialization as Go orders them:
+// step by step, the item earliest in the given order whose dependencies are all
+// done. stableTopoOrderCycle places what it can in passes, and an item waiting on
+// a later one ran after every item given after it that was ready: `var a = f(1,
+// b); var b = f(2, 0); var c = f(3, 0)` ran b, c, a, where Go runs b, a, c
+// (dom97, sweeps/init-schedule). names, deps and pkgs are stableTopoOrderCycle's,
+// a smaller pkg a barrier, and cyclic is what could not be placed.
+func initOrderCycle(names []string, deps [][]string, pkgs []int) (order, cyclic []int) {
+	provides := make(map[string]bool, len(names))
+	for _, n := range names {
+		if n != "" {
+			provides[n] = true
+		}
+	}
+	remaining := map[int]int{}
+	for _, p := range pkgs {
+		remaining[p]++
+	}
+	done := make(map[string]bool, len(names))
+	ready := func(i int) bool {
+		for q, n := range remaining {
+			if q < pkgs[i] && n > 0 {
+				return false
+			}
+		}
+		for _, d := range deps[i] {
+			if provides[d] && !done[d] {
+				return false
+			}
+		}
+		return true
+	}
+	rest := make([]int, len(names))
+	for i := range rest {
+		rest[i] = i
+	}
+	out := make([]int, 0, len(names))
+	for len(rest) != 0 {
+		k := slices.IndexFunc(rest, ready)
+		if k < 0 {
+			return append(out, rest...), rest // a cycle
+		}
+		i := rest[k]
+		rest = slices.Delete(rest, k, k+1)
+		out = append(out, i)
+		remaining[pkgs[i]]--
+		if names[i] != "" {
+			done[names[i]] = true
+		}
 	}
 	return out, nil
 }
@@ -7909,6 +7970,7 @@ type emitter struct {
 	sliceVars         map[string]string         // local slice name -> element C type, for `xs[i]` / len(xs) (reset per function)
 	globalSliceVars   map[string]string         // package-level slice name -> element C type (persists across functions)
 	pkgInit           []pkgInitStep             // the synthesized package initializer, emitted in dependency order
+	pkgVarSrc         map[string]string         // package variable C name -> its source name, for the step a literal's fill makes (see notePkgVarSrc)
 	pkgOrd            int                       // index of the package being emitted, in dependency order
 	funcRefTasks      []funcRefTask             // per emitted function/method: what the init-order walk reads later
 	funcRefs          map[string][]string       // fn C name -> raw references, built by resolveFuncRefs
@@ -11002,7 +11064,9 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				units = append(units, pkgVarUnit{names[i : i+1], typeAST, initExprs[i : i+1]})
 			}
 		}
+		starts := make([]int, 0, len(units))
 		for _, u := range units {
+			starts = append(starts, len(e.pkgInit))
 			names, typeAST, initExprs := u.names, u.typeAST, u.initExprs
 			var initExpr []int32
 			if len(initExprs) != 0 {
@@ -11026,6 +11090,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 					return
 				}
 				if names[0] == "_" {
+					e.pkgInitBlank(initExpr)
 					continue // a blank package variable declares nothing
 				}
 				// `var g = [N]T{...}` or `var g = []T{...}` at package scope: a
@@ -11054,6 +11119,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 							continue
 						}
 					}
+					e.notePkgVarSrc(e.globalC(names[0]), names[0])
 					e.emitArrayLitVar(e.globalC(names[0]), litType, lit, true)
 					continue
 				}
@@ -11144,6 +11210,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 						e.emitPkgArrayVar(e.globalC(names[0]), names[0], a, initExpr)
 						continue
 					}
+					e.notePkgVarSrc(e.globalC(names[0]), names[0])
 					e.emitArrayLitVarNamed(e.globalC(names[0]), litType, lit, true, a.name)
 					continue
 				}
@@ -11183,6 +11250,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 							e.fail("a slice literal initializer needs a single named variable")
 							return
 						}
+						e.notePkgVarSrc(e.globalC(names[0]), names[0])
 						e.emitArrayLitVar(e.globalC(names[0]), litType, lit, true)
 						continue
 					}
@@ -11251,6 +11319,9 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			}
 			for _, nm := range names {
 				if nm == "_" {
+					if len(names) == 1 {
+						e.pkgInitBlank(initExpr)
+					}
 					continue // a blank package variable declares nothing
 				}
 				gn := e.globalC(nm)
@@ -11287,12 +11358,14 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 						}
 						e.needSlice(elem)
 						e.globalSliceVars[gn] = elem
+						e.notePkgVarSrc(gn, nm)
 						e.emitArrayLitVar(gn, litType, lit, true)
 						continue
 					}
 					e.globalSliceVars[gn] = elem
 				}
 				e.emit("static " + ctype + " " + gn)
+				assign := false
 				switch {
 				case initExpr == nil:
 				case e.isIfaceCType(ctype):
@@ -11302,8 +11375,12 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 					// package variable too: a frame temporary would be a local of
 					// ogo_pkg_init, which is not storage a package variable may keep.
 					e.emit(e.staticZeroC(ctype))
+					// The step goes in its place. Appended under a Go defer, it ran
+					// after the rest of its group, the group's in reverse: `var (e1
+					// error = mk(1); n2 = f(2); e3 error = mk(3))` called mk(3), then
+					// mk(1), after f(2) (dom97, sweeps/init-schedule).
 					if step, ok := e.pkgInitIfaceStore(gn, nm, ctype, initExpr); ok {
-						defer func() { e.pkgInit = append(e.pkgInit, step) }()
+						e.pkgInit = append(e.pkgInit, step)
 					}
 				case e.staticInitOK(initExpr):
 					e.emit(" = ")
@@ -11317,11 +11394,53 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 					// initializers are evaluated at compile time and therefore must be
 					// constant", about C the reader never wrote.
 					e.emit(e.staticZeroC(ctype))
-					defer e.pkgInitAssign(gn, nm, initExpr)
+					assign = true
 				}
 				e.emit(";\n")
+				// The step goes in its place, once the declaration is written. Under
+				// a Go defer it ran after the rest of its group, the group's in
+				// reverse: `var (a int = f(1); b = f(2); c int = f(3))` called f(2),
+				// f(3), f(1) (dom97, sweeps/init-schedule).
+				if assign {
+					e.pkgInitAssign(gn, nm, initExpr)
+				}
 			}
 		}
+		e.pkgVarPlaces(units, starts)
+	}
+}
+
+// pkgVarPlaces gives each variable the units declared with no step of their own --
+// one C initializes statically, or one with no value -- its place among the steps,
+// a step that writes nothing, at the end of its unit's: Go initializes it in its
+// place, and an initializer reading it waits for that place. It was ready from the
+// start, so `var d = v + y; var y int; var i = setY(); var v = 5` read y before
+// setY ran: Go takes y, then i, then v and d (dom97, sweeps/init-schedule).
+// starts[k] is where unit k's steps begin; the places are inserted last unit first,
+// so each index still holds.
+func (e *emitter) pkgVarPlaces(units []pkgVarUnit, starts []int) {
+	for k := len(starts) - 1; k >= 0; k-- {
+		end := len(e.pkgInit)
+		if k+1 < len(starts) {
+			end = starts[k+1]
+		}
+		var places []pkgInitStep
+		for _, nm := range units[k].names {
+			if nm == "_" {
+				continue
+			}
+			gn := e.globalC(nm)
+			if slices.ContainsFunc(e.pkgInit[starts[k]:end], func(st pkgInitStep) bool { return st.target == gn }) {
+				continue
+			}
+			place := pkgInitStep{target: gn, srcName: nm, pkg: 2 * e.pkgOrd}
+			if len(units[k].initExprs) == 1 {
+				x := units[k].initExprs[0]
+				place.deps, place.pos = e.initRefs(x), e.astPos(x)
+			}
+			places = append(places, place)
+		}
+		e.pkgInit = slices.Insert(e.pkgInit, end, places...)
 	}
 }
 
@@ -25918,6 +26037,34 @@ func (e *emitter) pkgArrayInit(initExpr []int32) (arrDim, bool) {
 	return arrDim{}, false
 }
 
+// pkgInitBlank evaluates the initializer of a blank package variable, `var _ =
+// register()`, for what it does: Go runs it in its place in the order, and it
+// went with the name (dom97, sweeps/init-schedule). One that does nothing -- `var
+// _ I = (*T)(nil)`, the assertion that T implements I -- is still left out, its C
+// what it was.
+func (e *emitter) pkgInitBlank(initExpr []int32) {
+	if initExpr == nil || !e.exprHasEffect(initExpr) {
+		return
+	}
+	text, pro := e.pkgInitRender(func() { e.emitExpr(initExpr) })
+	e.pkgInit = append(e.pkgInit, pkgInitStep{
+		deps:  e.initRefs(initExpr),
+		stmts: append(pro, "(void)("+text+");"),
+		pos:   e.astPos(initExpr),
+		pkg:   2 * e.pkgOrd,
+	})
+}
+
+// notePkgVarSrc records the source name of the package variable gn, a literal's
+// declaration emitted under its C name only: the step that fills it at package
+// initialization is named by it in a cycle's report.
+func (e *emitter) notePkgVarSrc(gn, nm string) {
+	if e.pkgVarSrc == nil {
+		e.pkgVarSrc = map[string]string{}
+	}
+	e.pkgVarSrc[gn] = nm
+}
+
 // emitPkgArrayVar declares a package ARRAY variable whose initializer is not a
 // literal -- `var g = mk()`, `var g = src`, `var g = h.f` -- and fills it at package
 // initialization. C admits neither a call nor an array copy in a static initializer,
@@ -26908,10 +27055,18 @@ func (e *emitter) emitSliceLitVar(name, elem, cname string, lit Node, values []*
 			}
 			stmts = append(append(stmts, cpro...), copies...)
 		}
+		// The step is the variable's, as a package array's is (emitPkgArrayVar):
+		// an initializer reading the slice depends on its name, and named by its
+		// backing, the fill was waited on by nothing -- a reader declared above
+		// the table read zeros, and a cycle through the table was no cycle
+		// (dom97, sweeps/init-schedule). A nested literal's header, ogo_plit_N,
+		// no initializer names, and no diagnostic either (srcName "").
 		fill := pkgInitStep{
-			target: backing,
-			stmts:  append(stmts, "memcpy("+backing+", "+tmp+", sizeof("+backing+"));"),
-			pkg:    2 * e.pkgOrd,
+			target:  name,
+			stmts:   append(stmts, "memcpy("+backing+", "+tmp+", sizeof("+backing+"));"),
+			pkg:     2 * e.pkgOrd,
+			srcName: e.pkgVarSrc[name],
+			pos:     e.astPos(lit.ast),
 		}
 		for _, v := range values {
 			if v != nil {
@@ -28405,6 +28560,8 @@ func (e *emitter) emitPackageVarList(names []string, typeAST []int32, inits [][]
 			e.emit("static " + ctype + " " + gn + " = ")
 			e.emitGlobalInit(ctype, inits[i])
 			e.emit(";\n")
+			// Its place among the steps (pkgVarPlaces).
+			e.pkgInit = append(e.pkgInit, pkgInitStep{target: gn, deps: e.initRefs(inits[i]), srcName: nm, pos: e.astPos(inits[i]), pkg: 2 * e.pkgOrd})
 			continue
 		}
 		e.emit("static " + ctype + " " + gn + e.staticZeroC(ctype) + ";\n")

@@ -3214,10 +3214,11 @@
 // # Package initialization
 //
 // Within a package (which in OctoGo maps strictly to a single directory),
-// package-level variables are initialized in a deterministic topological order
-// based on their dependencies, as Go initializes them: a variable whose
-// initializer reads another is initialized after it, wherever the two are written.
-// Variables that depend on nothing keep their source order.
+// package-level variables are initialized as Go initializes them: step by step,
+// the variable earliest in declaration order that is ready -- not yet
+// initialized, and its initializer reading no variable that is not. A variable
+// whose initializer reads another is initialized after it, wherever the two are
+// written, and as soon as it can be.
 //
 // A dependency is any reference the initializer makes -- directly, or through the
 // body of any function or method it reaches, transitively. "var a = f()" is
@@ -3228,8 +3229,9 @@
 //
 // An initializer that is a constant expression is folded into the variable's own
 // definition; anything else -- a reference to another variable, arithmetic over
-// one, a call -- is assigned by the synthesized initializer that runs before main,
-// which is where the ordering applies.
+// one, a call -- is assigned by the synthesized initializer that runs before main.
+// A variable folded so, or declared with no value, still has its place in the
+// order, and an initializer reading it waits for that place.
 //
 // A CYCLE among the initializers is refused, as Go refuses one: there is no order
 // in which every initializer sees the value it reads. The diagnostic names the

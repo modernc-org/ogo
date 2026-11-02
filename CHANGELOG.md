@@ -173,6 +173,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **Package variables are initialized in Go's order, step by step**: a variable
+  waiting on one declared after it, `var a = f(1, b)` above b, ran after every
+  variable declared after it that was ready, where Go runs it as soon as b is
+  done; an initializer reading a package slice filled at package initialization
+  -- a literal holding a call or an interface value -- declared above it read
+  zeros, and a cycle through such a slice built, where Go reports one; a
+  variable of a `var (...)` group declared with its type, `n int = f()`, or of an
+  interface type ran after the rest of the group, the group's in reverse; a
+  blank variable's initializer, `var _ = register()`, never ran; and a variable
+  with a constant value or none, `var v = 5`, `var y int`, was taken as
+  initialized from the start, so an initializer reading it ran before one Go
+  runs first -- `var d = v + y` above `var i = setY()` and `var v = 5` read y
+  before setY set it -- and a cycle through one, `var fv = g` with g calling fv,
+  built, where Go reports it. In every release checked.
 - **A package variable is initialized when Go initializes it, by the methods
   its initializer calls**: a variable declared in an `if`, a `for` or a `switch`
   header, `if v := z; v > 0`, in a function an initializer calls, read nothing

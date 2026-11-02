@@ -12222,6 +12222,93 @@ func main() {
 		want: "5 5 5 10 5 2 8 7 8\n2222224336\n7 y\n",
 	},
 	{
+		// Go initializes, step by step, the variable earliest in declaration
+		// order that is ready. The steps were placed in passes, so a waits on b
+		// ran after c too; a package slice's fill was a step named by its
+		// backing array, which no reader of the slice waited on, so first and n
+		// read zeros; a blank variable's initializer was dropped with its
+		// name; a group's typed and interface variables were appended under a
+		// Go defer, after the rest of the group, in reverse; and a variable C
+		// initializes statically, or one with no value, had no place among the
+		// steps, so h read y before setY ran (dom97, sweeps/init-schedule).
+		name: "package initialization runs the earliest variable ready, a table's fill and a blank's initializer among the steps",
+		src: `// The steps in the order they ran.
+var trace int
+
+func f(k int, dep int) int {
+	trace = trace*10 + k
+	return k + dep
+}
+
+func seven() int { return 7 }
+
+type row struct {
+	name string
+	v    int
+}
+
+// a waits on b: Go runs it as soon as b is done, before c.
+var a = f(1, b)
+
+var b = f(2, 0)
+
+var c = f(3, 0)
+
+// Read above the table they read, filled at package initialization.
+var first = tbl[0].v
+
+var n = len(tbl[1].name)
+
+var tbl = []row{{"a", seven()}, {"bcd", 1}}
+
+// A blank variable's initializer runs, in its place.
+var _ = f(4, c)
+
+var d = f(5, 0)
+
+type myErr struct{ k int }
+
+func (m *myErr) Error() string { return "e" }
+
+var errs [8]myErr
+
+func mk(k int) error {
+	f(k, 0)
+	errs[k] = myErr{k}
+	return &errs[k]
+}
+
+// A group's typed and interface variables run in their places.
+var (
+	g6 int   = f(6, 0)
+	e7 error = mk(7)
+	g8       = f(8, 0)
+)
+
+// h waits on the places of y, which has no value, and of v, which C
+// initializes statically: setY runs before it, as Go runs it.
+var h = v + y
+
+var y int
+
+var i9 = setY()
+
+var v = 5
+
+func setY() int {
+	y = 42
+	return f(9, 0)
+}
+
+func main() {
+	println(trace, a, b, c, d)
+	println(first, n, g6, e7 != nil, g8)
+	println(h, y, i9)
+}
+`,
+		want: "213456789 3 2 3 5\n7 3 6 true 8\n47 42 9\n",
+	},
+	{
 		// The accepting side of the block-lifetime rule, which exists because Go's
 		// loop variable is per ITERATION (since 1.22) and a body-scoped local has
 		// been per iteration since 1.0. Keeping a reference to either past the

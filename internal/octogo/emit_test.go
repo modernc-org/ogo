@@ -21967,6 +21967,19 @@ func main() { println(a, b) }
 			want: "initialization cycle for a\n\tmain.ogo:3:12: a refers to f\n\tmain.ogo:1:6: f refers to a",
 		},
 		{
+			// A variable C initializes statically is a step of the order too, a
+			// place (pkgVarPlaces): a function value whose function reads it was
+			// built, where Go reports the cycle (dom97, sweeps/init-schedule).
+			name: "through a function value initialized statically",
+			src: `func g() int { return fv() + 1 }
+
+var fv = g
+
+func main() { println(fv != nil) }
+`,
+			want: "initialization cycle for fv\n\tmain.ogo:3:10: fv refers to g\n\tmain.ogo:1:6: g refers to fv",
+		},
+		{
 			// A same-named method of ANOTHER type must not blur in: q's static
 			// type resolves the call to T's m, and U's m reading a closes no
 			// ring. Go accepts this program.
