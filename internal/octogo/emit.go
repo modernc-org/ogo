@@ -55,10 +55,24 @@ func cIdent(name string) string {
 // is why the two are separate funnels: one for names C gave us, one for names the
 // program did.
 func userIdent(name string) string {
-	if cUnusable[name] {
+	if cUnusable[name] || cImplName(name) {
 		return "ogo_kw_" + name
 	}
 	return cIdent(name)
+}
+
+// cImplName reports whether C leaves name to the implementation (C11 7.1.3): one
+// beginning with two underscores, or with one and a capital letter. The target's
+// compiler and the host's each take some for keywords of their own -- flexcc's
+// __asm, __restrict, __attribute__, __typeof__, __inline, __pasm, __this, GNU C's
+// __asm__, __extension__, _Pragma -- and refuse a declaration of one, or crash
+// (__restrict, in flexcc), where Go takes any of them for a name (dom95). And GNU
+// C's two plain ones, asm and typeof, keywords under -std=gnu11 on the host.
+func cImplName(name string) bool {
+	if name == "asm" || name == "typeof" {
+		return true
+	}
+	return len(name) >= 2 && name[0] == '_' && (name[1] == '_' || name[1] >= 'A' && name[1] <= 'Z')
 }
 
 // cUnusable is the set of names that cannot be a C identifier ANYWHERE -- C's own
@@ -288,7 +302,7 @@ func (e *emitter) joinName(join string) string {
 }
 
 func joinSpelling(join string, taken, written map[string]bool) string {
-	if cReserved[join] || cUnusable[join] || taken[join] || written[join] {
+	if cReserved[join] || cUnusable[join] || cImplName(join) || taken[join] || written[join] {
 		return "ogo_j_" + join
 	}
 	return join

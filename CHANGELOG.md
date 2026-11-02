@@ -167,6 +167,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A name C leaves to the implementation builds**: `gen, asm :=
+  New().(*digest), New().(*digest)`, Go's crypto/md5 test, was declared `asm` in
+  the C, which GNU C takes for a keyword, and the host's compiler refused it; and
+  a name of two leading underscores, or of one and a capital, `__restrict`,
+  `__asm__`, `__attribute__`, `__inline`, `_Pragma`, was refused by the target's
+  compiler, or crashed it. Each is renamed in the C now, as C's own keywords are.
+  In every release checked.
 - **A chain past a typed constant's method builds**: `Position.Pixel().Next()` and
   `Position.Box().P` named the constant in the C, which has no such symbol, and no
   C compiler took it.

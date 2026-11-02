@@ -16287,6 +16287,48 @@ func main() {
 		want: "10 6\n10 30 4\n7\n2 9\n",
 	},
 	{
+		// md5's TestBlockGeneric, `gen, asm := New().(*digest), New().(*digest)`
+		// (dom95): a name C leaves to the implementation, two underscores or one
+		// and a capital, or GNU C's asm and typeof, is a keyword to one of the
+		// two compilers, and a declaration of one refused, or crashed flexcc.
+		name: "a name C leaves to the implementation, in every position",
+		src: `type _Pragma struct {
+	__restrict int
+	typeof     int
+}
+
+type __shape interface {
+	__attribute__() int
+}
+
+func (p *_Pragma) __attribute__() int { return p.__restrict*10 + p.typeof }
+
+func __asm__(__inline int) int { return __inline + 1 }
+
+const __this = 4
+
+var __extension__ = 5
+
+func run() {
+	asm := __asm__(__this)
+	p := _Pragma{__restrict: asm, typeof: __extension__}
+	var s __shape = &p
+	__asm := 0
+__try:
+	__asm++
+	if __asm < 3 {
+		goto __try
+	}
+	println(asm, s.__attribute__(), __asm)
+}
+
+func main() {
+	run()
+}
+`,
+		want: "5 55 3\n",
+	},
+	{
 		name: "a name the target's library speaks for, in every position",
 		src: `// Every identifier here is one the target's C library has taken: functions its
 // headers declare (read, write, open, close, clock, sleep, time), one only its
