@@ -245,6 +245,12 @@ silent fault puts the count back to 0. Each round's account is in
   three listed (a field read through a pointer to a composite literal; a Word
   stored past a pointer; a field of what a method on a literal's address hands
   back) -- 0
+- dom95 (2026-11-01), a door access controller (Go 1.27's crypto/sha1, md5,
+  sha256, sha512, hmac and subtle, encoding/base32 and hex ported with their
+  tests, two Wiegand readers on cogs, PINs and TOTP secrets, an access log
+  chained by HMAC), against master on dom94's fix: clean, one loud fault fixed (a
+  name C leaves to the implementation, `asm` or `__restrict`, declared as
+  written), one listed (an append to a make) -- 1
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1164,7 +1170,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   boundary sweep crosses two packages and three**; **Every row swept in one package
   is swept across the boundary too, with the qualified spelling in every
   position**; **A row swept in one package is swept with the qualified spelling**.
-- **A C NAME IS A ROW**. **NIL IS A ROW**: **A cursor that carries a type by its
+- **A C NAME IS A ROW**: **A list read off what the headers declare misses what
+  the compiler itself takes: a name C leaves to the implementation is asked by its
+  form** (dom95). **NIL IS A ROW**: **A cursor that carries a type by its
   element is asked for the type where a value of it is written whole: nil is the
   header's zero** (dom89). **What a library function hands back is asked as Go's
   is asked, `== nil` among the questions: an empty slice is no token to a Scanner,
