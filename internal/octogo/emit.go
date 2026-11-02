@@ -26837,7 +26837,13 @@ func (e *emitter) emitSliceLitVar(name, elem, cname string, lit Node, values []*
 		e.shadow(name)
 		e.sliceVars[name] = elem
 		e.locals[name] = cname
-		e.markBacked(name, backedUnknown) // the backing array is a local of this frame
+		// The backing array is a local of this frame, but a literal of no elements
+		// reaches nothing: its length and capacity are 0, so nothing is read or
+		// written through it (frameRefAny, dom82), declared or not --
+		// `buf := []byte{}` handed back through AppendText (dom97).
+		if length > 0 {
+			e.markBacked(name, backedUnknown)
+		}
 	}
 	backing := e.newBacking()
 	n := strconv.Itoa(length)
@@ -34819,8 +34825,10 @@ func (e *emitter) emitMakeSliceVar(name, cname, elem string, lenAST, capAST []in
 		return
 	}
 	backing := e.newBacking()
-	if !static {
-		e.markBacked(name, backedUnknown) // the backing array is a local of this frame
+	// The backing array is a local of this frame, but one of capacity 0 reaches
+	// nothing, as an empty literal does (emitSliceLitVar).
+	if n, err := strconv.ParseInt(size, 0, 64); !static && (err != nil || n > 0) {
+		e.markBacked(name, backedUnknown)
 	}
 	// Backing array.
 	if static {

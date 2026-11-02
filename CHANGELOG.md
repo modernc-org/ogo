@@ -20,6 +20,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An empty slice declared and handed back builds**: `buf := []byte{}` returned
+  through a call, net/netip's MarshalText of the zero Addr, was refused, "cannot
+  return a slice backed by local buf", where `return []byte{}` built, and so were
+  `make([]byte, 0)` returned and either kept in a package variable or sent. With
+  no elements nothing is read or written through it, and it reaches nothing of
+  the frame. In every release checked.
 - **A pointer bound in a list is bound as one declared alone**: `p2, p :=
   &powers[i/2], &powers[i]` and then `*p = p.sqr(stk, *p2)`, math/big's
   expNNWindowed, was refused, "cannot store p.sqr(stk, *p2), which holds a pointer

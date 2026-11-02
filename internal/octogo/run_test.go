@@ -57065,6 +57065,70 @@ func main() {
 		want: "0 0 false 2\n0 0 true 0\n0 0 false\nx 0 false\n0 false g 0 false\n",
 	},
 	{
+		// The same declared: `buf := []byte{}` handed back through AppendText,
+		// netip's MarshalText of the zero Addr, was refused, "cannot return a slice
+		// backed by local buf", where `return []byte{}` built -- the declaration marked
+		// the variable backed by its literal's array, which has no elements, and so did
+		// a make of capacity 0 (dom97). Each reaches nothing now, returned, through a
+		// call, rebound, kept in a package variable and in a field.
+		name: "an empty slice declared and handed back",
+		src: `var back [8]byte
+
+var keep []string
+
+type T struct {
+	b []byte
+}
+
+func id(b []byte) []byte { return b }
+
+func lit() []byte {
+	buf := []byte{}
+	return buf
+}
+
+func through(z int) []byte {
+	buf := []byte{}
+	if z > 0 {
+		buf = back[:0]
+	}
+	return id(buf)
+}
+
+func made() ([]byte, []int) {
+	a := make([]byte, 0)
+	b := make([]int, 0, 0)
+	return a, b[:0]
+}
+
+func field() T {
+	buf := []byte{}
+	return T{b: buf}
+}
+
+func kept() {
+	s := []string{}
+	keep = s
+}
+
+func run() {
+	a, b := lit(), through(0)
+	c := through(1)
+	println(len(a), cap(a), a == nil, len(b), b == nil, cap(c))
+	m, n := made()
+	println(len(m), cap(m), m == nil, len(n), n == nil)
+	t := field()
+	kept()
+	println(len(t.b), t.b == nil, len(keep), keep == nil)
+}
+
+func main() {
+	run()
+}
+`,
+		want: "0 0 false 0 false 8\n0 0 false 0 false\n0 false 0 false\n",
+	},
+	{
 		// What a method of a typed CONSTANT hands back, `pos := Position.Pixel()`
 		// for a `const Position PixelRole` (rsc.io/qr's coding, dom83): the checker
 		// typed no such call, so a copy of the variable, `p := pos`, was the flags'
