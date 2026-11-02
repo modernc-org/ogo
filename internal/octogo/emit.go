@@ -10832,72 +10832,88 @@ func (e *emitter) collectVarDeclTypes(ast []int32) {
 				}
 			}
 		}
-		switch {
-		case typeAST != nil:
-			// An ARRAY lives in an environment of its own -- the emitter keeps arrays
-			// apart from every other variable -- so registering only its C type would
-			// leave `var s = pool[:]` above `var pool [3]int` still unable to say what
-			// it views.
-			if a, isArr := e.arrayDim(typeAST); isArr {
-				for _, nm := range names {
-					if nm != "_" {
-						e.globalArrays[e.globalC(nm)] = a
-					}
-				}
-				continue
+		// A value list is that many single-name declarations, as emitPackageVarDecl
+		// writes it, and each is gathered as one: `var d = v + y` above `var v, y =
+		// 5, 3` was "cannot infer a type for the package variable d" (dom97,
+		// sweeps/init-schedule).
+		if typeAST == nil && len(names) > 1 && len(initExprs) == len(names) {
+			for i := range names {
+				e.collectVarSpecTypes(names[i:i+1], nil, initExprs[i:i+1])
 			}
-			ct := e.cType(typeAST)
-			if ct == "" {
-				continue // a type this pass cannot name: left to the emitting pass
-			}
+			continue
+		}
+		e.collectVarSpecTypes(names, typeAST, initExprs)
+	}
+}
+
+// collectVarSpecTypes is collectVarDeclTypes for one spec, or one name of a value
+// list.
+func (e *emitter) collectVarSpecTypes(names []string, typeAST []int32, initExprs [][]int32) {
+	switch {
+	case typeAST != nil:
+		// An ARRAY lives in an environment of its own -- the emitter keeps arrays
+		// apart from every other variable -- so registering only its C type would
+		// leave `var s = pool[:]` above `var pool [3]int` still unable to say what
+		// it views.
+		if a, isArr := e.arrayDim(typeAST); isArr {
 			for _, nm := range names {
 				if nm != "_" {
-					e.globals[e.globalC(nm)] = ct
-					// A slice is read through its element registry as well as its
-					// type: `len(xs)`, `xs[0]`, `xs[1:]` above `var xs []int` ask it.
-					if e.isSliceCType(ct) {
-						e.globalSliceVars[e.globalC(nm)] = e.sliceElemFromCName(ct)
-					}
+					e.globalArrays[e.globalC(nm)] = a
 				}
 			}
-		case len(names) == 1 && names[0] != "_" && len(initExprs) == 1 && e.isArrayLitInit(initExprs[0]):
-			// `var pool = [3]int{...}`: the array's extents come from the LITERAL's
-			// written type, inference having no array value type to give.
-			if litType, _, isLit := e.soleArrayLit(initExprs[0]); isLit {
-				if a, isArr := e.arrayDim(litType); isArr {
-					e.globalArrays[e.globalC(names[0])] = a
-					continue
-				}
-				// `var xs = []int{...}`: a SLICE literal, whose type is likewise the
-				// literal's own. This shape was neither registered here nor left to
-				// inference, so `var n = len(xs)` above it was refused ("len is only
-				// supported for ...") and `var first = xs[0]` "cannot infer a type" --
-				// where a slice of an array, `var xs = back[:2]`, above its array was
-				// fine.
-				if elem, isSlice := e.litSliceType(litType); isSlice {
-					gn := e.globalC(names[0])
-					e.globals[gn] = sliceCName(elem)
-					e.globalSliceVars[gn] = elem
+			return
+		}
+		ct := e.cType(typeAST)
+		if ct == "" {
+			return // a type this pass cannot name: left to the emitting pass
+		}
+		for _, nm := range names {
+			if nm != "_" {
+				e.globals[e.globalC(nm)] = ct
+				// A slice is read through its element registry as well as its
+				// type: `len(xs)`, `xs[0]`, `xs[1:]` above `var xs []int` ask it.
+				if e.isSliceCType(ct) {
+					e.globalSliceVars[e.globalC(nm)] = e.sliceElemFromCName(ct)
 				}
 			}
-		case len(names) == 1 && len(initExprs) == 1 && names[0] != "_":
-			e.pkgVarPending = append(e.pkgVarPending, pkgVarPending{
-				name: names[0], init: initExprs[0], file: e.f, prefix: e.curPkgPrefix,
-			})
-		case len(names) > 1 && len(initExprs) == 1:
-			// `var a, b = f()`: each name takes the corresponding result type of
-			// the call, registered here so an initializer written ABOVE the
-			// declaration can be typed from these names -- they never reached the
-			// registry at all, and `var c = a * b` above the group was refused
-			// "cannot infer a type".
-			if callee, _, isCall := e.directCall(initExprs[0]); isCall {
-				if resTypes, isUser := e.userFunc(callee); isUser && len(resTypes) == len(names) {
-					for i, nm := range names {
-						if nm != "_" {
-							e.globals[e.globalC(nm)] = resTypes[i]
-							if e.isSliceCType(resTypes[i]) {
-								e.globalSliceVars[e.globalC(nm)] = e.sliceElemFromCName(resTypes[i])
-							}
+		}
+	case len(names) == 1 && names[0] != "_" && len(initExprs) == 1 && e.isArrayLitInit(initExprs[0]):
+		// `var pool = [3]int{...}`: the array's extents come from the LITERAL's
+		// written type, inference having no array value type to give.
+		if litType, _, isLit := e.soleArrayLit(initExprs[0]); isLit {
+			if a, isArr := e.arrayDim(litType); isArr {
+				e.globalArrays[e.globalC(names[0])] = a
+				return
+			}
+			// `var xs = []int{...}`: a SLICE literal, whose type is likewise the
+			// literal's own. This shape was neither registered here nor left to
+			// inference, so `var n = len(xs)` above it was refused ("len is only
+			// supported for ...") and `var first = xs[0]` "cannot infer a type" --
+			// where a slice of an array, `var xs = back[:2]`, above its array was
+			// fine.
+			if elem, isSlice := e.litSliceType(litType); isSlice {
+				gn := e.globalC(names[0])
+				e.globals[gn] = sliceCName(elem)
+				e.globalSliceVars[gn] = elem
+			}
+		}
+	case len(names) == 1 && len(initExprs) == 1 && names[0] != "_":
+		e.pkgVarPending = append(e.pkgVarPending, pkgVarPending{
+			name: names[0], init: initExprs[0], file: e.f, prefix: e.curPkgPrefix,
+		})
+	case len(names) > 1 && len(initExprs) == 1:
+		// `var a, b = f()`: each name takes the corresponding result type of
+		// the call, registered here so an initializer written ABOVE the
+		// declaration can be typed from these names -- they never reached the
+		// registry at all, and `var c = a * b` above the group was refused
+		// "cannot infer a type".
+		if callee, _, isCall := e.directCall(initExprs[0]); isCall {
+			if resTypes, isUser := e.userFunc(callee); isUser && len(resTypes) == len(names) {
+				for i, nm := range names {
+					if nm != "_" {
+						e.globals[e.globalC(nm)] = resTypes[i]
+						if e.isSliceCType(resTypes[i]) {
+							e.globalSliceVars[e.globalC(nm)] = e.sliceElemFromCName(resTypes[i])
 						}
 					}
 				}

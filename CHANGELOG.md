@@ -20,6 +20,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A package variable reads a value list declared below it**: `var d = v + y`
+  above `var v, y = 5, 3` was refused, "cannot infer a type for the package
+  variable d", where a variable declared alone, or `var a, b = f()`, was read
+  from above, and so was a list holding an array or a slice literal. In every
+  release checked.
 - **An empty slice declared and handed back builds**: `buf := []byte{}` returned
   through a call, net/netip's MarshalText of the zero Addr, was refused, "cannot
   return a slice backed by local buf", where `return []byte{}` built, and so were

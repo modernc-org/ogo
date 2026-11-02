@@ -20693,10 +20693,10 @@ func main() {
 		// is assigned at package initialization now, which is where the inferred
 		// form beside it already went.
 		//
-		// The order is the same stable sort the typedef section uses: a step only
-		// moves later, never earlier, so a program whose declarations already
-		// ordered themselves emits what it emitted before. init() still runs after
-		// every variable, and several run in the order written.
+		// The order is Go's, step by step the variable earliest in declaration
+		// order that is ready (initOrderCycle), so a program whose declarations
+		// already ordered themselves emits what it emitted before. init() still
+		// runs after every variable, and several run in the order written.
 		name: "package variables initialize in dependency order",
 		src: `// Written in an order that is not the order they must be initialized in: each
 // reads one declared below it, and Go initializes them in dependency order.
@@ -40442,6 +40442,30 @@ func main() {
 `,
 		want:   "before 4\npanic: nil pointer dereference",
 		panics: true,
+	},
+	{
+		// A value list is that many single-name declarations, and an
+		// initializer above it reads each name as it reads one declared alone:
+		// the pre-pass gathered no list's names, and d was "cannot infer a type
+		// for the package variable" (dom97, sweeps/init-schedule).
+		name: "a package variable reads a value list declared below it",
+		src: `var d = v + y
+
+var n = len(p) + q
+
+var w = r[1:]
+
+var v, y = 5, 3
+
+var p, q = [2]int{1, 2}, 4
+
+var r, k = []int{7, 8, 9}, 1
+
+func main() {
+	println(d, n, v, y, p[1], q, len(w), w[0], k)
+}
+`,
+		want: "8 6 5 3 2 4 2 8 1\n",
 	},
 	{
 		// Go's package block has no order. Every read of a package slice written
