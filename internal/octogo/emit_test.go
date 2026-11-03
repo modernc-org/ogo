@@ -7730,6 +7730,7 @@ func main() {
 	arr[1] = s
 	z := Row{}
 	z = Row{}
+	z = Row{[3]int{1, 2, 3}}
 	// A struct with no array is left alone: plain C assignment, no memcpy.
 	var p Plain
 	q := p
@@ -7753,10 +7754,15 @@ func main() {
 		"\tmemcpy(&w.r, &s, sizeof(Row));\n",
 		"\tmemcpy(&w.rows.ptr[ogo_bound(i, w.rows.len)], &s, sizeof(Row));\n",
 		"\tmemcpy(&arr[1], &s, sizeof(Row));\n",
-		// A literal is not addressable, so it initializes a temporary first --
-		// initialization being the one form flexcc does lower. Its zero is
-		// written out, the array's braces with it (zeroElidesBraces).
-		"\tRow _ogo_t0 = {{0}};\n\tmemcpy(&z, &_ogo_t0, sizeof(Row));\n",
+		// A declaration initializes, its zero written out with the array's
+		// braces (zeroElidesBraces).
+		"\tRow z = {{0}};\n",
+		// An empty literal is the zero value, which Go writes in place: a
+		// temporary of it would cost its size on the stack (dom98's lzw Writer).
+		"\tmemset(&z, 0, sizeof(Row));\n",
+		// Any other literal is not addressable, so it initializes a temporary
+		// first -- initialization being the one form flexcc does lower.
+		"\tRow _ogo_t0 = {{1, 2, 3}};\n\tmemcpy(&z, &_ogo_t0, sizeof(Row));\n",
 		"\tPlain q = p;\n", // no array, no memcpy
 	} {
 		if got := buf.String(); !strings.Contains(got, want) {

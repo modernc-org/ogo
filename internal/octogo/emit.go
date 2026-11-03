@@ -3979,6 +3979,14 @@ func (e *emitter) emitStructCopy(dst, ctype string, src []int32) {
 	e.includes["string.h"] = true
 	from := ""
 	switch name, lit, ok := e.soleCompositeLit(src); {
+	case ok && !hasNonTerminal(lit.ast):
+		// An EMPTY literal, `*w = Writer{}` of compress/lzw's Reset (dom98), is
+		// the type's zero value, every bit of which is 0 here, and is stored as
+		// one: a temporary of it put a 64 KB Writer on the stack, and a program
+		// calling it outgrew the Hub RAM, where Go zeroes in place.
+		e.ind()
+		e.emit("memset(&" + dst + ", 0, sizeof(" + ctype + "));\n")
+		return
 	case ok:
 		tmp := e.newTmp()
 		fixups := e.captureLitFixups(func() {
@@ -58934,6 +58942,17 @@ func normalizeIntLit(src string) string {
 func containsSym(nodes []Node, sym Symbol) bool {
 	for _, n := range nodes {
 		if n.sym == sym {
+			return true
+		}
+	}
+	return false
+}
+
+// hasNonTerminal reports whether ast has a child that is not a token: a
+// composite literal's braces hold nothing else when it is empty.
+func hasNonTerminal(ast []int32) bool {
+	for c := range it(ast) {
+		if c.sym != 0 {
 			return true
 		}
 	}

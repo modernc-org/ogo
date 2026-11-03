@@ -187,6 +187,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   holds a pointer: write the address of a variable", with no position, and `j :=
   i.(*T).Sub(1)` could not infer a type for j. An assertion of a field, an
   element or a call's result was typed. In every release checked.
+- **An empty literal stored into a struct holding an array is zeroed in
+  place**: `*w = Writer{}`, compress/lzw's Reset, made the 64 KB zero Writer on
+  the stack and copied it in, and a program calling it was refused for the Hub
+  RAM, "main's stack needs at least 74044 bytes"; so did `ws[i] = W{}` and
+  `h.w = W{}` of any such struct, at the cost of its size, where Go zeroes it
+  where it stands. In every release checked.
 - **A field of a variable typed by a struct written out is checked**: `for _, tt
   := range tests` over a `[]struct{...}`, Go's table of test cases, and `tt :=
   ts[0]`, `tt := mk()`, `p := &g`, and a variable declared `*struct{...}`, had

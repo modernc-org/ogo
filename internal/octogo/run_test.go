@@ -57432,6 +57432,80 @@ func main() {
 		want: "3 2 1 3 2 3 7 2 9\ntee 1099511627776 2.5 4000000000 0.25\ntee 4000000000 int64\n",
 	},
 	{
+		// An empty literal stored into a struct holding an array, `*w = Writer{}`
+		// of compress/lzw's Reset (dom98): the copy such a struct takes was made
+		// from a temporary of the literal, 64 KB of the Writer on the stack, and
+		// a program calling it outgrew the Hub RAM. It is the zero value, stored
+		// as one where it stands, the destination read once.
+		name: "an empty literal stored into a struct holding an array",
+		src: `type W struct {
+	t   [4096]uint32
+	n   int
+	s   string
+	f   float64
+	err error
+	p   *int
+}
+
+type H struct {
+	k int
+	w W
+}
+
+var ws [3]W
+
+var h H
+
+var g W
+
+var calls int
+
+func next() int {
+	calls++
+	return calls
+}
+
+func fill(w *W, k int) {
+	for i := range w.t {
+		w.t[i] = uint32(i + k)
+	}
+	w.n, w.s, w.f, w.p = k, "full", 1.5, &calls
+}
+
+func zero(w *W) bool {
+	for _, v := range w.t {
+		if v != 0 {
+			return false
+		}
+	}
+	return w.n == 0 && w.s == "" && w.f == 0 && w.err == nil && w.p == nil
+}
+
+func reset(p *W) {
+	*p = W{}
+}
+
+func run() {
+	for i := range ws {
+		fill(&ws[i], i)
+	}
+	fill(&h.w, 7)
+	fill(&g, 9)
+	h.k = 3
+	reset(&ws[0])
+	ws[next()] = W{}
+	h.w = W{}
+	g = W{}
+	println(zero(&ws[0]), zero(&ws[1]), zero(&ws[2]), ws[2].t[5], zero(&h.w), h.k, zero(&g), calls)
+}
+
+func main() {
+	run()
+}
+`,
+		want: "true true false 7 true 3 true 1\n",
+	},
+	{
 		// What a method of a typed CONSTANT hands back, `pos := Position.Pixel()`
 		// for a `const Position PixelRole` (rsc.io/qr's coding, dom83): the checker
 		// typed no such call, so a copy of the variable, `p := pos`, was the flags'
