@@ -178,6 +178,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A field of a variable typed by a struct written out is checked**: `for _, tt
+  := range tests` over a `[]struct{...}`, Go's table of test cases, and `tt :=
+  ts[0]`, `tt := mk()`, `p := &g`, and a variable declared `*struct{...}`, had
+  their fields asked nothing, so `tt.n = tt.f` of an int and a float32, `tt.a ==
+  tt.n` of a struct and an int, `!tt.e` of an error and `tt.p < tt.p` of
+  pointers built, where Go reports each, and so did the same of another
+  package's struct. A variable declared with the struct's type was checked. In
+  every release checked.
 - **Package variables are initialized in Go's order, step by step**: a variable
   waiting on one declared after it, `var a = f(1, b)` above b, ran after every
   variable declared after it that was ready, where Go runs it as soon as b is

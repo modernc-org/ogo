@@ -1,0 +1,61 @@
+// A variable whose type is a struct written out, and given it by what it is
+// declared from -- a range over a table of test cases, an element, a call's
+// result, an address -- has its fields checked as a variable declared with the
+// type does, and so has a pointer to one. Read only off a written type, every
+// question of tt.f was asked nothing (dom97).
+
+type A struct{ x int }
+
+var g struct {
+	n int
+	f float32
+}
+
+func mk() struct {
+	n int
+	f float32
+} {
+	return g
+}
+
+func main() {
+	tests := []struct {
+		n int
+		f float32
+		e error
+		p *A
+		a A
+	}{{}}
+	for _, tt := range tests {
+		// ERROR cannot use tt.f of type float32 as type int in assignment
+		tt.n = tt.f
+		// ERROR mismatched types
+		println(tt.a == tt.n)
+		// ERROR operator ! not defined on tt.e
+		println(!tt.e)
+		// ERROR operator < not defined on pointer
+		println(tt.p < tt.p)
+	}
+	for _, tt := range [1]struct{ n int; f float32 }{} {
+		// ERROR cannot use tt.f of type float32 as type int in assignment
+		tt.n = tt.f
+	}
+	t0 := tests[0]
+	// ERROR cannot use t0.f of type float32 as type int in assignment
+	t0.n = t0.f
+	t1 := &tests[0]
+	// ERROR cannot use t1.f of type float32 as type int in assignment
+	t1.n = t1.f
+	t2 := mk()
+	// ERROR cannot use t2.f of type float32 as type int in assignment
+	t2.n = t2.f
+	p := &g
+	// ERROR cannot use p.f of type float32 as type int in assignment
+	p.n = p.f
+	var q *struct {
+		n int
+		f float32
+	} = &g
+	// ERROR cannot use q.f of type float32 as type int in assignment
+	q.n = q.f
+}

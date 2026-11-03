@@ -16969,8 +16969,39 @@ func (f *File) fieldTypeNodeOf(s *Scope, head, field Token, indexed bool) TypeNo
 	if !owner.IsValid() {
 		// A variable of an UNNAMED struct type, `var h struct{ a [3]float32 }`: its
 		// fields are in the type written. Unread, `var x string = h.a` was taken.
-		if st, ok := d.declType.(*TypeNodeStruct); ok && !indexed && d.declScope != nil {
+		if indexed {
+			return nil
+		}
+		if st, ok := structOrPointee(d.declType); ok && d.declScope != nil {
 			return structFieldType(st, field)
+		}
+		// And in the type the walk gave it, where none is written (inferredType):
+		// `for _, tt := range tests` over a []struct{...}, Go's table of test cases,
+		// `tt := ts[0]`, `tt := mk()`, `p := &g`. Read only as written, every
+		// question of `tt.f` was asked nothing, and `tt.n = tt.f` of an int and a
+		// float32, `tt.a == tt.n`, `!tt.e` of an error were taken (dom97). A call's
+		// result is typed in its file's scope, which is this file's own where the
+		// two read every name alike.
+		t := d.inferredType
+		if t == nil || d.declType != nil || t.f == nil || t.f.Package == nil {
+			return nil
+		}
+		st, ok := structOrPointee(t.tn)
+		switch {
+		case !ok:
+		case t.f.Package == f.Package:
+			if t.s == f.Package.Scope || t.s == f.Scope || onScopeChain(s, t.s) {
+				return structFieldType(st, field)
+			}
+		case t.f.Package.Scope != nil:
+			// Another package's, `tt := lib.Mk()`, `for _, tt := range lib.Tests`:
+			// the field's type as this file writes it, `lib.Count` for lib's Count.
+			qual, ok := f.importQualTok(t.f.Package)
+			if tn := structFieldType(st, field); ok && tn != nil {
+				if rq, ok := f.requalifiedType(t.f.Package.Scope, qual, tn); ok {
+					return rq
+				}
+			}
 		}
 		return nil
 	}
@@ -17117,6 +17148,17 @@ func (f *File) fieldLookup(u typeAt, st *TypeNodeStruct, name string) (typeAt, T
 
 // structFieldType is the written type of the field named like field of the struct
 // type tn, or nil when tn is no struct or has no such field.
+// structOrPointee is tn written out as a struct, or as a pointer to one, whose
+// fields a selector reaches through the pointer: `struct{...}` and
+// `*struct{...}`.
+func structOrPointee(tn TypeNode) (*TypeNodeStruct, bool) {
+	if p, ok := tn.(*TypeNodePointer); ok {
+		tn = p.TypeNode
+	}
+	st, ok := tn.(*TypeNodeStruct)
+	return st, ok
+}
+
 func structFieldType(tn TypeNode, field Token) TypeNode {
 	st, ok := tn.(*TypeNodeStruct)
 	if !ok {
