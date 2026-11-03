@@ -57623,6 +57623,88 @@ func main() {
 		want: "0 0 64\n0\n0 5\n0\n3 0 5 1\n0\n0\n0 19\n0 7\n0 1.5\n0 0\n0\ntrue 0\n",
 	},
 	{
+		// A print whose argument panics where it is evaluated writes nothing of
+		// its line, as Go's, which evaluates every argument before it writes:
+		// printf, and println of anything but plain integers, write a piece at a
+		// time, and `printf("got %v\nwant %v", gotp.Pix, want.Pix)` of a nil gotp
+		// (image/gif's tests, dom98) wrote "got " and panicked in its middle. The
+		// arguments that may panic -- a nil pointer's field, an index, a slice, a
+		// divisor -- are bound ahead of the print; the prints before the last are
+		// of such arguments that do not panic, printing what they printed.
+		name:   "a print whose argument panics writes nothing of its line",
+		panics: true,
+		src: `type T struct {
+	n int
+	s string
+	b []byte
+}
+
+var calls int
+
+func one() int {
+	calls++
+	return 1
+}
+
+func main() {
+	q := &T{7, "seven", []byte("ok")}
+	k, z := 1, 3
+	sl := []int{4, 5, 6}
+	str := "abc"
+	println("lead", q.s, sl[k], str[k], 10/z, q.n)
+	print("p ", q.s, " ", sl[1:k+1][0], "\n")
+	printf("got %v %d %s %c\n", q.b, 10%z, str[k:], str[k])
+	println(one(), q.s, calls)
+	var p *T
+	printf("got %d want %v\n", 1, p.s)
+	println("unreachable")
+}
+`,
+		want: "lead seven 5 98 3 7\np seven 5\ngot [111 107] 1 bc b\n1 seven 1\npanic: nil pointer dereference\n",
+	},
+	{
+		// Of two print arguments that panic, the first in the source does, as in
+		// Go: a println of plain integers is one C printf, whose arguments the C
+		// compiler evaluates in an order of its own, and `println(arr[k], p.x)`
+		// said "nil pointer dereference" on the host where Go says the index is
+		// out of range (dom98).
+		name:   "of two print arguments that panic the first does",
+		panics: true,
+		src: `type T struct{ x int }
+
+func main() {
+	k := 5
+	arr := [3]int{1, 2, 3}
+	var p *T
+	println("start")
+	println(arr[k], p.x)
+}
+`,
+		want: "start\npanic: index out of range\n",
+	},
+	{
+		// A println of plain integers whose argument panics writes nothing of its
+		// line either: it is one C printf, which the host's compiler evaluates
+		// whole before it writes, and the target's writes as print calls,
+		// evaluating each argument as it comes to it, so `println(2, p.n)` of a
+		// nil p wrote "2 " on the board alone (dom98).
+		name:   "a println of integers whose argument panics writes nothing of its line",
+		panics: true,
+		src: `type T struct{ n int }
+
+func main() {
+	q := &T{7}
+	k, z := 1, 3
+	a := [3]int{4, 5, 6}
+	println(1, q.n, a[k], 10/z)
+	var p *T
+	println(2, p.n)
+	println("unreachable")
+}
+`,
+		want: "1 7 5 3\npanic: nil pointer dereference\n",
+	},
+	{
 		// What a method of a typed CONSTANT hands back, `pos := Position.Pixel()`
 		// for a `const Position PixelRole` (rsc.io/qr's coding, dom83): the checker
 		// typed no such call, so a copy of the variable, `p := pos`, was the flags'

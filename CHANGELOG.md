@@ -175,6 +175,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   an `fsaveS(h H)` keeping `h.s`, `hs[0]` an element of a local array holding a
   local's view, built, and the package slice viewed the dead frame; `fsaveS(h)`
   of a local was refused. In rc.3, rc.2 and v0.58.0.
+- **A print whose argument panics writes nothing of its line**, as Go's:
+  `printf("got %v\nwant %v\n", got.Pix, want.Pix)` of a nil got, image/gif's
+  tests, wrote "got " and then panicked. println and print did the same after a
+  string or a slice, and on the board after plain integers too, wherever an
+  argument could panic: a nil pointer's field, an index or a slice out of range,
+  a division by zero, a negative shift, an assertion. Go evaluates every
+  argument before it writes, and DIFFERENCES.md's "A print writes what it
+  evaluated before a later argument panics" is gone. And of two arguments that
+  panic, `println(a[k], p.x)`, the second panicked first on the host, which the
+  entry did not say, in every release checked. An argument that may panic costs
+  a temporary bound ahead of the statement.
 
 ### Fixed
 

@@ -43750,7 +43750,7 @@ func (e *emitter) emitPanicValue(callSuffix []int32) bool {
 	if e.deferReplay < 0 {
 		saved := e.printArgs
 		e.printArgs = nil
-		e.hoistPrintArgs(args)
+		e.hoistPrintArgs(args, false)
 		defer func() { e.printArgs = saved }()
 	}
 	value := func() string { return e.captureC(func() { e.emitReplayArg(0, arg) }) }
@@ -44564,7 +44564,11 @@ type printArg struct {
 // exactly what it did. And only when every argument's type is nameable, since a
 // temporary needs one: an argument this cannot type leaves the whole print as it was
 // rather than hoisting some of them.
-func (e *emitter) hoistPrintArgs(args []Node) bool {
+//
+// Or when an argument may PANIC where it is evaluated (printArgMayPanic): lead
+// says whether the print writes something before its first argument -- printf's
+// text ahead of its first verb.
+func (e *emitter) hoistPrintArgs(args []Node, lead bool) bool {
 	// A deferred print's arguments were evaluated where the defer stands, into the
 	// temporaries its replay reads. Hoisted again here they were evaluated again,
 	// ahead of every return the replay is written at: `defer println(f(), x)` called
@@ -44618,11 +44622,35 @@ func (e *emitter) hoistPrintArgs(args []Node) bool {
 				break
 			}
 		}
-		if calls < 0 {
-			return false
+		if calls >= 0 {
+			for i := calls + 1; i < len(args); i++ {
+				bind[i] = !e.printArgUnreachable(args[i].ast)
+			}
 		}
-		for i := calls + 1; i < len(args); i++ {
-			bind[i] = !e.printArgUnreachable(args[i].ast)
+		// An argument that may PANIC where it is evaluated -- a nil pointer's field,
+		// an index or a slice out of range, a division by zero, a negative shift --
+		// is bound too, in source order, ahead of anything the print writes. Go
+		// evaluates every argument before it writes any, so a print whose argument
+		// panics writes nothing of its line, where this, writing a piece at a time,
+		// wrote the line up to the argument and panicked in its middle (dom98:
+		// `printf("got %v\n", gotp.Pix)` of a nil gotp wrote "got "). A println
+		// of plain integers, one C printf, is no exception: the target's compiler
+		// writes it as print calls and evaluates each argument as it comes to it,
+		// `println(1, p.x)` writing "1 " on the board, and of two that panic the
+		// host's took the second first, `println(a[k], p.x)` saying "nil pointer
+		// dereference". What is bound runs ahead of the whole statement, so the
+		// first is left where it stands only as the one that may panic, with
+		// nothing written before it.
+		may, n := make([]bool, len(args)), 0
+		for i, a := range args {
+			if may[i] = e.printArgMayPanic(a); may[i] {
+				n++
+			}
+		}
+		for i := range args {
+			if may[i] && (i != 0 || lead || n > 1) {
+				bind[i] = true
+			}
 		}
 	}
 	if !slices.Contains(bind, true) {
@@ -44701,6 +44729,51 @@ func (e *emitter) hoistPrintArgs(args []Node) bool {
 	}
 	e.printArgs = hoisted
 	return true
+}
+
+// checkCalls are the helpers the C calls where a checked build checks an operation
+// it cannot prove safe: a nil pointer dereferenced, an index, a slice expression,
+// a divisor, a shift count, a conversion of a slice to an array pointer, and a
+// panic written out, an assertion's.
+var checkCalls = []string{"ogo_nil_", "ogo_bound", "ogo_sbound", "ogo_reslice", "ogo_nonzero",
+	"ogo_div_", "ogo_mod_", "ogo_shl_", "ogo_shr_", "ogo_arrptr_", "ogo_uslice_", "ogo_panic"}
+
+// printArgMayPanic reports whether a print argument may panic where it is
+// evaluated: its C, or what it binds ahead of the statement, calls a check
+// (checkCalls). The build's own checks answer, so an unchecked build's arguments
+// panic nowhere, and an index the emitter proves in range is none. Asked by
+// rendering the argument, which hands back what the rendering minted and latched,
+// the types among it (unminted): `mkh().a` of a struct holding an array, printed
+// by its printer, wrote a typedef of the array the program's C never named. A
+// function literal among it is not asked, being lifted where it is rendered.
+func (e *emitter) printArgMayPanic(a Node) bool {
+	if hasSymDeep(a.ast, FuncLiteral) {
+		return false
+	}
+	saved := e.err
+	var text string
+	var pro []string
+	e.unminted(func() { text, pro = e.capturePrologue(func() { e.emitExpr(a.ast) }) })
+	if e.err != saved {
+		e.err = saved
+		return false
+	}
+	for _, c := range checkCalls {
+		if strings.Contains(text, c) || slices.ContainsFunc(pro, func(l string) bool { return strings.Contains(l, c) }) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasSymDeep reports whether ast holds a node of sym at any depth.
+func hasSymDeep(ast []int32, sym Symbol) bool {
+	for c := range it(ast) {
+		if c.sym == sym || c.sym != 0 && hasSymDeep(c.ast, sym) {
+			return true
+		}
+	}
+	return false
 }
 
 // isArrayLitFactor reports whether a factor is an ARRAY literal, `[3]int{...}` or
@@ -44891,7 +44964,7 @@ func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 	if len(args) != 0 {
 		saved := e.printArgs
 		e.printArgs = nil
-		e.hoistPrintArgs(args)
+		e.hoistPrintArgs(args, false)
 		defer func() { e.printArgs = saved }()
 	}
 	switch {
@@ -45362,7 +45435,7 @@ func (e *emitter) emitPrintfFormat(what, format string, rest []Node, at []int32)
 	if len(rest) != 0 {
 		saved := e.printArgs
 		e.printArgs = nil
-		e.hoistPrintArgs(rest)
+		e.hoistPrintArgs(rest, len(items) != 0 && items[0].verb == 0)
 		defer func() { e.printArgs = saved }()
 	}
 	next := 0

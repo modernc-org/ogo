@@ -233,32 +233,6 @@ deferred
 panic: boom
 ```
 
-### A print writes what it evaluated before a later argument panics
-
-`print`, `println` and `printf` write each argument as it is evaluated when no argument
-can do anything but panic. Go evaluates every argument first, so its print writes
-nothing when one panics.
-
-```go
-func main() {
-	xs := []int{1, 2, 3}
-	i := 5
-	println("value:", xs[i])
-}
-```
-
-OctoGo prints:
-
-```
-value: panic: index out of range
-```
-
-Go prints:
-
-```
-panic: runtime error: index out of range [5] with length 3
-```
-
 ### `printf` writes the line as it formats it
 
 Go's `fmt.Printf` formats the whole line before it writes any of it. Here a `String`

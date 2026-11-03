@@ -7513,7 +7513,9 @@ func main() {
 // assigning through it is assigning through the field.
 //
 // The last line binds twice, once for the field and once for the slice expression
-// over it, which is what makes the chain emittable at all.
+// over it, which is what makes the chain emittable at all. And the print's two
+// arguments, each an index that may panic, are bound ahead of it in their order:
+// a print writes nothing of its line before an argument panics.
 func TestEmitCIndexedSliceField(t *testing.T) {
 	src := `type item struct{ v []int }
 
@@ -7538,11 +7540,12 @@ func main() {
 	want := "\ts.ptr[ogo_bound(1, s.len)].v = b1;\n" +
 		"\togo_slice_int _ogo_t0 = s.ptr[ogo_bound(1, s.len)].v;\n" +
 		"\t_ogo_t0.ptr[ogo_bound(0, _ogo_t0.len)] = 9;\n" +
-		"\togo_slice_int _ogo_t1 = s.ptr[ogo_bound(1, s.len)].v;\n" +
-		"\togo_slice_int _ogo_t2 = s.ptr[ogo_bound(1, s.len)].v;\n" +
-		"\togo_slice_int _ogo_t3 = ogo_reslice_int(_ogo_t2.ptr, _ogo_t2.cap, 1, _ogo_t2.len);\n" +
-		"\tprintf(\"%d %d\\n\", _ogo_t1.ptr[ogo_bound(1, _ogo_t1.len)], " +
-		"_ogo_t3.ptr[ogo_bound(1, _ogo_t3.len)]);\n"
+		"\togo_slice_int _ogo_t5 = s.ptr[ogo_bound(1, s.len)].v;\n" +
+		"\tint _ogo_t4 = _ogo_t5.ptr[ogo_bound(1, _ogo_t5.len)];\n" +
+		"\togo_slice_int _ogo_t7 = s.ptr[ogo_bound(1, s.len)].v;\n" +
+		"\togo_slice_int _ogo_t8 = ogo_reslice_int(_ogo_t7.ptr, _ogo_t7.cap, 1, _ogo_t7.len);\n" +
+		"\tint _ogo_t6 = _ogo_t8.ptr[ogo_bound(1, _ogo_t8.len)];\n" +
+		"\tprintf(\"%d %d\\n\", _ogo_t4, _ogo_t6);\n"
 	if !bytes.Contains(buf.Bytes(), []byte(want)) {
 		t.Errorf("indexed slice field:\n got %q\nwant it to contain %q", buf.String(), want)
 	}
@@ -7556,7 +7559,10 @@ func main() {
 //
 // A chain that merely ends in a slice keeps writing its header straight into place:
 // the last line's `r` shows the two together, the inner step bound and the outer
-// streamed, and `b.data[1:3]` inside a len() shows a trailing one on its own.
+// streamed, and `b.data[1:3]` inside a len() shows a trailing one on its own. The
+// first print's three arguments, each through a check that may panic, are bound
+// ahead of it in their order: a print writes nothing of its line before an argument
+// panics.
 func TestEmitCSliceExprChain(t *testing.T) {
 	src := `type buf struct{ data []int }
 
@@ -7580,13 +7586,15 @@ func main() {
 	want := "int main(void) {\n" +
 		"\tint a[4] = {0};\n" +
 		"\tbuf b = {(ogo_slice_int){a, 4, 4}};\n" +
-		"\togo_slice_int _ogo_t0 = (ogo_slice_int){a, 4, 4};\n" +
-		"\togo_slice_int _ogo_t1 = ogo_reslice_int(b.data.ptr, b.data.cap, 1, 3);\n" +
-		"\togo_slice_int _ogo_t2 = ogo_reslice_int(b.data.ptr, b.data.cap, 1, 3);\n" +
-		"\tprintf(\"%d %d %d\\n\", _ogo_t0.ptr[ogo_bound(1, _ogo_t0.len)], " +
-		"_ogo_t1.ptr[ogo_bound(1, _ogo_t1.len)], _ogo_t2.len);\n" +
-		"\togo_slice_int _ogo_t3 = (ogo_slice_int){a + 1, 4 - 1, 4 - 1};\n" +
-		"\togo_slice_int r = ogo_reslice_int(_ogo_t3.ptr, _ogo_t3.cap, 1, 2);\n" +
+		"\togo_slice_int _ogo_t4 = (ogo_slice_int){a, 4, 4};\n" +
+		"\tint _ogo_t3 = _ogo_t4.ptr[ogo_bound(1, _ogo_t4.len)];\n" +
+		"\togo_slice_int _ogo_t6 = ogo_reslice_int(b.data.ptr, b.data.cap, 1, 3);\n" +
+		"\tint _ogo_t5 = _ogo_t6.ptr[ogo_bound(1, _ogo_t6.len)];\n" +
+		"\togo_slice_int _ogo_t8 = ogo_reslice_int(b.data.ptr, b.data.cap, 1, 3);\n" +
+		"\tint _ogo_t7 = _ogo_t8.len;\n" +
+		"\tprintf(\"%d %d %d\\n\", _ogo_t3, _ogo_t5, _ogo_t7);\n" +
+		"\togo_slice_int _ogo_t9 = (ogo_slice_int){a + 1, 4 - 1, 4 - 1};\n" +
+		"\togo_slice_int r = ogo_reslice_int(_ogo_t9.ptr, _ogo_t9.cap, 1, 2);\n" +
 		"\tprintf(\"%d\\n\", (r).len);\n" +
 		"\treturn 0;\n" +
 		"}\n"
