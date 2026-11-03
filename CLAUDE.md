@@ -255,6 +255,23 @@ silent fault puts the count back to 0. Each round's account is in
   math/rand/v2 and internal/chacha8rand ported with their tests, a plant and a
   radio on cogs, a particle filter, orders by Zipf's law toured by 2-opt),
   against master on dom95's fix: clean -- 2
+- dom97 (2026-11-02), an industrial gateway's firewall (Go 1.27's net/netip
+  ported with its tests, an access list, routes in a trie, connection tracking
+  and NAT, the OT and IT networks on cogs merged by time), against master on
+  dom95's fix: silent (the initialization order: a variable a header's `:=`
+  declares, in a function an initializer calls, read nothing, and a method
+  called on a receiver the pass could not type stood for every method of its
+  name; and, found gating the fix against go/types' order, the steps placed in
+  passes, not as Go places them, a package slice's fill named by its backing,
+  a group's typed and interface variables run after the rest, a blank
+  variable's initializer dropped, and a variable C initializes statically
+  ready from the start, a cycle through one built; and, read off the mutants'
+  refusals, a field of a variable typed by a struct written out and inferred,
+  a range over a table of test cases, asked nothing, so Go's rejects of it
+  built), two false refusals fixed (an empty slice declared and handed back; a
+  value list read from above), three listed (a view of a local array of no
+  elements; a blank initializer that only panics; a range variable read only by
+  `%T`, on the host) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1230,6 +1247,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   rune is int32, and an alias of a predeclared type is that type** (dom87). **A
   builtin that prints is asked of its arguments what each of its siblings asks:
   printf's took what println's refused** (dom88).
+- **A question a walk answers is answered by the walk wherever it is asked: a field
+  asked one step away read only the written type, and a table of test cases has
+  none** (dom97, sweeps/anon-fields).
 - **A table read by its value is asked by its key, and asked what else it holds: an
   empty struct's fields are nil, and so are an interface's** (isStruct, fieldEqCmp).
   **Two keys for one type are two tables: the reader asks by the key the writer
@@ -1440,6 +1460,16 @@ section. A new finding goes there; the rule it leaves goes here too.
   is its element's** (dom70). **A STRUCT OF MORE THAN
   FOUR WORDS PASSED WHERE A CALL STANDS**: **A new place a struct-valued call is
   handed on binds it first**.
+- **A node's place in a list is its index: a non-terminal's token is 0.** **A
+  default a walk takes where it cannot tell is asked what it decides: a
+  dependency Go does not have is a wrong order as much as one it misses** (dom97,
+  initorder.go). **An order is asked of what computes it: go/types' InitOrder of
+  a twin is Go's order, and the C is read against it.** **A schedule is asked
+  step by step: an item placed in passes is placed after what became ready
+  after it.** **A Go defer in an emitter's loop runs when the function returns,
+  last first: a step appended under one is out of its place.** **A variable C
+  initializes statically is still a step of Go's order: what reads it waits for
+  its place** (dom97, sweeps/init-schedule, tools/goinitorder).
 
 **The target and its backend**
 
