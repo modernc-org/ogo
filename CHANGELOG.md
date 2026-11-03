@@ -193,6 +193,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   RAM, "main's stack needs at least 74044 bytes"; so did `ws[i] = W{}` and
   `h.w = W{}` of any such struct, at the cost of its size, where Go zeroes it
   where it stands. In every release checked.
+- **An empty array literal stored is zeroed in place**: `*p = [512]int{}`, `l =
+  [N]T{}`, `rows[i] = [M]T{}`, `r.a = [N]T{}` and `return [N]T{}` each made a
+  zero array of the full size on the stack and copied it in, where Go zeroes
+  the array where it stands. In every release checked.
 - **A field of a variable typed by a struct written out is checked**: `for _, tt
   := range tests` over a `[]struct{...}`, Go's table of test cases, and `tt :=
   ts[0]`, `tt := mk()`, `p := &g`, and a variable declared `*struct{...}`, had

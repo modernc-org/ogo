@@ -57506,6 +57506,123 @@ func main() {
 		want: "true true false 7 true 3 true 1\n",
 	},
 	{
+		// An empty ARRAY literal stored, `*p = [512]int{}` (dom98's camera): each
+		// store was a copy from a temporary of the literal, the array's size on
+		// the stack, where Go zeroes it where it stands. Every store site: a
+		// variable, a defined array type, through a pointer and a pointer field,
+		// a field, an element whose index is a call (read once), a result
+		// returned alone, through a defer, and among others, arrays of floats,
+		// strings and structs holding arrays.
+		name: "an empty array literal stored",
+		src: `type Buf [64]int
+
+type R struct {
+	a [64]int
+	n int
+}
+
+type H struct{ pa *[64]int }
+
+type W struct {
+	t [8]uint32
+	f float64
+}
+
+var g [64]int
+
+var rows [3][32]int
+
+var r R
+
+var calls int
+
+func idx(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func fill() {
+	for i := range g {
+		g[i] = i + 1
+	}
+	for i := range rows {
+		for j := range rows[i] {
+			rows[i][j] = i + j + 1
+		}
+	}
+	for i := range r.a {
+		r.a[i] = i + 2
+	}
+	r.n = 5
+}
+
+func zeroPtr(p *[64]int) { *p = [64]int{} }
+
+func zero1() [64]int {
+	return [64]int{}
+}
+
+func zeroDefer() (z [64]int) {
+	z[4] = 1
+	defer note()
+	return [64]int{}
+}
+
+func note() { calls = calls*10 + 9 }
+
+func zero2() ([64]int, int) {
+	return [64]int{}, 7
+}
+
+func main() {
+	fill()
+	var l [64]int
+	l[3] = 9
+	l = [64]int{}
+	zeroPtr(&g)
+	println(l[3], g[7], len(l))
+	var b Buf
+	b[2] = 4
+	b = Buf{}
+	println(b[2])
+	h := H{&r.a}
+	*h.pa = [64]int{}
+	println(r.a[9], r.n)
+	r.a[9] = 3
+	r.a = [64]int{}
+	println(r.a[9])
+	rows[idx(1)] = [32]int{}
+	println(rows[0][2], rows[1][2], rows[2][2], calls)
+	z := zero1()
+	println(z[0])
+	l[5] = 6
+	l = zero1()
+	println(l[5])
+	zd := zeroDefer()
+	println(zd[4], calls)
+	y, k := zero2()
+	println(y[1], k)
+	var ws [2]W
+	ws[1].t[3] = 8
+	ws[1].f = 1.5
+	ws[1].t = [8]uint32{}
+	println(ws[1].t[3], ws[1].f)
+	ws[1].f = 2.5
+	ws = [2]W{}
+	println(ws[1].f, ws[0].t[0])
+	var fs [4]float64
+	fs[1] = -0.5
+	fs = [4]float64{}
+	println(fs[1])
+	var ss [3]string
+	ss[2] = "x"
+	ss = [3]string{}
+	println(ss[2] == "", len(ss[2]))
+}
+`,
+		want: "0 0 64\n0\n0 5\n0\n3 0 5 1\n0\n0\n0 19\n0 7\n0 1.5\n0 0\n0\ntrue 0\n",
+	},
+	{
 		// What a method of a typed CONSTANT hands back, `pos := Position.Pixel()`
 		// for a `const Position PixelRole` (rsc.io/qr's coding, dom83): the checker
 		// typed no such call, so a copy of the variable, `p := pos`, was the flags'

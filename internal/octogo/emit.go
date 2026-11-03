@@ -27189,6 +27189,30 @@ func (e *emitter) hoistArrayLitExpr(ast []int32) (string, bool) {
 	return e.hoistLitVar(typeAST, lit)
 }
 
+// zeroArrayStore writes `memset(dst, 0, size)` where the value stored is an EMPTY
+// array literal, `*p = [512]int{}` (dom98's camera): the zero value, every bit of
+// which is 0 here, which Go writes where the array stands. Copied from a temporary
+// of it (hoistArrayLitExpr), each such store cost the array's size on the stack,
+// as `*w = Writer{}` did for a struct holding one (emitStructCopy). It reports
+// whether it wrote the store.
+func (e *emitter) zeroArrayStore(dst, size string, rhs []int32) bool {
+	fac, ok := e.soleFactorNode(rhs)
+	if !ok {
+		return false
+	}
+	typeAST, lit, ok := e.factorArrayLit(fac)
+	if !ok || hasNonTerminal(lit.ast) {
+		return false
+	}
+	if _, isArray := e.arrayDim(typeAST); !isArray {
+		return false
+	}
+	e.includes["string.h"] = true
+	e.ind()
+	e.emit("memset(" + dst + ", 0, " + size + ");\n")
+	return true
+}
+
 // unwrapArrayConv sees through a conversion to an ARRAY type, `Col(r)`, answering
 // with the operand it converts. The conversion changes nothing about the value -- the
 // typedef stands for the same storage -- and Go admits one between array types only
@@ -40458,6 +40482,17 @@ func (e *emitter) emitReturn(nodes []Node) {
 			done()
 			return
 		}
+		// `return [64]int{}`: the zero value, written where the value is held.
+		if lit, isLit := e.arrayShapeOf(exprs[0].ast); isLit && lit.elem == a.elem && lit.declSuffix() == a.declSuffix() {
+			dst := arrayResultParam
+			if hold != "" {
+				dst = hold
+			}
+			if e.zeroArrayStore(dst, size, exprs[0].ast) {
+				done()
+				return
+			}
+		}
 		src, srcDim, okSrc := e.arrayReturnOperand(exprs[0].ast)
 		switch {
 		case !okSrc:
@@ -40840,6 +40875,9 @@ func (e *emitter) emitArrayInto(dst string, a arrDim, ex []int32) bool {
 	}
 	if !e.checkArrayShape(a, ex, "return statement") {
 		return false
+	}
+	if e.zeroArrayStore(dst, "sizeof("+a.elem+")"+arrayCountC(a), ex) {
+		return true
 	}
 	src, ok := e.arraySourceC(ex)
 	if !ok {
@@ -48939,6 +48977,9 @@ func (e *emitter) emitChainDerefAssign(head Node, base, stars string, postfix []
 			ptr = e.hoist(ct, func() { e.emit(text) })
 			e.locals[ptr] = ct
 		}
+		if e.zeroArrayStore(e.nilCheckedC(ptr, ct), "sizeof(*"+ptr+")", rhs[0].ast) {
+			return
+		}
 		src, okSrc := e.arraySourceC(rhs[0].ast)
 		if !okSrc {
 			fail("the right side is not an array this can read from")
@@ -49238,6 +49279,9 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 					e.emitArrayResultCall(e.varRef(base), cname, rhs[0].ast)
 					return
 				}
+				if e.zeroArrayStore(e.varRef(base), "sizeof("+e.varRef(base)+")", rhs[0].ast) {
+					return
+				}
 				if src, ok := e.arraySourceC(rhs[0].ast); ok {
 					e.includes["string.h"] = true
 					dst := e.varRef(base)
@@ -49456,6 +49500,9 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 				if !e.checkArrayShape(a, rhs[0].ast, "assignment") {
 					return
 				}
+				if e.zeroArrayStore(e.nilCheckedPtrVar(base), "sizeof(*"+e.varRef(base)+")", rhs[0].ast) {
+					return
+				}
 				if src, ok := e.arraySourceC(rhs[0].ast); ok {
 					e.includes["string.h"] = true
 					e.ind()
@@ -49508,6 +49555,9 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 						return
 					}
 					e.emitArrayResultCall(lhs, cname, rhs[0].ast)
+					return
+				}
+				if e.zeroArrayStore(lhs, "sizeof("+lhs+")", rhs[0].ast) {
 					return
 				}
 				if src, ok := e.arraySourceC(rhs[0].ast); ok {
@@ -50488,6 +50538,9 @@ func (e *emitter) emitArrayTargetAssign(dst string, a arrDim, rhs []int32) {
 			return
 		}
 		e.emitArrayResultCall(dst, cname, rhs)
+		return
+	}
+	if e.zeroArrayStore(dst, "sizeof("+dst+")", rhs) {
 		return
 	}
 	src, ok := e.arraySourceC(rhs)
