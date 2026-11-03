@@ -178,6 +178,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **What a method of an asserted type hands back has its type**:
+  `println(i.(*T).Name())` printed the string's pointer and length, an int64's
+  and a float64's two words, a uint32 past 2^31 negative and a float32's bits,
+  on the board and the host alike, a call on an assertion of a name being typed
+  by nothing; printf of it was refused, "cannot tell the type of this argument",
+  `m0 = m0.(*image.Paletted).SubImage(r)`, image/gif's tests, "an interface
+  holds a pointer: write the address of a variable", with no position, and `j :=
+  i.(*T).Sub(1)` could not infer a type for j. An assertion of a field, an
+  element or a call's result was typed. In every release checked.
 - **A field of a variable typed by a struct written out is checked**: `for _, tt
   := range tests` over a `[]struct{...}`, Go's table of test cases, and `tt :=
   ts[0]`, `tt := mk()`, `p := &g`, and a variable declared `*struct{...}`, had

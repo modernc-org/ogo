@@ -57371,6 +57371,67 @@ func main() {
 		want: "0 0 false 0 false 8\n0 0 false 0 false\n0 false 0 false\n",
 	},
 	{
+		// A method called on a type assertion of a name, `m0 =
+		// m0.(*image.Paletted).SubImage(r)` (image/gif's tests, dom98): the
+		// emitter's type of the call was the chain typer's, which walks fields
+		// and an interface's slots and not a type's methods, so println of a
+		// string, an int64, a float64, a uint32 or a float32 one printed it as
+		// integers, printf's was refused, `j :=` of one could not infer a type
+		// for j, an interface result stored into an interface was refused, "an
+		// interface holds a pointer", with no position, and a field past the
+		// method, `n := m0.(*T).Ptr(1).n`, then bound the assertion twice.
+		name: "a method of an asserted type, its result declared and stored into an interface",
+		src: `type I interface{ Get() int }
+
+type T struct{ n int }
+
+func (t *T) Get() int { return t.n }
+
+func (t *T) Sub(k int) I { return &ts[k] }
+
+func (t *T) Ptr(k int) *T { return &ts[k] }
+
+func (t *T) Pair(k int) [2]int { return [2]int{t.n, k} }
+
+func (t *T) Slice(k int) []int { return vals[:k] }
+
+func (t *T) Name() string { return "tee" }
+
+func (t *T) Big() int64 { return 1 << 40 }
+
+func (t *T) Half() float64 { return 2.5 }
+
+func (t *T) U() uint32 { return 4000000000 }
+
+func (t *T) F32() float32 { return 0.25 }
+
+var ts = [3]T{{1}, {2}, {3}}
+
+var vals = [4]int{5, 6, 7, 8}
+
+var pi I
+
+func run() {
+	var m0 I = &ts[0]
+	m0 = m0.(*T).Sub(2)
+	j := m0.(*T).Sub(1)
+	var k I = j.(*T).Sub(0)
+	pi = k.(*T).Sub(2)
+	n := m0.(*T).Ptr(1).n
+	s := (m0).(*T).Slice(3)
+	p := j.(*T).Pair(9)
+	println(m0.Get(), j.Get(), k.Get(), pi.Get(), n, len(s), s[2], p[0], p[1])
+	println(m0.(*T).Name(), m0.(*T).Big(), m0.(*T).Half(), m0.(*T).U(), m0.(*T).F32())
+	printf("%v %v %T\n", m0.(*T).Name(), m0.(*T).U(), m0.(*T).Big())
+}
+
+func main() {
+	run()
+}
+`,
+		want: "3 2 1 3 2 3 7 2 9\ntee 1099511627776 2.5 4000000000 0.25\ntee 4000000000 int64\n",
+	},
+	{
 		// What a method of a typed CONSTANT hands back, `pos := Position.Pixel()`
 		// for a `const Position PixelRole` (rsc.io/qr's coding, dom83): the checker
 		// typed no such call, so a copy of the variable, `p := pos`, was the flags'

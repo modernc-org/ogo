@@ -55497,6 +55497,19 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 					}
 					return at.ctype, true
 				}
+				// A METHOD of the asserted type, `m0.(*image.Paletted).SubImage(r)`
+				// (dom98): the chain typer walks fields and an interface's slots, not
+				// a type's methods, so the type is the renderer's, which binds the
+				// asserted value and calls on it (chainCText). Untyped, `x :=` of
+				// such a call could not infer a type for x, and an interface result
+				// stored into an interface was refused, "an interface holds a
+				// pointer", while a return or an argument of it built.
+				if at, ok := e.renderedChainType(e.src(kids[0].tok), slices.Collect(it(kids[1].ast))); ok && len(at.dims) == 0 {
+					if at.slice {
+						return sliceCName(at.elem), true
+					}
+					return at.ctype, true
+				}
 				return "", false
 			}
 			// `x := mk()[1]` types as the chain reached from the array the call
@@ -57885,9 +57898,31 @@ func (e *emitter) emitExprNode(n Node) {
 			// assertion binds to a temporary and the rest applies to that, which is
 			// what gives the steps a base of the ASSERTED type to be read against.
 			if operand, iface, target, isIface, rest, ok := e.typeAssertionPrefix(kids); ok && len(rest) != 0 {
-				name, _, ok := e.hoistAssert(operand, iface, target, isIface)
-				if !ok {
-					return
+				// Once per occurrence, by the memo chainCText binds an assertion
+				// in the chain by: a statement may render the chain before it
+				// renders the expression, `v := e.(*P).ptr().n` asking whether its
+				// value is an array field of a call's result (arrayFieldOperand),
+				// and the two bindings checked the operand twice and left one
+				// temporary unread, which the host's compiler refuses (dom98).
+				tok := int32(-1)
+				for c := range it(slices.Collect(it(kids[1].ast))[0].ast) {
+					if c.sym == 0 {
+						tok = c.tok
+						break
+					}
+				}
+				name, done := "", false
+				if e.hoistedArrayCalls != nil && tok >= 0 {
+					name, done = e.hoistedArrayCalls[tok]
+					done = done && name != ""
+				}
+				if !done {
+					if name, _, ok = e.hoistAssert(operand, iface, target, isIface); !ok {
+						return
+					}
+					if e.hoistedArrayCalls != nil && tok >= 0 {
+						e.hoistedArrayCalls[tok] = name
+					}
 				}
 				if containsSym(rest, CallSuffix) {
 					e.callOrFail(e.emitCallExpr(name, rest))
