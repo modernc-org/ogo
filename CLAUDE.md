@@ -272,6 +272,17 @@ silent fault puts the count back to 0. Each round's account is in
   value list read from above), three listed (a view of a local array of no
   elements; a blank initializer that only panics; a range variable read only by
   `%T`, on the host) -- 0
+- dom98 (2026-11-03), a refrigeration compressor watched by a thermal camera
+  (Go 1.27's compress/lzw and image/gif ported with their tests, image, color,
+  palette and draw's Floyd-Steinberg, an 8x8 thermopile on a cog, its frames in
+  an animated GIF), against master on dom97's fixes: silent (a method called on
+  a type assertion of a name typed by nothing, so println wrote its words; a
+  print writing its line up to an argument that panics, on the host and more on
+  the board, DIFFERENCES.md's entry gone on the user's call; a panic's string
+  written up to a NUL and not indented as Go's runtime writes it, and a deferred
+  one evaluated at the return), one false refusal fixed (a zero literal stored
+  into a struct holding an array made on the stack, lzw's 64 KB `*w =
+  Writer{}`) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1138,7 +1149,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   writing a rule: what is missing may be the variable's type.** **A harness's
   header is checked against what it runs** (run.py's twins, amd64 for 386). **A
   probe script runs bare as all.sh runs it: every argument has a default, and
-  nothing it writes lands where it is run** (dom87).
+  nothing it writes lands where it is run** (dom87). **A board check that stops at
+  a panic reads what came before it, or the board pins none of it.** **A harness
+  that stops at a panic reads the panic's line to its end: the message is the
+  program's output too** (dom98, mutate/panicmsg.py).
 - **A PROGRAM GO REJECTS IS A ROW** (`scripts/rejects.sh`): **What `ogo build` does
   with such a program is the measure** -- **And measure with a struct of MORE THAN
   ONE WORD, and RUN the binary**.
@@ -1147,7 +1161,8 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **A refusal for what a construct costs asks what Go's compiler pays for it where
   it stands: an allocation Go does not make is not one** (`switch string(word)`).
   **What Go's compiler copies is asked of it, `-gcflags=-m`, not remembered**
-  (`range []byte(s)`).
+  (`range []byte(s)`). **What Go zeroes in place is zeroed in place: a temporary
+  of the zero value costs its size where Go pays nothing** (dom98).
 - **A REVIEW IS A PROBE FROM OUTSIDE THE SWEEPS**. **A review's claim about the
   compiler is probed before it is answered: a note it read may be months behind the
   code.** **A note calling a row "by design" is checked against specs.go before it
@@ -1200,7 +1215,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   and nil is** (dom91). **A VARIADIC CALL IS A ROW**: **A variadic call is a
   call: its fixed arguments are asked every question a call's are, and evaluated
   before what it packs** (dom88). **A FUNCTION VALUE'S CALL IS A ROW**. **AN ARRAY
-  RESULT IS A ROW**. **PRINTING A VALUE IS A ROW**. **A CALL'S RESULTS FORWARDED
+  RESULT IS A ROW**. **PRINTING A VALUE IS A ROW**: **A value no walk types is
+  printed as an int: println's default is the silent side of what printf
+  refuses** (dom98). **A CALL'S RESULTS FORWARDED
   WHOLE ARE A ROW**. **A DEFERRED OR STARTED CALL IS A ROW**: **a new callee shape
   is swept under plain, `defer` and `go`, with a store into the callee after the
   statement**.
@@ -1295,7 +1312,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   writable makes it a row of the checker's walks.** **a shape the emitter learns to
   read is a shape the checker must refuse the same way**. **A head a walk types is
   asked in every kind a name has: a constant is a receiver too, and its method's
-  result was typed by nothing** (dom83).
+  result was typed by nothing** (dom83). **A question answered for one head is
+  answered for every head the language allows there: an assertion of an
+  expression was typed by the renderer, of a name by a walk of fields** (dom98).
 - **A new helper following type definitions goes through typeIdentDecl.** **a file
   is found from a qualified name's QUALIFIER**. **A name the checker reads off
   another package's declaration is resolved there whether or not it is exported;
@@ -1448,13 +1467,17 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **A method the compiler writes in C asks of its receiver what a body's dereference
   would** (the Builder's helpers and a nil *Builder). **A byte converted to a
   string is a rune of its number: text is copied by slicing, never by converting
-  its bytes** (dom86, parsePrintfFormat).
+  its bytes** (dom86, parsePrintfFormat). **A string handed to C as its char* is
+  asked where C stops reading it: a Go string ends at its length, and a NUL is a
+  byte of it** (dom98, ogo_panic_str).
 - **A call on the way to a value of several words is bound in the one word it
   yields: a pointer, or a struct element's address** (the target's compiler copies
   such a value a word at a time; A VIEW THROUGH A POINTER IS OF WHAT IT POINTS AT).
 - **Two operands that do something in one C expression are bound in Go's order,
   whichever compiler builds it** (indexOnceC, bindTargetOrder; A VALUE OF SEVERAL
-  WORDS IS A ROW OF EVERY POSITION, ON THE BOARD).
+  WORDS IS A ROW OF EVERY POSITION, ON THE BOARD). **What one C call does at once
+  the target's compiler may do piece by piece: a printf of a constant format is
+  print calls on the board, and a fold into one call is no order there** (dom98).
 - **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED**: **A check asked of a
   position's C type asks first whether the position is an array: an array's ctype
   is its element's** (dom70). **A STRUCT OF MORE THAN
