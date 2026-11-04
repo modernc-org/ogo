@@ -8460,6 +8460,122 @@ func main() {
 		panics: true,
 	},
 	{
+		// A string a panic is given is written by its length (ogo_panic_str): the
+		// runtime's ogo_panic wrote its char* up to a NUL, so a slice of a string
+		// wrote the rest of the string after it, and a message a Builder made wrote
+		// what the buffer held past it (dom98's m0296).
+		name: "a panic of a slice of a string writes the slice",
+		src: `var calls int
+
+func field(s string, k int) string {
+	calls++
+	i := 0
+	for n := 0; n < k; n++ {
+		for s[i] != '|' {
+			i++
+		}
+		i++
+	}
+	j := i
+	for j < len(s) && s[j] != '|' {
+		j++
+	}
+	return s[i:j]
+}
+
+func main() {
+	rec := "id|temp|state"
+	println(field(rec, 0), calls)
+	panic(field(rec, 1))
+}
+`,
+		want:   "id 1\npanic: temp\n",
+		panics: true,
+	},
+	{
+		// Go writes a NUL among a panic's bytes as it writes any other.
+		name: "a panic of a string holding a NUL writes the bytes after it",
+		src: `func main() {
+	panic("id\x00tail")
+}
+`,
+		want:   "panic: id\x00tail\n",
+		panics: true,
+	},
+	{
+		// Go's runtime writes a panic's string with a tab after each newline
+		// (printindented), so a message of several lines reads as one panic's.
+		name: "a panic's string of several lines is indented",
+		src: `func main() {
+	panic("first\nsecond\nthird")
+}
+`,
+		want:   "panic: first\n\tsecond\n\tthird\n",
+		panics: true,
+	},
+	{
+		name: "a panic of an error of several lines is indented",
+		src: `type parseError struct{ line int }
+
+func (e *parseError) Error() string { return "bad record\nat a line" }
+
+var pe = parseError{3}
+
+func main() {
+	var err error = &pe
+	panic(err)
+}
+`,
+		want:   "panic: bad record\n\tat a line\n",
+		panics: true,
+	},
+	{
+		name: "a panic of a Stringer of several lines is indented",
+		src: `type T struct{ n int }
+
+func (t *T) String() string { return "t\nu" }
+
+var t1 = T{1}
+
+func main() {
+	panic(&t1)
+}
+`,
+		want:   "panic: t\n\tu\n",
+		panics: true,
+	},
+	{
+		name: "a panic of a defined string type of several lines is indented",
+		src: `type Name string
+
+func main() {
+	panic(Name("two\nlines"))
+}
+`,
+		want:   "panic: main.Name(\"two\n\tlines\")\n",
+		panics: true,
+	},
+	{
+		// A deferred panic writes the string its defer saved, as Go evaluates a
+		// deferred call's arguments at the defer: the replay evaluated s[2:4]
+		// again, and wrote what s had become; and of a local, whose scope the
+		// replay has left, it was refused as no string.
+		name: "a deferred panic writes the string its defer saw",
+		src: `func run() {
+	s := "abcdef"
+	defer panic(s[2:4])
+	s = "uvwxyz"
+	println("body", s)
+}
+
+func main() {
+	run()
+}
+`,
+		want:   "body uvwxyz\npanic: cd\n",
+		panics: true,
+	},
+	{
 		// A function of a result may end in a panic, a terminating statement in Go.
 		// The host's compiler did not know that the runtime's panics do not return,
 		// warned that control reached the end of a non-void function, and failed the

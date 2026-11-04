@@ -7145,7 +7145,7 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	// has a string of its own: `printf("%8t", ok)` pads the WORD through
 	// ogo_print_str_pad, and a program with no string anywhere else carried the
 	// helper without the type it takes, which no C compiler builds.
-	if e.usesStringPrint || e.usesStringPad || e.usesBytesPrint || e.usesRuneDecode || e.usesStringCmp || e.usesStringEq {
+	if e.usesStringPrint || e.usesStringPad || e.usesBytesPrint || e.usesRuneDecode || e.usesStringCmp || e.usesStringEq || e.usesPanicText {
 		e.usesString = true
 	}
 	// The float64 typedef and its arithmetic, where the C names one (f64Section).
@@ -7284,6 +7284,13 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	}
 	if e.usesPanicEnd {
 		helperDefs.WriteString(ogoPanicEndDef(e.release))
+	}
+	// After ogo_panic_end, which ogo_panic_str calls.
+	if e.usesPanicText {
+		helperDefs.WriteString(ogoPanicTextDef)
+	}
+	if e.usesPanicStr {
+		helperDefs.WriteString(ogoPanicStrDef)
 	}
 	if e.usesBound {
 		helperDefs.WriteString(ogoBound)
@@ -8072,6 +8079,8 @@ type emitter struct {
 	panicIfaces         map[string]bool         // interface C types a panic is given, each needing its ogo_panicv_<T> helper (mintPanicIfaces)
 	assertMiss          map[[2]string]bool      // (interface, interface asserted) pairs a failed assertion names a missing method of (mintAssertMiss)
 	usesPanicEnd        bool                    // a panic of a value that is no plain string ends in ogo_panic_end
+	usesPanicText       bool                    // a panic writes a string as Go's runtime writes one: ogoPanicTextDef
+	usesPanicStr        bool                    // a panic of a plain string ogo_panic cannot write: ogoPanicStrDef
 	printPos            string                  // where the %v being emitted is written, for a printer minted from it later
 	printlnElems        map[string]bool         // element C types printed with a newline, needing ogo_println_slice_<T> (which calls ogo_print_slice_<T>)
 	defers              []deferredCall          // the current function's top-level defers, in source order, replayed LIFO before each return
@@ -43686,25 +43695,89 @@ func (e *emitter) lenConstKids(kids []Node) (int64, bool) {
 	return 0, false
 }
 
-// emitPanic emits the builtin panic of a plain string, mapping to the runtime
-// ogo_panic(const char* msg) with the ogo_string's char* field. Any other value is
-// written by emitPanicValue, as a statement; what reaches here otherwise is a panic
-// in a position that is no statement of its own.
+// emitPanic emits the builtin panic of a plain string. A constant holding neither a
+// newline nor a NUL maps to the runtime ogo_panic(const char* msg) with the
+// ogo_string's char* field, its literal ending in the NUL C gives it; any other string
+// goes to ogo_panic_str, which writes it by its length as Go's runtime does. Any other
+// value is written by emitPanicValue, as a statement; what reaches here otherwise is
+// a panic in a position that is no statement of its own.
+//
+// Every string went to ogo_panic until 2026-11-04, and a string ends at no NUL of
+// its own: a slice of one, `panic(s[:5])`, wrote the rest of s, and a message a
+// Builder made wrote what the Builder's buffer held past it, up to the first zero
+// byte (dom98's m0296, an image package's "Rectangle has huge or negative
+// dimensions" over an arena). Nor did it indent a newline as Go does.
 func (e *emitter) emitPanic(callSuffix []int32) {
 	args := e.callArgExprs(callSuffix)
 	if len(args) != 1 {
 		e.fail("panic takes exactly one argument")
 		return
 	}
-	if ct, ok := e.exprReprCType(args[0].ast); !ok || ct != cString {
+	// During a replay the argument was written in a scope that has been left, and
+	// what the capture recorded is its type (printfArgType): `defer panic(s)` of a
+	// local s was refused as no string.
+	ct, ok := e.replayArgCType(0)
+	if !ok {
+		ct, ok = e.exprReprCType(args[0].ast)
+	}
+	if !ok || ct != cString {
 		e.fail("panic is supported only with a string argument yet")
 		return
 	}
-	e.needPanic()
-	e.emit("ogo_panic((")
-	e.emitExpr(args[0].ast)
-	e.emit(").str)")
+	// A deferred panic writes what its defer saved (emitReplayArg), as Go evaluates
+	// a deferred call's arguments at the defer; s[2:4] was evaluated again at the
+	// return until 2026-11-04, and wrote what s had become by then.
+	arg := func() {
+		saved := e.printArgs
+		e.printArgs = nil
+		e.emitReplayArg(0, args[0])
+		e.printArgs = saved
+	}
+	if s, ok := e.foldConstString(args[0].ast); ok && !strings.ContainsAny(s, "\n\x00") {
+		e.needPanic()
+		e.emit("ogo_panic((")
+		arg()
+		e.emit(").str)")
+		return
+	}
+	e.needPanicText()
+	e.usesPanicStr = true
+	e.emit("ogo_panic_str(")
+	arg()
+	e.emit(")")
 }
+
+// needPanicText asks for ogo_print_panicstr, and for ogo_panic_end beside it, which
+// every panic writing a string through it ends in.
+func (e *emitter) needPanicText() {
+	e.needPanicEnd()
+	e.usesPanicText = true
+}
+
+// ogoPanicTextDef writes a panic's string as Go's runtime does (printindented): by
+// its length, a tab after each newline. Go writes so every string a panic prints --
+// a plain one, what an Error or a String method hands back, a defined string type's
+// value between its quotes.
+const ogoPanicTextDef = "static void ogo_print_panicstr(ogo_string s) {\n" +
+	"\tfor (int _i = 0; _i < s.len; _i++) {\n" +
+	"\t\tputchar(s.str[_i]);\n" +
+	"\t\tif (s.str[_i] == '\\n') putchar('\\t');\n" +
+	"\t}\n" +
+	"}\n"
+
+// ogoPanicStrDef is the panic of a plain string ogo_panic cannot write. The string
+// is its argument, so it is evaluated before the panic begins, as Go evaluates it;
+// and the host's compiler is told it does not return, as the shim tells it of
+// ogo_panic and ogo_panic_end.
+const ogoPanicStrDef = "#ifndef __FLEXC__\n" +
+	"static void ogo_panic_str(ogo_string s) __attribute__((noreturn));\n" +
+	"#endif\n" +
+	"static void ogo_panic_str(ogo_string s) {\n" +
+	"\togo_panic_begin();\n" +
+	"\tprintf(\"panic: \");\n" +
+	"\togo_print_panicstr(s);\n" +
+	"\togo_panic_end();\n" +
+	"}\n"
 
 // emitPanicValue emits, as a statement, a panic of a value that is no plain
 // string, and answers false, emitting nothing, for a plain string, which emitPanic
@@ -43770,9 +43843,9 @@ func (e *emitter) emitPanicValue(callSuffix []int32) bool {
 	}
 	tmp := e.newTmp()
 	if text, _, ptrRecv, ok := e.stringerMethodC(ct, tmp); ok {
-		e.needPanicEnd()
+		e.needPanicText()
 		e.usesStringPrint = true
-		print := "ogo_print_str(" + text + ");"
+		print := "ogo_print_panicstr(" + text + ");"
 		if e.isPointer(ct) && !ptrRecv {
 			// A value method through a nil pointer cannot copy its receiver out.
 			print = "if (" + tmp + ") { " + print + " } else { printf(\"<nil>\"); }"
@@ -43805,7 +43878,13 @@ func (e *emitter) emitPanicValue(callSuffix []int32) bool {
 	e.emit("ogo_panic_begin();\n")
 	e.ind()
 	e.emit("printf(" + cQuote("panic: "+head) + ");\n")
-	e.emitPrintOne(false, 0, arg)
+	if u == cString {
+		e.needPanicText()
+		e.ind()
+		e.emit("ogo_print_panicstr(" + value() + ");\n")
+	} else {
+		e.emitPrintOne(false, 0, arg)
+	}
 	if tail != "" {
 		e.ind()
 		e.emit("printf(" + cQuote(tail) + ");\n")
@@ -43859,7 +43938,8 @@ func (e *emitter) mintPanicIfaces() {
 				continue
 			}
 			e.usesStringPrint = true
-			call := "ogo_print_str(" + text + ");"
+			e.needPanicText()
+			call := "ogo_print_panicstr(" + text + ");"
 			if !ptrRecv {
 				call = "if (" + data + ") { " + call + " } else { printf(\"<nil>\"); }"
 			}

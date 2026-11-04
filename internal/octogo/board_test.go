@@ -396,10 +396,15 @@ func TestOnBoard(t *testing.T) {
 			}
 			// A panic case aborts through ogo_panic, which prints "panic: <msg>"
 			// on the serial line and halts the cog; any other case must print its
-			// expected output.
-			stop := test.want
+			// expected output. A panic case's output is read on for a moment past
+			// "panic:", for the rest of its line, and held to contain the case's
+			// want, as TestEmitCRun holds the host's. Read as far as "panic:" alone,
+			// a print that wrote a part of its line before its argument panicked
+			// passed on the board, and so did DIFFERENCES.md's program printing
+			// what Go does not, and a panic's string written past its end.
+			stop, grace := test.want, time.Duration(0)
 			if test.panics {
-				stop = "panic:"
+				stop, grace = "panic:", 500*time.Millisecond
 			}
 			// The serial load is occasionally flaky (a dropped handshake makes
 			// loadp2 exit early), so retry a no-match a couple of times. A real
@@ -411,12 +416,15 @@ func TestOnBoard(t *testing.T) {
 				if attempt > 0 {
 					t.Logf("retry %d/%d (transient serial flake)", attempt, boardAttempts-1)
 				}
-				out, matched = boardLoad(ogo, port, bin, stop)
+				out, matched = boardLoadGrace(ogo, port, bin, stop, grace)
+				if test.panics {
+					matched = matched && strings.Contains(stripTestTimes(out), test.want)
+				}
 			}
 			if !matched {
 				what := strconv.Quote(test.want)
 				if test.panics {
-					what = "a panic"
+					what = "a panic, and " + what
 				}
 				t.Errorf("board output did not contain %s after %d attempts\ngot:\n%s", what, boardAttempts, out)
 			}

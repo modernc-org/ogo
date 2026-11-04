@@ -208,6 +208,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   [N]T{}`, `rows[i] = [M]T{}`, `r.a = [N]T{}` and `return [N]T{}` each made a
   zero array of the full size on the stack and copied it in, where Go zeroes
   the array where it stands. In every release checked.
+- **A panic writes its string as Go's runtime does**: `panic(s[:5])` of "hello
+  world" wrote "panic: hello world", a string a function sliced wrote the rest of
+  the string after it, and a message a Builder made, image's "Rectangle has huge
+  or negative dimensions" over an arena, wrote what the buffer held past it: a
+  plain string was written up to a NUL, and one holding a NUL ended there. Nor
+  was a newline followed by Go's tab, in a plain string, in what an Error or a
+  String method hands back, or in a defined string type's value. And `defer
+  panic(s)` evaluated s again at the return and wrote what s had become, "panic:
+  later" where Go writes "panic: first", on the board, where the host's compiler
+  refused the C; of a local s it was refused, "panic is supported only with a
+  string argument yet". In every release checked.
 - **A field of a variable typed by a struct written out is checked**: `for _, tt
   := range tests` over a `[]struct{...}`, Go's table of test cases, and `tt :=
   ts[0]`, `tt := mk()`, `p := &g`, and a variable declared `*struct{...}`, had
