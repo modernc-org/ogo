@@ -191,6 +191,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A wrong answer, silent, measured on a P2-EDGE: a whole float constant past
+  the int64s given to a uint64**: `var uint64pow10 = [...]uint64{1, 1e1, ...,
+  1e19}`, as Go's strconv writes it, stored 18446744071562067968 for 1e19 where
+  Go stores 10000000000000000000, and an ogo running on an arm64 host stored
+  2147483647: the C said 1e19, a double, which the target's C compiler converts
+  through 32 bits. So did a package variable, a literal's element or a field of
+  1<<63 up to 2^64-1 written as a float, `1.5e19`; in a function the same
+  constant failed the build, refused or warned about by the C compiler. It is
+  written as the integer Go makes of it now. In every release checked.
 - **A wrong answer, silent, measured on a P2-EDGE: a mask after a shift right was
   dropped**: `v >> 30 & 1` of a uint32 read bits 30 and 31, `w >> 24 & 0x7f`
   eight bits, `x >> 31 & m` the top bit whatever m, the C backend's peephole

@@ -31470,6 +31470,18 @@ func (e *emitter) foldIntegral(ast []int32) (int64, bool) {
 	return x, exact
 }
 
+// foldUint64 is foldIntegral for a constant a uint64 holds and an int64 does not.
+func (e *emitter) foldUint64(ast []int32) (uint64, bool) {
+	v, ok := e.foldConstVal(ast)
+	if !ok {
+		return 0, false
+	}
+	if v = constant.ToInt(v); v.Kind() != constant.Int {
+		return 0, false
+	}
+	return constant.Uint64Val(v)
+}
+
 // foldedFloat is the spelled value of a float constant named by name, for the
 // static contexts where the name would denote a `static const` object the target's
 // C compiler does not take for a constant expression.
@@ -56356,6 +56368,18 @@ func (e *emitter) wholeConstC(ast []int32, kind Kind) (string, bool) {
 	}
 	v, ok := e.foldIntegral(ast)
 	if !ok {
+		// Past the int64s, 1<<63 up to 2^64-1, a whole float only a uint64 holds:
+		// Go's strconv writes its uint64pow10 up to 1e19. Left to the float, the C
+		// said 1e19, which the target's C compiler converts through 32 bits --
+		// 2^64-2^31 by the backend an amd64 host runs, 2^31-1 by an arm64's -- in
+		// a package variable or a literal, and refuses in a function, "Expected
+		// multiple values". Found by the backend's regeneration, dom93's binary
+		// differing between the two.
+		if ut == "uint64_t" {
+			if u, ok := e.foldUint64(ast); ok {
+				return strconv.FormatUint(u, 10) + "ULL", true
+			}
+		}
 		return "", false
 	}
 	if cIntWidths[ut] == 32 && isUnsignedCType(ut) && v >= 0 && v <= math.MaxUint32 && e.litDepth == 0 && !e.declInit {

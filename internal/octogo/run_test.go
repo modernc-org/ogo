@@ -58169,6 +58169,63 @@ func main() { run() }
 		want: "84671 3 4\n14055 8 120\n1112 3\n",
 	},
 	{
+		// Go's strconv (dom93) writes its uint64pow10 up to 1e19: a whole float
+		// constant past the int64s, given to a uint64, was spelled as the double
+		// 1e19, which the target's C compiler converts through 32 bits --
+		// 18446744071562067968 by the backend an amd64 host runs, 2147483647 by an
+		// arm64's -- in a package variable or a literal, silently, and refused in
+		// a function. The host converts as C says. Found by the backend's
+		// regeneration, dom93's binary differing between the two.
+		name: "whole float constants past the int64s given to a uint64",
+		src: `type rec struct {
+	a uint64
+	b int
+}
+
+var pa uint64 = 1e19
+
+var pb = [...]uint64{9.2e18, 9.3e18, 1e19, 1.5e19, 1.8446744073709551615e19}
+
+var pc = []uint64{1e19, 1.5e19}
+
+var pd = rec{1.5e19, 3}
+
+var pe = []rec{{1e19, 1}, {a: 1.8e19, b: 2}}
+
+const pk uint64 = 1.8e19
+
+func take(u uint64) uint64 { return u / 7 }
+
+func give() uint64 { return 1.7e19 }
+
+func two() (uint64, int) { return 1.6e19, 1 }
+
+func main() {
+	var la uint64 = 1e19
+	lb := uint64(1.5e19)
+	var lc = [2]uint64{1e19, 9.5e18}
+	ld := rec{1.2e19, 4}
+	var u uint64
+	u = 1.1e19
+	q, _ := two()
+	println(pa, pb[0], pb[1], pb[2], pb[3], pb[4])
+	println(pc[0], pc[1], pd.a, pe[0].a, pe[1].a, pk)
+	println(la, lb, lc[0], lc[1], ld.a, u, q)
+	println(take(1.4e19), give(), u == 1.1e19, u < 1.2e19, u+1e18, 1.8e19/u, u%1e19)
+	switch u {
+	case 1.1e19:
+		println("case 1.1e19")
+	default:
+		println("default")
+	}
+	var arr [3]uint64
+	arr[1] = 1.9e18 + 1.6e19
+	println(arr[1])
+}
+`,
+		want: "10000000000000000000 9200000000000000000 9300000000000000000 10000000000000000000 15000000000000000000 18446744073709551615\n10000000000000000000 15000000000000000000 15000000000000000000 10000000000000000000 18000000000000000000 18000000000000000000\n10000000000000000000 15000000000000000000 10000000000000000000 9500000000000000000 12000000000000000000 11000000000000000000 16000000000000000000\n2000000000000000000 17000000000000000000 true true 12000000000000000000 1 1000000000000000000\ncase 1.1e19\n17900000000000000000\n",
+	},
+	{
 		// orb's Equal (dom88): `b, ok := b.(*Rect)` in one case of a type switch and
 		// the same in the next was refused, "multiple assignment requires a single
 		// function call", the switch's clauses having one scope: the second clause
