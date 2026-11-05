@@ -210,6 +210,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A cast ogo writes over a slice of an array handed to a call builds**:
+  `digits[nibble(v[:], i)]` of a string constant, a string variable's byte at
+  such an index or at `len(v[:])`, and Go's arithmetic on a narrow type over such
+  a call -- `byte(1) + nib(v[:], 1)`, `nib(v[:], 1) * 100`, `<< 6`, `-nib(v[:],
+  1)`, an int16's sum -- failed the build, "Bad number of parameters in call to
+  nibble" or "request for member len in something not an object": the C backend
+  cannot compile a compound literal inside a cast, which ogo bound for a
+  conversion and not for the casts it writes itself. In every release checked.
+  Found by an IBM 3624 natural PIN's decimalization.
 - **A wrong answer, silent, measured on a P2-EDGE: a whole float constant past
   the int64s given to a uint64**: `var uint64pow10 = [...]uint64{1, 1e1, ...,
   1e19}`, as Go's strconv writes it, stored 18446744071562067968 for 1e19 where

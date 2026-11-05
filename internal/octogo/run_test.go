@@ -21668,6 +21668,66 @@ func main() {
 		want: "60\n50\n60\n7\n60\n61\n",
 	},
 	{
+		// A cast the EMITTER writes over a compound literal, which the target's C
+		// compiler cannot compile any more than the conversion's above: Go's
+		// arithmetic on a narrow type, its negation and a string's byte, each over
+		// a call handed a slice of an array or a slice header's length. flexcc warned
+		// "Bad number of parameters in call to nib" or "request for member len in
+		// something not an object", and the build failed (dom102, an IBM 3624
+		// natural PIN, `decimalization[nibble(v[:], i)]`). The operand is bound to a
+		// temporary of the cast's type, and a string's byte is read through a
+		// pointer to unsigned bytes where its index holds a literal (castC,
+		// byteReadC; sweeps/complit-cast). The calls are counted in order: the
+		// binding keeps Go's, the loop's condition calls on every pass and a
+		// short circuit calls nothing.
+		name: "a compound literal inside a cast the emitter writes",
+		src: `var calls int
+
+var v = [4]byte{0x12, 0x34, 0x56, 0x78}
+
+const digits = "0123456789012345"
+
+var sv = "abcdefghijklmnop"
+
+func nib(b []byte, i int) byte {
+	calls = calls*10 + 1
+	if i%2 == 0 {
+		return b[i/2] >> 4
+	}
+	return b[i/2] & 15
+}
+
+func g() byte {
+	calls = calls*10 + 2
+	return 250
+}
+
+func i16f(b []int16) int16 {
+	calls = calls*10 + 3
+	return b[0]
+}
+
+func main() {
+	w := [2]int16{30000, 4}
+	println(digits[nib(v[:], 1)], sv[nib(v[:], 3)], digits[len(v[:])], "abcdefghijklmnop"[nib(v[:], 5)], calls)
+	calls = 0
+	println(byte(1)+nib(v[:], 1), nib(v[:], 1)+250, g()+nib(v[:], 1), calls)
+	calls = 0
+	println(nib(v[:], 1)*100, nib(v[:], 1)<<6, -nib(v[:], 1), calls)
+	calls = 0
+	println(int16(30000)+i16f(w[:]), i16f(w[:])*3, calls)
+	calls = 0
+	n := 0
+	for i := byte(0); i+nib(v[:], 1) < 9; i++ {
+		n++
+	}
+	ok := calls < 0 && byte(10)+nib(v[:], 2) > 3
+	println(n, ok, calls)
+}
+`,
+		want: "50 101 52 103 111\n3 252 252 1121\n200 128 254 111\n-5536 24464 33\n7 false 11111111\n",
+	},
+	{
 		// The typedef section in dependency order. It used to be fixed groups --
 		// struct forwards, function typedefs, scalar slice headers, the named and
 		// struct typedefs, struct slice headers -- and real dependencies cut across

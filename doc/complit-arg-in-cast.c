@@ -24,7 +24,12 @@
 // ogo works around it by binding the cast's operand to a temporary, which puts the
 // literal outside the cast (see emitConversion in internal/octogo/emit.go). The
 // shape a reader writes to reach it is `int(total(xs[:]))` -- a slice expression
-// handed to a call, inside a conversion.
+// handed to a call, inside a conversion. The casts ogo writes for Go's arithmetic
+// meet it too, a narrow level or a negation over such a call, `byte(1) + nib(v[:],
+// 1)`, and so does the cast over a string's byte, `digits[nib(v[:], 1)]`, whose
+// index holds the literal: a level's operand is bound to a temporary of its type
+// (castC), and a string's byte is read through a pointer to unsigned bytes, the
+// pointer alone under the cast (byteReadC; dom102, build/probes/sweeps/complit-cast).
 //
 // To check whether the workaround is still needed, compile this file with the
 // backend in internal/flexcc, and viaField again with the other two deleted; if all

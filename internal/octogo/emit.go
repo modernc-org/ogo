@@ -27888,9 +27888,7 @@ func (e *emitter) emitStrLitChain(n Node, v string, steps []Node) {
 			e.fail("cannot read %s: a byte has no elements or fields", e.f.exprSource(n))
 			return
 		}
-		e.emit(e.byteReadOpen() + cQuote(v) + "[")
-		e.emitIndex(low, length)
-		e.emit("])")
+		e.emit(e.byteReadC(cQuote(v), e.captureC(func() { e.emitIndex(low, length) })))
 		return
 	}
 	e.usesString = true
@@ -32359,6 +32357,39 @@ func (e *emitter) byteReadOpen() string {
 	return "(uint8_t)("
 }
 
+// byteReadC is a read of a string's byte, ptr[idx], cast as byteReadOpen casts it,
+// or, where the index holds a compound literal, read through a pointer to unsigned
+// bytes, the cast's operand the pointer alone: the target's C compiler cannot
+// compile a compound literal inside a cast (doc/complit-arg-in-cast.c), and an
+// index can hold one -- `decimalization[nibble(v[:], i)]` hands a slice of an
+// array to a call, `s[len(v[:])]` reads a slice header's length -- which warned
+// "Bad number of parameters in call to nibble" and failed the build (dom102).
+func (e *emitter) byteReadC(ptr, idx string) string {
+	if strings.Contains(idx, "){") {
+		e.includes["stdint.h"] = true
+		return "((const uint8_t*)(" + ptr + "))[" + idx + "]"
+	}
+	return e.byteReadOpen() + ptr + "[" + idx + "])"
+}
+
+// castC is text, a parenthesized operand, cast to the C type ct, `(ct)text`, or
+// text itself where ct is "". Where the operand holds a compound literal it is
+// bound to a temporary of ct instead, which converts it as the cast would: the
+// target's C compiler cannot compile a compound literal inside a cast
+// (doc/complit-arg-in-cast.c), which emitConversion binds for a conversion, and a
+// cast the emitter writes for Go's arithmetic can hold one too -- a narrow level
+// or a negation over a call handed a slice of an array, `byte(1) + nibble(v[:],
+// i)`, which failed the build (dom102).
+func (e *emitter) castC(ct, text string) string {
+	switch {
+	case ct == "":
+		return text
+	case strings.Contains(text, "){"):
+		return e.hoist(ct, func() { e.emit(text) })
+	}
+	return "(" + ct + ")" + text
+}
+
 // plainOrSlice classifies an element C type as a nested slice header or a plain
 // value.
 func (e *emitter) plainOrSlice(elem string) accessCur {
@@ -32526,7 +32557,15 @@ func (e *emitter) emitAccessChainAt(prefix string, cur accessCur, steps []Node, 
 				base = e.hoist(cur.ctype, func() { e.emit(prefix) })
 				effect = false
 			}
-			prefix = pre + e.accessDeref(cur, base) + open + e.indexOnceC(low, lenExpr, steps[i+1:]) + closing
+			// The dereference first and then the index, as they stand: each may
+			// bind what it reads ahead of the statement, a nil check, a call.
+			deref := e.accessDeref(cur, base)
+			idx := e.indexOnceC(low, lenExpr, steps[i+1:])
+			if cur.ctype == cString {
+				prefix = e.byteReadC(deref+".str", idx)
+			} else {
+				prefix = pre + deref + open + idx + closing
+			}
 			indexed = true
 			if e.exprHasEffect(low) {
 				effect = true
@@ -43290,7 +43329,15 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				inner := text
 				text, effect = e.hoist(cur.ctype, func() { e.emit(inner) }), false
 			}
-			text = pre + e.accessDeref(cur, text) + open + e.indexOnceC(low, lenExpr, steps[i+1:]) + closing
+			// The dereference first and then the index, as they stand: each may
+			// bind what it reads ahead of the statement, a nil check, a call.
+			deref := e.accessDeref(cur, text)
+			idx := e.indexOnceC(low, lenExpr, steps[i+1:])
+			if cur.ctype == cString {
+				text = e.byteReadC(deref+".str", idx)
+			} else {
+				text = pre + deref + open + idx + closing
+			}
 			if e.exprHasEffect(low) {
 				effect = true
 				// A pointer it yields that steps after it read through, `*s[idx()].ps[2]
@@ -57739,25 +57786,25 @@ func (e *emitter) emitExprNode(n Node) {
 		}
 		// C computed this in int if the operands are narrower than one; Go computes
 		// in their own type. See narrowCType.
+		cast := "" // the narrow type the level is cast to (castC)
 		if nc := e.narrowCType(n.ast); nc != "" {
 			fits := e.levelFits(kids, nc)
+			if !fits {
+				cast = nc
+			}
 			if len(kids) > 3 {
 				// EVERY operation wraps in Go, not only the last: `s + s - t` on an
 				// int16 wraps the sum before the difference is taken. One cast
 				// around the whole level wrapped only the total, so the intermediate
 				// kept C's extra bits (see narrowLevelPrefix).
-				if !fits {
-					e.emit("(" + nc + ")")
-				}
-				e.emit("(")
-				e.emitExprNode(narrowLevelPrefix(n, len(kids)-2))
-				e.emitExprNode(kids[len(kids)-2])
-				e.emitExprNode(kids[len(kids)-1])
-				e.emit(")")
+				e.emit(e.castC(cast, e.captureC(func() {
+					e.emit("(")
+					e.emitExprNode(narrowLevelPrefix(n, len(kids)-2))
+					e.emitExprNode(kids[len(kids)-2])
+					e.emitExprNode(kids[len(kids)-1])
+					e.emit(")")
+				})))
 				return
-			}
-			if !fits {
-				e.emit("(" + nc + ")")
 			}
 		}
 		// `a | b ^ c`, `a ^ b + c`: one Go level, three C strengths (cPrecMixed).
@@ -57773,12 +57820,14 @@ func (e *emitter) emitExprNode(n Node) {
 					}
 				}))
 			}
-			e.emit("(" + leftNested(pieces) + ")")
+			e.emit(e.castC(cast, "("+leftNested(pieces)+")"))
 			return
 		}
-		e.emit("(")
-		e.emitLogicalKids(kids)
-		e.emit(")")
+		e.emit(e.castC(cast, e.captureC(func() {
+			e.emit("(")
+			e.emitLogicalKids(kids)
+			e.emit(")")
+		})))
 	case Term:
 		// Like SimpleExpr, but a "/" or "%" divisor is guarded against zero:
 		// `a / b` -> `(a / ogo_nonzero(b))`. A constant divisor needs no guard.
@@ -57810,9 +57859,10 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emit(text)
 			return
 		}
+		cast := "" // the narrow type the level is cast to (castC)
 		if narrow != "" {
 			if !e.levelFits(kids, narrow) {
-				e.emit("(" + narrow + ")")
+				cast = narrow
 			}
 			if len(kids) > 3 {
 				// The level's first operations become a level of their own, cast
@@ -57973,11 +58023,11 @@ func (e *emitter) emitExprNode(n Node) {
 			if e.cPrecMixed(kids[:last]) {
 				head = leftNested(pieces[:len(pieces)-2])
 			}
-			e.emit(e.shl32C(termType, head))
+			e.emit(e.castC(cast, e.shl32C(termType, head)))
 		case e.cPrecMixed(kids):
-			e.emit("(" + leftNested(pieces) + ")")
+			e.emit(e.castC(cast, "("+leftNested(pieces)+")"))
 		default:
-			e.emit("(" + strings.Join(pieces, "") + ")")
+			e.emit(e.castC(cast, "("+strings.Join(pieces, "")+")"))
 		}
 	case UnaryExpr, Factor:
 		kids := slices.Collect(it(n.ast))
@@ -58593,6 +58643,7 @@ func (e *emitter) emitExprNode(n Node) {
 				// byte pointer, an array directly. The index is bounds-checked against
 				// the container length.
 				lenExpr, closing := "", "]"
+				strPtr := "" // a string's bytes, read with the index (byteReadC)
 				switch {
 				case e.hasSliceVar(base):
 					el, _ := e.sliceElem(base)
@@ -58604,11 +58655,9 @@ func (e *emitter) emitExprNode(n Node) {
 					// See stringConstParts: the literal stands where the variable
 					// would, since a string constant never becomes one.
 					ptr, n, _ := e.stringConstParts(base)
-					e.emit(e.byteReadOpen() + ptr + "[")
-					lenExpr, closing = n, "])"
+					strPtr, lenExpr = ptr, n
 				case e.isStringVarName(base):
-					e.emit(e.byteReadOpen() + e.varRef(base) + ".str[")
-					lenExpr, closing = e.varRef(base)+".len", "])"
+					strPtr, lenExpr = e.varRef(base)+".str", e.varRef(base)+".len"
 				default:
 					_, a, isArray := e.arrayBase(base)
 					if isArray && a.dims() > 1 {
@@ -58626,6 +58675,10 @@ func (e *emitter) emitExprNode(n Node) {
 					if isArray {
 						lenExpr = a.bound
 					}
+				}
+				if strPtr != "" {
+					e.emit(e.byteReadC(strPtr, e.captureC(func() { e.emitIndex(low, lenExpr) })))
+					return
 				}
 				e.emitIndex(low, lenExpr)
 				e.emit(closing)
@@ -58665,9 +58718,7 @@ func (e *emitter) emitExprNode(n Node) {
 			// in the type. See narrowCType.
 			case haveOp && e.f.ch(tok) == SUB:
 				if nc := e.narrowCTypeNode(kids[1]); nc != "" {
-					e.emit("(" + nc + ")(-(")
-					e.emitExprNode(kids[1])
-					e.emit("))")
+					e.emit(e.castC(nc, "(-("+e.captureC(func() { e.emitExprNode(kids[1]) })+"))"))
 					return
 				}
 				// A 64-bit negation is spelled as a subtraction from zero. With its
