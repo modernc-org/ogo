@@ -134,6 +134,13 @@ func ModuleContext(dir string) (fsys fs.FS, rel, modulePath string, err error) {
 	return moduleContext(dir)
 }
 
+// BuildRoot is buildRoot for a reader outside this package: `ogo lsp` reads an
+// editor's buffers over the files of the root, which is what the compiler names a
+// file relative to.
+func BuildRoot(dir string) (string, error) {
+	return buildRoot(dir)
+}
+
 // buildRoot is the directory a package's build reads its files from, absolute: the
 // module's root, or the package's own directory where there is no ogo.mod. The
 // emitted C imports a Spin2 object by its path from there (see compileC).

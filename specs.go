@@ -70,6 +70,7 @@
 //	fmt         reformat source files
 //	help        show help for a command
 //	loadp2      load a program onto a Propeller 2 board (loadp2 passthrough)
+//	lsp         serve an editor the Language Server Protocol
 //	run         compile and run a program on a connected board
 //	smith       output a random program for compiler testing
 //	test        test packages

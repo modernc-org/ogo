@@ -25,6 +25,7 @@ import (
 
 	"modernc.org/ogo/internal/build"
 	"modernc.org/ogo/internal/format"
+	"modernc.org/ogo/internal/lsp"
 	"modernc.org/ogo/internal/smith"
 	"modernc.org/ogo/loadp2"
 	"modernc.org/opt"
@@ -145,6 +146,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 		}
 		os.Exit(rc)
+	case "lsp":
+		if len(args) != 0 {
+			fail(2, "lsp: unexpected argument %q; the server is configured by its client", args[0])
+		}
+		os.Exit(lsp.Serve(os.Stdin, os.Stdout, os.Stderr))
 	case "version":
 		printVersion(os.Stdout)
 	case "help":
@@ -177,6 +183,7 @@ The commands are:
 	fmt         reformat source files
 	help        show help for a command
 	loadp2      load a program onto a Propeller 2 board (loadp2 passthrough)
+	lsp         serve an editor the Language Server Protocol
 	run         compile and run a program on a connected board
 	smith       output a random program for compiler testing
 	test        test packages
@@ -469,6 +476,36 @@ writes them is reported "[the board produced no result]".
 	            of one it refuses is kept as <pkg>.test.c beside the package
 
 Exit status is 0 when every test and benchmark passed and 1 when any failed.
+`,
+	"lsp": `usage: ogo lsp
+
+Lsp is a Language Server Protocol 3.17 server on standard input and output, for
+an editor to show what ogo build says of a package while it is edited, and to
+format a file as ogo fmt does. An editor starts it, one for a workspace, and
+talks to it in JSON-RPC messages framed by Content-Length; it takes no
+arguments and needs no configuration.
+
+What it offers is what it declares: the documents synced whole on each change,
+their diagnostics published, and formatting.
+
+A change to a .ogo file checks its package, once its files have stayed as they
+are for a tenth of a second, as ogo build checks it before the C backend: the
+checker, and the emitter, where the lifetime and ABI refusals are made. The
+package's _test.ogo files are checked as ogo test checks them. The editor's
+buffers are read over the files on disk, the package's other files and those of
+the packages it imports among them, and the root an import path is read against
+is ogo build's: the directory of the ogo.mod above the package, or the package's
+own directory where there is none. Every file of the package is published, with
+nothing where it has no error, and so is a file of another package the check
+reported on. Each diagnostic spans the token at its position, or the rest of the
+line where no token begins there. What the C backend refuses, a program that
+does not fit a cog or the hub, is a build's to say.
+
+Formatting replaces the whole document with what ogo fmt makes of it, and makes
+no edit to a document that does not parse.
+
+A position counts UTF-16 code units, as the protocol's default, or bytes where
+the client offers utf-8.
 `,
 	"version": `usage: ogo version
 

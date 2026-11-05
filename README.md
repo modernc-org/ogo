@@ -91,6 +91,7 @@ The commands are:
 | `fmt` | reformat source files |
 | `help` | show help for a command |
 | `loadp2` | load a program onto a Propeller 2 board (loadp2 passthrough) |
+| `lsp` | serve an editor the Language Server Protocol |
 | `run` | compile and run a program on a connected board |
 | `smith` | output a random program for compiler testing |
 | `test` | test packages |
@@ -258,6 +259,15 @@ fmt.Printf` at its end, and Go prints what the P2 prints — the test suite hold
 two to the same bytes. Then `ogo run` the original on the board. An example that
 imports `p2` drives pins and cogs and runs only on a P2. For the language itself,
 the [Tour of Go](https://go.dev/tour/) runs in the browser.
+
+### An editor that speaks the Language Server Protocol
+
+`ogo lsp` is a Language Server Protocol server on standard input and output, so
+an editor with an LSP client shows what `ogo build` says of a package as it is
+edited, the checker's errors and the emitter's lifetime refusals, and formats a
+file as `ogo fmt` does. Configure the client to start `ogo lsp` for files ending
+in `.ogo`, with the directory holding `ogo.mod` as the workspace root where there
+is one. `ogo help lsp` says what it offers.
 
 ## **Language Specification**
 
