@@ -7,6 +7,35 @@ adoption and on the board, and the faults each cleared or carried. CLAUDE.md kee
 the procedure, the latest entry and the facts that still stand; the next
 regeneration's record goes here, at the top, and replaces the entry CLAUDE.md keeps.
 
+**Backend regenerated a second time on 2026-11-05, at the same pin, spin2cpp
+`b5993a84`, with a second hunk in `internal/optimize_ir.c.diff`** (inside flexprop
+`v7.7.0`; ccgo v4.36.1, libc v1.77.1), for a loud fault: the backend crashed, a nil
+dereference in EliminateDeadCode, where a call it inlines leaves a branch dead and the
+dead code holds a block store with more after it -- a build switch, `func tracing()
+bool { return false }`, an early return on it and `buf = [16]byte{}` before another
+store, at -O1 and -O2. OptimizeReadWrite marks a SETQ before a memory operation kept
+and not the operation; deleting the dead code up to the next label but what is kept,
+EliminateDeadCode deleted the store and spared the SETQ, the function's last
+instruction once the rest was gone, and marking the instruction after a SETQ kept it
+read through a NULL. In every release, and natively in flexprop v7.6.2, at the pin and
+on upstream master a487858e; no binary was ever wrong. dom102's mutants found it:
+m0320, a uint32's bit count over a loop that never runs
+(doc/dead-block-store-crash.c). A kept SETQ keeps the instruction it modifies now, and
+the mark asks for one. Measured natively before adoption, the pin with the five
+carried diffs against the same with the hunk: spin2cpp's `make test_offline` passes
+588 of 588 either way; of 1641 programs (the run cases, seeds 1-400, doc/, the domain
+programs dom59-dom101) none builds differently; on a P2-EDGE the reproducer prints
+gcc's line, and m0320 built by `ogo build` prints Go's 74. Each builder's turn changed
+its own target only (the fold expanded and hashed after each), and in each of the five
+expanded transpiles, the string table's offsets masked, the one change is the fixed
+lines. The five scripts/flexcc lists are the native build's but for
+doc/switch-case-span-overflow.c, which the linux transpiles' qsort never finishes,
+doc/register-limit-crash.c, which crashes the backend in every build, and dom93's C of
+before 9db1da6, which the native build crashes on and the transpiles build, the amd64
+hosts' to one binary and the arm64 ones' to another; its C since builds alike. p2-11's
+and obeam's thirteen binaries are byte-identical, and dom102 builds to the binary it
+was. Host suite and `make board` (1105 run cases, every TestOnBoard test) green.
+
 **Backend regenerated 2026-11-05 at the same pin, spin2cpp `b5993a84`, with a fifth
 fix of its own** (inside flexprop `v7.7.0`; ccgo v4.36.1, libc v1.77.1):
 `internal/asm_peep.c.diff`, for a silent fault of a mask after a shift right.

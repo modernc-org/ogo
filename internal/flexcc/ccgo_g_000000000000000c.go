@@ -21646,8 +21646,10 @@ func x__EliminateDeadCode(tls *libc.TLS, cc *CC, irl uintptr) (r int32) {
 		if (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_SETQ) || (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_SETQ2) || (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_GENERIC_DELAY) {
 			v5 = ir1 + 48
 			*(*int32)(unsafe.Pointer(v5)) = int32(uint32(*(*int32)(unsafe.Pointer(v5))) | uint32(_FLAG_KEEP_INSTR))
-			v5 = (*_IR)(unsafe.Pointer(ir1)).Fnext + 48
-			*(*int32)(unsafe.Pointer(v5)) = int32(uint32(*(*int32)(unsafe.Pointer(v5))) | uint32(_FLAG_KEEP_INSTR))
+			if (*_IR)(unsafe.Pointer(ir1)).Fnext != 0 {
+				v5 = (*_IR)(unsafe.Pointer(ir1)).Fnext + 48
+				*(*int32)(unsafe.Pointer(v5)) = int32(uint32(*(*int32)(unsafe.Pointer(v5))) | uint32(_FLAG_KEEP_INSTR))
+			}
 		}
 		v1 = libc.BoolUint8(uint32(0) != libc.Uint32FromInt32((*_IR)(unsafe.Pointer(ir1)).Fflags)&uint32(_FLAG_KEEP_INSTR))
 		goto _8
@@ -21684,6 +21686,14 @@ func x__EliminateDeadCode(tls *libc.TLS, cc *CC, irl uintptr) (r int32) {
 									if v3 && !(v1 != 0) {
 										x__DeleteIR(tls, cc, irl, x)
 										change = int32(1)
+									} else {
+										if ((*_IR)(unsafe.Pointer(x)).Fopc == int32(_OPC_SETQ) || (*_IR)(unsafe.Pointer(x)).Fopc == int32(_OPC_SETQ2) || (*_IR)(unsafe.Pointer(x)).Fopc == int32(_OPC_GENERIC_DELAY)) && (*_IR)(unsafe.Pointer(x)).Fnext != 0 {
+											// a kept SETQ keeps the instruction it modifies:
+											// deleting that one alone leaves the SETQ to
+											// modify whatever follows, or to end the list
+											v5 = (*_IR)(unsafe.Pointer(x)).Fnext + 48
+											*(*int32)(unsafe.Pointer(v5)) = int32(uint32(*(*int32)(unsafe.Pointer(v5))) | uint32(_FLAG_KEEP_INSTR))
+										}
 									}
 									x = ir_next
 								}

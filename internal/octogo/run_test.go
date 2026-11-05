@@ -21728,6 +21728,51 @@ func main() {
 		want: "50 101 52 103 111\n3 252 252 1121\n200 128 254 111\n-5536 24464 33\n7 false 11111111\n",
 	},
 	{
+		// A switch of the build's, a function returning a constant, which the
+		// backend inlines, and the branch it leaves dead holding a zeroed array's
+		// store and more after it. The backend deleted the store and kept the SETQ
+		// before it, and crashed on the SETQ left last in the function, "flexcc
+		// crashed: runtime error: invalid memory address or nil pointer
+		// dereference" (dom102's m0320, a uint32's bit count over a loop that never
+		// runs; doc/dead-block-store-crash.c, optimize_ir.c.diff's second hunk).
+		// Either function alone made it crash, the switch read either way.
+		name: "a block store in a branch a switch's inlined call leaves dead",
+		src: `var buf [16]byte
+var keys [4][16]byte
+var n int
+
+// tracing and keeping are switches of the build's.
+func tracing() bool { return false }
+func keeping() bool { return true }
+
+func reset() {
+	if !tracing() {
+		return
+	}
+	buf = [16]byte{}
+	n = 1
+}
+
+func erase(r int) {
+	if keeping() {
+		n += r
+		return
+	}
+	keys[r] = [16]byte{}
+	n = -1
+}
+
+func main() {
+	buf[0] = 7
+	keys[1][0] = 9
+	reset()
+	erase(2)
+	println(buf[0], keys[1][0], n)
+}
+`,
+		want: "7 9 2\n",
+	},
+	{
 		// The typedef section in dependency order. It used to be fixed groups --
 		// struct forwards, function typedefs, scalar slice headers, the named and
 		// struct typedefs, struct slice headers -- and real dependencies cut across

@@ -210,6 +210,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A store in a branch a switch's call leaves dead builds**: `func tracing()
+  bool { return false }` and then `if !tracing() { return }` before `buf =
+  [16]byte{}` and another store made the C backend crash, "flexcc crashed:
+  runtime error: invalid memory address or nil pointer dereference": inlining
+  the call left the branch dead, and deleting it the backend kept the SETQ of the
+  zeroed array's block store, deleted the store and then read past the SETQ left
+  last in the function. The backend keeps the two together now
+  (internal/optimize_ir.c.diff, carried ahead of upstream;
+  doc/dead-block-store-crash.c). No binary was ever wrong. In every release.
 - **A cast ogo writes over a slice of an array handed to a call builds**:
   `digits[nibble(v[:], i)]` of a string constant, a string variable's byte at
   such an index or at `len(v[:])`, and Go's arithmetic on a narrow type over such

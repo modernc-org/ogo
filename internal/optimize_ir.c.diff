@@ -1,8 +1,31 @@
 diff --git a/backends/asm/optimize_ir.c b/backends/asm/optimize_ir.c
-index fbffe440..c28ff3bc 100644
+index fbffe440..b37dc2c6 100644
 --- a/backends/asm/optimize_ir.c
 +++ b/backends/asm/optimize_ir.c
-@@ -5032,13 +5032,15 @@ FindBlockForReorderingDownward(IR *after) {
+@@ -2756,7 +2756,9 @@ int EliminateDeadCode(IRList *irl)
+ 
+         if (ir->opc == OPC_SETQ || ir->opc == OPC_SETQ2 || ir->opc == OPC_GENERIC_DELAY) {
+             ir->flags |= FLAG_KEEP_INSTR;
+-            ir->next->flags |= FLAG_KEEP_INSTR;
++            if (ir->next) {
++                ir->next->flags |= FLAG_KEEP_INSTR;
++            }
+         }
+         if (InstrIsVolatile(ir)) {
+             /* do nothing */
+@@ -2782,6 +2784,11 @@ int EliminateDeadCode(IRList *irl)
+                     if (!IsDummy(x) && !InstrIsVolatile(x)) {
+                         DeleteIR(irl, x);
+                         change = 1;
++                    } else if ((x->opc == OPC_SETQ || x->opc == OPC_SETQ2 || x->opc == OPC_GENERIC_DELAY) && x->next) {
++                        // a kept SETQ keeps the instruction it modifies:
++                        // deleting that one alone leaves the SETQ to
++                        // modify whatever follows, or to end the list
++                        x->next->flags |= FLAG_KEEP_INSTR;
+                     }
+                     x = ir_next;
+                 }
+@@ -5032,13 +5039,15 @@ FindBlockForReorderingDownward(IR *after) {
                  // Can't reorder over code that sets a non-dead value
                  if (ModifiedInRange(bottom->next,after,top->dst) && !IsDeadAfter(after,top->dst)) break;
                  // Check if this instruction meets some dependencies

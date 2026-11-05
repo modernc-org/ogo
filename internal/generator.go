@@ -39,14 +39,15 @@ const (
 	// sit on spin2cpp's master for longer than that -- which is what spin2cppRef,
 	// below, is for.
 	//
-	// All five committed backends were regenerated against this pair on 2026-11-05
-	// with ccgo v4.36.1 and libc v1.77.1, go.mod's (flexprop at v7.7.0, spin2cpp at
-	// spin2cppRef, the five spin2cppDiffs applied). scripts/flexcc built for each of
-	// the five platforms compiles the doc/ reproducers and a scripts/dumpcorpus.sh
-	// dump of the run cases and fuzzer seeds 1-400 to one and the same
-	// scripts/cccorpus.sh list -- windows/amd64's taken under wine -- and that list
-	// is a native build's of the same tree. The regeneration before, 2026-10-28,
-	// was at the same pin without asm_peep.c.diff; 2026-10-25's and 2026-10-14's
+	// All five committed backends were regenerated against this pair a second time
+	// on 2026-11-05 with ccgo v4.36.1 and libc v1.77.1, go.mod's (flexprop at
+	// v7.7.0, spin2cpp at spin2cppRef, the five spin2cppDiffs applied).
+	// scripts/flexcc built for each of the five platforms compiles the doc/
+	// reproducers and a scripts/dumpcorpus.sh dump of the run cases and fuzzer seeds
+	// 1-400 to one and the same scripts/cccorpus.sh list -- windows/amd64's taken
+	// under wine -- and that list is a native build's of the same tree. The
+	// regeneration before, earlier the same day, was without optimize_ir.c.diff's
+	// second hunk; 2026-10-28's without asm_peep.c.diff either; 2026-10-25's and 2026-10-14's
 	// without functions.c.diff's second hunk either, and the one of 2026-10-14
 	// without outasm.c.diff's second hunk either; 2026-10-13's without
 	// functions.c.diff and outasm.c.diff; the one before it,
@@ -211,6 +212,16 @@ var (
 	// one, `x >> 31 & m` the top bit whatever m, and `v >> 30 & 1`, `w >> 24 & 0x7f`
 	// reading the top bit too (doc/shift-right-mask-dropped.c; found by dom101's
 	// mutants, one built to the original's binary byte for byte).
+	// optimize_ir.c.diff's second hunk, since the same day's second regeneration,
+	// is a loud fault: where a call the backend inlines leaves a branch dead,
+	// EliminateDeadCode deletes the dead code but what is volatile, and a SETQ
+	// OptimizeReadWrite marked kept stayed while the block store it modifies went;
+	// once the rest of the function was gone the SETQ was its last instruction, and
+	// the pass, marking the instruction after a SETQ kept, read through a NULL. A
+	// build switch, `func tracing() bool { return false }`, an early return on it
+	// and a zeroed array stored before another store, crashed the backend
+	// (doc/dead-block-store-crash.c; found by dom102's mutants). The SETQ keeps the
+	// instruction it modifies now, and the mark asks for one.
 	spin2cppDiffs = []string{"mcpp_main.c.diff", "optimize_ir.c.diff", "functions.c.diff", "outasm.c.diff", "asm_peep.c.diff"}
 	target        = fmt.Sprintf("%s/%s", goos, goarch)
 )
