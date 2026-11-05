@@ -294,6 +294,18 @@ silent fault puts the count back to 0. Each round's account is in
   array's Burrows-Wheeler transform, an FM-index and Index.Write to flash, an
   investigator's FindAllIndex and Lookup), against master on dom98's fixes:
   clean, one false refusal listed (a slice make not stored into a variable) -- 2
+- dom101 (2026-11-05), a gas pressure-regulating station's RTU and its SCADA
+  master (Go 1.27's crypto/mlkem and crypto/sha3 ported with their tests,
+  internal/testhash and subtle, the RTU on a cog reporting in KMAC256 frames, its
+  link rekeyed by ML-KEM, a spoiled ciphertext met by implicit rejection), against
+  master on dom98's fixes and its own: silent (the backend's peephole dropped the
+  AND after a shift right whose mask covered the bits below the shift's top one,
+  `x >> 31 & m` and `v >> 30 & 1`, fixed in the backend and regenerated; and,
+  found by the regeneration's check, a whole float constant past the int64s given
+  to a uint64, strconv's `1e19`, written as a double the target converts through
+  32 bits), one false refusal fixed (a uintptr computed with on the way to a
+  comparison, subtle's alignment check), one loud fault fixed (a range variable
+  named like a package constant) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1163,7 +1175,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   nothing it writes lands where it is run** (dom87). **A board check that stops at
   a panic reads what came before it, or the board pins none of it.** **A harness
   that stops at a panic reads the panic's line to its end: the message is the
-  program's output too** (dom98, mutate/panicmsg.py).
+  program's output too** (dom98, mutate/panicmsg.py). **A mutant built to the
+  original's binary is asked why: a change the compiler drops is in the bytes
+  before it is in any output** (dom101, mutate/prebuild.sh).
 - **A PROGRAM GO REJECTS IS A ROW** (`scripts/rejects.sh`): **What `ogo build` does
   with such a program is the measure** -- **And measure with a struct of MORE THAN
   ONE WORD, and RUN the binary**.
@@ -1454,7 +1468,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   when it is found.** **What a question forgets of what it minted, it forgets
   whole: a name cached and a flag set are minting too** (dom72). **A clause is a
   block: what the emitter records of a name a clause declares ends with the clause,
-  in C and in the emitter alike** (dom88).
+  in C and in the emitter alike** (dom88). **A name a clause declares is spelled
+  as the new variable's, not rendered as what the name stands for where the
+  clause is written: rendered, a range's key was a constant's value** (dom101).
 - **Where a statement renders a part of itself that Go evaluates conditionally,
   later, or repeatedly, that part is rendered inside emitOwnPrologue**; **a
   statement that renders parts of itself asks where each part's hoisted statements
@@ -1632,7 +1648,9 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **An unsigned constant past INT64_MAX is a negative number to the emitter's fold: a
   decision taken on a folded value's sign, or on its being -1, asks the type it is
   of** (remByOne, shiftCountU64). **A rule written for an untyped constant asks
-  first whether the constant is typed** (checkShiftCount).
+  first whether the constant is typed** (checkShiftCount). **A program a backend
+  builds differently on two hosts is asked what its C leaves to the host: a double
+  converted out of range is the host's arithmetic** (dom101, wholeConstC).
 - **A warning the backend gives a user's build is a fault until shown harmless**.
   **A run that reads a register nothing wrote can look right by luck: the listing is
   the measure, and a C harness passing a constant after a 64-bit argument is a
