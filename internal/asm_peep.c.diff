@@ -1,0 +1,13 @@
+diff --git a/backends/asm/asm_peep.c b/backends/asm/asm_peep.c
+index 17f0b17c..16f7a257 100644
+--- a/backends/asm/asm_peep.c
++++ b/backends/asm/asm_peep.c
+@@ -1298,7 +1298,7 @@ static int FixupShrAndImm(int arg, IRList *irl, IR *ir0)
+     ir1 = NextIR(ir0);  // and this is the AND
+     signx_width = ir0->src->val & 0x1f;
+     and_pat = (unsigned)ir1->src->val;
+-    signx_pat = (1U<<(31 - signx_width)) - 1;
++    signx_pat = 0xFFFFFFFFU >> signx_width;
+     if ( (and_pat & signx_pat) == signx_pat ) {
+         // we can delete the and
+         DeleteIR(irl, ir1);

@@ -1560,7 +1560,7 @@ _3:
 	ir1 = v2 // and this is the AND
 	signx_width = int32((*_Operand)(unsafe.Pointer((*_IR)(unsafe.Pointer(ir0)).Fsrc)).Fval & int64(0x1f))
 	and_pat = libc.Uint32FromInt64((*_Operand)(unsafe.Pointer((*_IR)(unsafe.Pointer(ir1)).Fsrc)).Fval)
-	signx_pat = uint32(1)<<(int32(31)-signx_width) - uint32(1)
+	signx_pat = uint32(0xFFFFFFFF) >> signx_width
 	if and_pat&signx_pat == signx_pat {
 		// we can delete the and
 		x__DeleteIR(tls, cc, irl, ir1)

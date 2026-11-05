@@ -621,7 +621,8 @@ inputs, and never hand-edit the outputs.
    2026-08-29, because a fix lands in spin2cpp weeks before a flexprop release
    carries it), applies `internal/mcpp_main.c.diff` (an adaptation to the
    transpile; a fix carried ahead of upstream goes in the same list --
-   `optimize_ir.c.diff`, `functions.c.diff` and `outasm.c.diff` today -- and goes
+   `optimize_ir.c.diff`, `functions.c.diff`, `outasm.c.diff` and `asm_peep.c.diff`
+   today -- and goes
    with the pin that carries upstream's), transpiles, and rewrites the emitted
    `main` package into a reusable `flexcc`
    library (threading a `*CC` state struct through the C globals, via `main2lib`).
@@ -671,46 +672,43 @@ inputs, and never hand-edit the outputs.
    `freopen`, and the `ungetc`/`abort` todo-stub redirects — that libc lacks or
    stubs for both darwin arches).
 
-   > **Backend regenerated 2026-10-28 at the same pin, spin2cpp `b5993a84`, with a fourth
+   > **Backend regenerated 2026-11-05 at the same pin, spin2cpp `b5993a84`, with a fifth
    > fix of its own** (inside flexprop `v7.7.0`; ccgo v4.36.1, libc v1.77.1):
-   > `internal/functions.c.diff`'s second hunk, for a silent fault of every function that
-   > hands a struct on. A struct argument the target passes by reference to a copy -- one
-   > over four longs, or with a member that is not a long: an int64, a float64, a byte, a
-   > nested struct -- is copied into memory AstFuncTempMemory takes on the stack at the
-   > top of the function, and it did not mark the function as using alloca, the flag by
-   > which NeedFramePointer gives a function a frame and NeverInline keeps the inliner
-   > off it. A function needing no frame of its own -- one that only passes a struct on,
-   > `return int(t.abs()%3600) / 60` as Go's time package writes Time.Minute -- took the
-   > copy, `mov arg01, ptra; add ptra, #16`, and returned without giving it back, and so
-   > did an inlined copy in its caller's loop: a loop of such calls ran the stack past
-   > the end of Hub RAM and the program stopped printing, with no panic. dom78's mutants
-   > found it: a cron search died after 10835 passes, a local's address climbing 32 bytes
-   > a pass to 0x7d430. Upstream's own Test/Expect/stest184.pasm had pinned the leak
-   > (doc/struct-argument-copy-frameless.c). In every release checked, v0.40.0 among
-   > them, and under the backend before 2026-10-25's regeneration. Measured natively
-   > before adoption, the pin with the three carried diffs against the same with the
-   > hunk: spin2cpp's `make test_offline` fails the 15 goldens SplitLocalStructs changes
-   > either way, and the hunk changes one more, stest184, which now saves and restores a
-   > frame; of 1546 programs (the run cases, seeds 1-400, doc/, the domain programs
-   > dom59-dom78) 5 build differently, and on a P2-EDGE each prints what it printed; a
-   > scan of the listings for a function moving ptra up with no frame finds 15 before --
-   > dom78's Time accessors, and three thunks the emitter writes to call a value method
-   > through an interface, one of them promoted -- and none after
-   > (build/probes/sweeps/frameless-copy's leakscan.py); the reproducer loses 16000 bytes
-   > over 1000 calls before and none after; sweeps/frameless-copy, 72 rows (eight types,
-   > nine ways to hand a value on), has 18 dying on the board before -- among them every
-   > call through an interface of a value method, whose thunk the emitter writes
-   > frameless, `return T_Get(*(T*)r)` -- and 2 more leaking less than the stack holds,
-   > the listings 30 such functions, and after the hunk none, every row printing Go's
-   > output but one, a fault of the emitter's of its own (a struct embedding an array
-   > type, fixed after). Each builder's turn changed its own target only (the fold
-   > expanded and hashed after each), and the five scripts/flexcc lists are the native
-   > build's but for doc/switch-case-span-overflow.c, which the linux transpiles' qsort
-   > never finishes, and doc/register-limit-crash.c, which crashes the backend in every
-   > build, natively too, before the change as after. p2-11's and obeam's thirteen
-   > binaries are byte-identical, and dom78's 345 mutants that Go ends print Go's output
-   > on the board. Host suite and `make board` (1053 passing, seed 6 outgrowing a cog as
-   > before) green.
+   > `internal/asm_peep.c.diff`, for a silent fault of a mask after a shift right.
+   > FixupShrAndImm (backends/asm/asm_peep.c, spin2cpp 5270a02e of 2026-06-09, in every
+   > flexprop release since v7.6.10 and on upstream master a487858e) deletes `and x, #M`
+   > after `shr x, #N` where M covers every bit the shift can leave set, and counted them
+   > one short, `(1U<<(31 - N)) - 1` for `0xFFFFFFFFU >> N`: after a shift by 31 it deleted
+   > every AND, `x >> 31 & m` keeping the top bit whatever m, and after a shorter one an
+   > AND whose mask covers the bits below the shift's top one and not the top one, `v >>
+   > 30 & 1`, `w >> 24 & 0x7f`, `(x >> 20) & 0x17ff` -- but where the backend writes the
+   > mask as another instruction first, a GETNIB, GETBYTE, ZEROX or BITL. dom101's
+   > mutants found it: m0287, ML-KEM's compress with `>> 31 & 1` mutated to `>> 31 & 0`,
+   > built to the original's binary byte for byte and passed a test Go fails 19333 times
+   > (doc/shift-right-mask-dropped.c). In every release. Its sibling FixupShlShrAndImm
+   > counts what `shl x, #N; sar x, #N` leaves as `(1U<<N) - 1` and is wrong too, but only
+   > for the P1: on the P2 the pair is always a SIGNX first. Measured natively before
+   > adoption, the pin with the four carried diffs against the same with the fix: over
+   > every shift of 1 to 31 and twenty masks of 0 to 511 the listing dropped 18 masks it
+   > needed before and none after, the 34 that change nothing deleted either way;
+   > spin2cpp's `make test_offline` passes 588 of 588 either way, on goldens the pin's own
+   > build wrote (the 16 the carried diffs change); of 1640 programs (the run cases, seeds
+   > 1-400, doc/, the domain programs dom59-dom101) none builds differently; on a P2-EDGE
+   > the reproducer prints gcc's lines after and six values wrong before, and m0287 built
+   > by `ogo build` prints Go's 19472 lines. Each builder's turn changed its own target
+   > only (the fold expanded and hashed after each), and in each of the five expanded
+   > transpiles the one change, the string table laid out again and the build date aside,
+   > is the fixed line. The five scripts/flexcc lists are the native build's but for
+   > doc/switch-case-span-overflow.c, which the linux transpiles' qsort never finishes,
+   > doc/register-limit-crash.c, which crashes the backend in every build, and dom93,
+   > which the native build crashes on and the transpiles build. And they found a fault
+   > of the emitter's: dom93 built to one binary by the amd64 hosts' backends and to
+   > another by the arm64 ones, eight bytes apart -- Go's strconv's `uint64pow10[19]`,
+   > `1e19` written as a C double, which the target's compiler converts through 32 bits by
+   > the host's own out-of-range conversion; the emitter writes it as an integer now, and
+   > the five build dom93 alike. p2-11's and obeam's thirteen binaries are byte-identical, and dom101 builds to the
+   > binary it was. Host suite and `make board` (1103 run cases, every TestOnBoard test)
+   > green.
    >
    > Every regeneration's record, this one included, is in `doc/REGEN-HISTORY.md`,
    > newest first; the next one goes there and replaces the entry above. What still

@@ -191,6 +191,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A wrong answer, silent, measured on a P2-EDGE: a mask after a shift right was
+  dropped**: `v >> 30 & 1` of a uint32 read bits 30 and 31, `w >> 24 & 0x7f`
+  eight bits, `x >> 31 & m` the top bit whatever m, the C backend's peephole
+  deleting an AND whose mask covers every bit below the shift's top one and not
+  the top one itself, as though the shift left one bit fewer than it does. A
+  mask the backend writes as another instruction first -- four or eight low
+  bits, or a run of low bits over nine -- was kept, so the field read wrong was
+  one ending at bit 30 of up to nine bits, or one with bits above it in the
+  mask. ML-KEM's compress mutated from `>> 31 & 1` to `>> 31 & 0` built to the
+  binary it was. The backend keeps the mask now (internal/asm_peep.c.diff,
+  carried ahead of upstream; doc/shift-right-mask-dropped.c). In every release.
 - **A range variable named like a package constant is the loop's variable**:
   `for k, zeta := range zetas` beside a `const k = 3`, Go's ML-KEM tests, was
   written as the constant, `for (int 3 = 0; 3 < 128; 3++)`, which the C compiler
