@@ -191,6 +191,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A range variable named like a package constant is the loop's variable**:
+  `for k, zeta := range zetas` beside a `const k = 3`, Go's ML-KEM tests, was
+  written as the constant, `for (int 3 = 0; 3 < 128; 3++)`, which the C compiler
+  refused, and so was every range's key, a channel's element and a string's
+  rune; nested, the inner loop's body read the constant, "index 8 out of
+  bounds". A range's value and every other declaration were written as names.
+  In every release checked.
 - **What a method of an asserted type hands back has its type**:
   `println(i.(*T).Name())` printed the string's pointer and length, an int64's
   and a float64's two words, a uint32 past 2^31 negative and a float32's bits,

@@ -36139,6 +36139,18 @@ func (e *emitter) emitLoopBody(body []int32, inject func()) {
 // operand is evaluated once (hoisted to a temporary), matching Go, and the
 // two-variable form copies the element into the value variable at the top of each
 // iteration.
+// rangeVarC is the C spelling of a range clause's key or value v. A DECLARED one
+// is a new variable, spelled as rangeValueInject spells a value, whatever its name
+// stands for outside the loop: exprC renders that, and `for k, zeta := range
+// zetas` beside ML-KEM's constant k declared the constant's value, `for (int 3 =
+// 0; 3 < 128; 3++)`, and so did a channel's element and a string's rune (dom101).
+func (e *emitter) rangeVarC(h *forHeader, v []int32) string {
+	if name, isName := e.exprIdent(v); isName && h.rangeDef && name != "_" {
+		return e.localIdent(name)
+	}
+	return e.exprC(v)
+}
+
 func (e *emitter) emitRange(h *forHeader, body []int32) {
 	// `range (arr)` is `range arr`: the parentheses change nothing about the value,
 	// and an array's paths read a name -- "it has no storage to name". Not around a
@@ -36185,7 +36197,7 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 	}
 	key := "_"
 	if h.keyVar != nil {
-		key = e.exprC(h.keyVar)
+		key = e.rangeVarC(h, h.keyVar)
 		if !h.rangeDef && key != "_" {
 			// The counter stays the loop's own, and the clause's variable is written
 			// from it at the top of each iteration -- which is where Go assigns it, so
@@ -36304,7 +36316,7 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 		e.emit(ct + " " + src + " = " + e.exprC(h.rangeExpr) + ";\n")
 		val := ""
 		if h.keyVar != nil {
-			if v := e.exprC(h.keyVar); v != "_" {
+			if v := e.rangeVarC(h, h.keyVar); v != "_" {
 				val = v
 			}
 		}
@@ -36396,7 +36408,7 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 		e.emit("for (int " + key + " = 0; " + key + " < " + hdr + ".len; " + key + " += " + width + ") {\n")
 		val := "_"
 		if h.valVar != nil {
-			val = e.exprC(h.valVar)
+			val = e.rangeVarC(h, h.valVar)
 		}
 		if h.rangeDef && val != "_" {
 			e.shadow(val)

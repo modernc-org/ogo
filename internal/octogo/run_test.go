@@ -58106,6 +58106,69 @@ func main() { run() }
 		want: "84 45 81 103 182 121\n",
 	},
 	{
+		// Go's ML-KEM tests (dom101): `for k, zeta := range zetas` beside the
+		// package's constant k declared the constant's value, `for (int 3 = 0; 3
+		// < 128; 3++)`, which no C compiler takes, and so did every range's key,
+		// a channel's element and a string's rune; a range's value and every
+		// other declaration were spelled as names. Nested, the body read the
+		// constant, "index 8 out of bounds".
+		name: "range variables named like package constants",
+		src: `const k, j, r = 3, 8, 'x'
+
+const n int8 = 4
+
+var zetas = [4]uint16{17, 1729, 2580, 3289}
+
+var sl = []int{5, 6, 7}
+
+var m = [2][3]int{{1, 2, 3}, {4, 5, 6}}
+
+var ch = make(chan int)
+
+func send(ch chan int) {
+	ch <- 11
+	ch <- 12
+	close(ch)
+}
+
+func run() {
+	s := 0
+	for k, zeta := range zetas {
+		s += k*10000 + int(zeta)
+	}
+	for k := range sl {
+		s += k * 100
+	}
+	for n, v := range &zetas {
+		s += int(n) * int(v)
+	}
+	println(s, k, n)
+	t := 0
+	for k := range 5 {
+		t += k
+	}
+	for k, r := range "héllo" {
+		t += k*1000 + int(r)
+	}
+	for j, row := range m {
+		for k := range row {
+			t += j*100 + k*10 + row[k]
+		}
+	}
+	println(t, j, r)
+	go send(ch)
+	u := 0
+	for k := range ch {
+		u = u*100 + k
+	}
+	println(u, k)
+}
+
+func main() { run() }
+`,
+		want: "84671 3 4\n14055 8 120\n1112 3\n",
+	},
+	{
 		// orb's Equal (dom88): `b, ok := b.(*Rect)` in one case of a type switch and
 		// the same in the next was refused, "multiple assignment requires a single
 		// function call", the switch's clauses having one scope: the second clause
