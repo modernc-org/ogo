@@ -306,6 +306,14 @@ silent fault puts the count back to 0. Each round's account is in
   32 bits), one false refusal fixed (a uintptr computed with on the way to a
   comparison, subtle's alignment check), one loud fault fixed (a range variable
   named like a package constant) -- 0
+- dom102 (2026-11-05), a card terminal's PIN pad and its acquirer host (Go 1.27's
+  crypto/des, crypto/cipher's modes and crypto/aes's generic block ported with their
+  tests and cryptotest's, X9.24's TDES DUKPT, ISO 9564 PIN blocks, IBM 3624 offsets,
+  the retail MAC, the PIN pad on a cog), the first round against master on dom101's
+  fixes: clean, two loud faults fixed (a cast the emitter writes over a compound
+  literal, a string's byte at `nibble(v[:], i)`; the backend's crash on a block store
+  in a branch a switch's inlined call leaves dead, fixed in the backend and all five
+  regenerated) -- 1
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1169,7 +1177,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   that stops at a panic reads the panic's line to its end: the message is the
   program's output too** (dom98, mutate/panicmsg.py). **A mutant built to the
   original's binary is asked why: a change the compiler drops is in the bytes
-  before it is in any output** (dom101, mutate/prebuild.sh).
+  before it is in any output** (dom101, mutate/prebuild.sh). **A crash a mutant
+  finds is asked for the program a user writes that reaches it: a loop that never
+  runs is a switch that is off.** (dom102, doc/dead-block-store-crash.c).
 - **A PROGRAM GO REJECTS IS A ROW** (`scripts/rejects.sh`): **What `ogo build` does
   with such a program is the measure** -- **And measure with a struct of MORE THAN
   ONE WORD, and RUN the binary**.
@@ -1497,6 +1507,8 @@ section. A new finding goes there; the rule it leaves goes here too.
   WORDS IS A ROW OF EVERY POSITION, ON THE BOARD). **What one C call does at once
   the target's compiler may do piece by piece: a printf of a constant format is
   print calls on the board, and a fold into one call is no order there** (dom98).
+  **a refactor that reorders two calls that each bind what they read reorders the
+  statement's prologue, and the corpus dump is what shows it.** (dom102, castC).
 - **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED**: **A check asked of a
   position's C type asks first whether the position is an array: an array's ctype
   is its element's** (dom70). **A STRUCT OF MORE THAN
@@ -1600,7 +1612,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   right says nothing of its compound form** (doc/row-call-compound.c). **A
   workaround's gate is asked of every shape its fault takes: the fault was an
   array-typed value reached through a call, and the gate asked for the member that
-  made one in the first shape** (dom81, doc/compound-row-element.c). **A dropped
+  made one in the first shape** (dom81, doc/compound-row-element.c). **A
+  workaround's gate is asked of every cast the emitter writes, not only of the
+  casts the program writes: a conversion was bound, and the narrowing and the byte
+  the emitter adds itself were not.** (dom102, castC). **A dropped
   load leaves a mark in the listing: a register a function reads and no instruction
   of it writes** (build/probes/tools/unwritten.py).
 - **A workaround written from a symptom covers the symptom: the backend's source is
