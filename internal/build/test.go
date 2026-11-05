@@ -66,7 +66,7 @@ func importPath(dir, rel, modulePath string) string {
 // -c compiles the tests and does not run them, which is what CI without a board
 // can honestly do.
 func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
-	var compileOnly, allowWarnings, benchMem bool
+	var compileOnly, allowWarnings, benchMem, jsonOut bool
 	var port, runPat, benchPat, timeout string
 	benchTime := "1s"
 	var rest []string
@@ -110,6 +110,8 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 			benchTime = v
 		case a == "-benchmem":
 			benchMem = true
+		case isJSONFlag(a):
+			jsonOut = true
 		case a == "-timeout" || strings.HasPrefix(a, "-timeout="):
 			v, err := flagValue("-timeout", a, args, &i)
 			if err != nil {
@@ -193,6 +195,9 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 		dirs = rest[:1]
 	default:
 		return 2, fmt.Errorf("test: expected at most one package directory")
+	}
+	if jsonOut {
+		return testJSON(dirs, opts, stdout)
 	}
 	if compileOnly && !many {
 		// One package built and not run fails as a build does, with the error
@@ -545,6 +550,26 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 	}
 	fmt.Fprintf(stdout, "ok  \t%s%s\n", ip, took)
 	return 0, nil
+}
+
+// testJSON is `ogo test --json`: each package's run as Test makes it, written as
+// go test -json writes one, and nothing on stderr. A package that does not build
+// is its errors as output and a fail.
+func testJSON(dirs []string, opts testOptions, stdout io.Writer) (int, error) {
+	worst := 0
+	for _, d := range dirs {
+		pkg := pkgName(d)
+		var out bytes.Buffer
+		code, err := testPackage(d, opts, &out, &out)
+		if err != nil {
+			fmt.Fprintln(&out, err)
+			fmt.Fprintf(&out, "FAIL\t%s [build failed]\n", pkg)
+			code = max(code, 1)
+		}
+		test2json(stdout, pkg, out.String(), code)
+		worst = max(worst, code)
+	}
+	return worst, nil
 }
 
 // selected is the names f selects, or all of them where f is nil.

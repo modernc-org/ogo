@@ -417,7 +417,7 @@ was; with it, the same program but for that package and what reaches into it.
 	-seed n       seed the generator (0 uses the current time)
 	-o dir        write the program into dir, with packages of its own
 `,
-	"test": `usage: ogo test [-c] [-p port] [-run pattern] [-bench pattern] [-benchtime t] [-benchmem] [-timeout d] [--clock hz] [--gostack longs] [--allow-backend-warnings] [package]
+	"test": `usage: ogo test [-c] [-p port] [-run pattern] [-bench pattern] [-benchtime t] [-benchmem] [-timeout d] [--clock hz] [--gostack longs] [--allow-backend-warnings] [--json] [package]
 
 Test builds the package together with its _test.ogo files and a generated runner,
 loads the result on a connected Propeller 2, and reports what the tests printed.
@@ -497,6 +497,15 @@ writes them is reported "[the board produced no result]".
 	--allow-backend-warnings
 	            build tests the C backend warned about, as for ogo build; the C
 	            of one it refuses is kept as <pkg>.test.c beside the package
+
+--json writes the run as go test -json writes one, a JSON object a line on
+standard output, and nothing on standard error: {"Time", "Action", "Package",
+"Test", "Elapsed", "Output", "OutputType"}, the events Go's test2json makes of
+the output above -- a run, the output and a pass, fail or skip for each test and
+subtest, a test's result after its subtests', and the package's result last, by
+the exit status. The board reports once its run is done, so the events come
+together at the end. A package that does not build is its errors as output and a
+fail.
 
 Exit status is 0 when every test and benchmark passed and 1 when any failed.
 `,
