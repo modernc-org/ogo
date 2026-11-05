@@ -191,6 +191,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **`ogo lsp`, a Language Server Protocol server for editors**: LSP 3.17 over
+  standard input and output, the documents synced whole, their diagnostics
+  published and formatting. A change checks its package as `ogo build` does
+  before the C backend, the checker and the emitter's lifetime and ABI refusals,
+  with the editor's buffers over the files on disk, its `_test.ogo` files as `ogo
+  test` does, and each diagnostic spans the token at its position. A package of a
+  thousand lines is checked in about a tenth of a second. Asked for by an IDE's
+  handoff, and an editor with an LSP client of its own takes it as it is.
+- **`ogo build --json` and `ogo test --json`**: the build's outcome as one JSON
+  object on standard output, its diagnostics with absolute files, ends and
+  phases; the test run as `go test -json` writes it, the events Go's test2json
+  makes of the output, held to `go tool test2json` over the same text.
+- **`ogo run --port`**: the serial port to load through, as `ogo test -p` takes
+  one. A board test drives `ogo run` over pipes as an editor's terminal does.
 - **Every error in a program is a `file:line:column:` line from its first
   byte**: a refusal the emitter makes, a lifetime one among them, was written
   "emit: main.ogo:3:9: ...", and `ogo fmt` wrote a source that does not parse
