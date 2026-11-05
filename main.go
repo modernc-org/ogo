@@ -324,10 +324,12 @@ loader answers 9P2000 messages the program sends over the serial line, each
 after the bytes 0xFF 0x01, with dir as the root.
 
 The terminal also ends where the program writes the bytes 0xFF 0x00, the
-loader's exit sequence, and run exits with the byte after them as its status. A
-program sending binary data over its serial line is read with another terminal.
-Left by a key or by the end of its input, run exits 0; a program that does not
-build or a board that is not found makes it exit 1.
+loader's exit sequence, and run exits with the byte after them as its status --
+written last: the loader takes the last byte it reads after the sequence. A
+program that returns from main leaves the terminal open. A program sending
+binary data over its serial line is read with another terminal. Left by a key or
+by the end of its input, run exits 0; a program that does not build or a board
+that is not found makes it exit 1.
 
 On Windows, run this from cmd.exe or PowerShell, not a Unix-emulation shell
 (git-bash, MSYS2, Cygwin): the serial handshake is flaky there and the exit key
