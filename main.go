@@ -200,7 +200,7 @@ it sends one (see "ogo help run"), and ogo loadp2 with the loader's.
 
 // commandHelp is the per-command detail behind "ogo help <command>".
 var commandHelp = map[string]string{
-	"build": `usage: ogo build [-o output] [--release] [--unchecked] [--no-inline] [--clock hz] [--gostack longs] [--allow-backend-warnings] [--report] [package | file.ogo ...]
+	"build": `usage: ogo build [-o output] [--release] [--unchecked] [--no-inline] [--clock hz] [--gostack longs] [--allow-backend-warnings] [--report] [--json] [package | file.ogo ...]
 
 Build compiles a package to a Propeller 2 binary.
 
@@ -218,6 +218,22 @@ file:line:column: message, at most one for a line, and the build exits 1. The fi
 is named relative to the build's root -- the directory of the ogo.mod above the
 package, or where there is none, the directory built -- and the column counts
 bytes from 1, as Go's tools count them.
+
+--json writes what the build did as one JSON object on standard output, for a
+program reading it, and nothing on standard error; the exit status is the same:
+
+	{"ok": true, "library": false, "binary": "/abs/blink/blink.binary",
+	 "listing": "/abs/blink/blink.p2asm", "c": "", "diagnostics": [],
+	 "output": "", "stats": {"ms": 82}}
+
+A diagnostic is {"file", "line", "col", "endLine", "endCol", "severity",
+"phase", "message"}: the file absolute, the end that of the token at the
+position, or of the line where none begins there, the severity "error" or
+"warning", and the phase "check" for the checker's and the emitter's, "backend"
+for the C backend's and "usage" for a command line not understood. An error with
+no position has no file and lines of 0. "c" is the C kept beside a build the C
+backend refused, "output" what the build would have printed without the flag,
+and --report's text is "report".
 
 A package that declares no func main is a LIBRARY. OctoGo has no package clause,
 so that is what tells the two apart. A library is checked -- fully, the lifetime
@@ -289,6 +305,7 @@ report costs about a compile more than the build.
 	--allow-backend-warnings
 	              build a program the C backend warned about
 	--report      say what the binary takes of Hub RAM, cogs and locks
+	--json        write the outcome as one JSON object on standard output
 `,
 	"run": `usage: ogo run [--release] [--unchecked] [--no-inline] [--clock hz] [--gostack longs] [--allow-backend-warnings] [--port port] [-9 dir] [package | file.ogo ...]
 

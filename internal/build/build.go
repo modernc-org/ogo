@@ -37,6 +37,9 @@ func Build(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error
 	} else if err == nil && f.port != "" {
 		return 2, fmt.Errorf("build: --port names the port ogo run loads through, and build loads nothing")
 	}
+	if jsonFlag(args) {
+		return buildJSON(withoutJSON(args), stdout)
+	}
 	_, code, err := compile(args, stdout, stderr)
 	return code, err
 }
@@ -91,6 +94,29 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 // package's files become one C translation unit, so a multi-file package is a
 // single flexcc invocation.
 func compile(args []string, stdout, stderr io.Writer) (binary string, code int, err error) {
+	return compileOut(args, stdout, stderr, nil)
+}
+
+// buildOutputs is what a build says besides its exit status, for --json: where it
+// stopped, and what it wrote.
+type buildOutputs struct {
+	dir, root string // the package and its build's root, absolute
+	stage     string // "check" where the checker or the emitter refused
+	library   bool
+	out       string       // the binary, written or not
+	keepC     string       // where a refused C is kept
+	report    bytes.Buffer // --report's text
+}
+
+// compileOut is compile, recording in o, when it is not nil, what --json reports.
+func compileOut(args []string, stdout, stderr io.Writer, o *buildOutputs) (binary string, code int, err error) {
+	reportTo := stdout
+	switch {
+	case o == nil:
+		o = &buildOutputs{}
+	default:
+		reportTo = &o.report
+	}
 	srcs, flags, err := parseArgs(args)
 	if err != nil {
 		return "", 2, err
@@ -109,9 +135,12 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	if err != nil {
 		return "", 2, err
 	}
+	o.dir, _ = filepath.Abs(dir)
+	o.root, _ = buildRoot(dir)
 
 	pkg, err := octogo.BuildModule(-1, modulePath, rel, files, fsys)
 	if err != nil {
+		o.stage = "check"
 		return "", 1, err // checker diagnostics
 	}
 
@@ -125,6 +154,7 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	// flexcc: a translation unit with no main does not link, and the diagnostic
 	// for that came from the C compiler, about a C program the user never wrote.
 	library := !octogo.HasMain(pkg)
+	o.library = library
 	if library && out != "" {
 		return "", 2, fmt.Errorf("build: -o %s: %s declares no func main, so there is no binary to write", out, dir)
 	}
@@ -162,6 +192,7 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	}
 	var cbuf bytes.Buffer
 	if err := octogo.EmitC(pkg, &cbuf, markedOpts...); err != nil {
+		o.stage = "check"
 		return "", 1, emitDiagnostic(err)
 	}
 	// The same program plainer, should this one outgrow the cog (compileMarked):
@@ -224,11 +255,12 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 		return "", 2, err
 	}
 	keepC := strings.TrimSuffix(out, filepath.Ext(out)) + ".c"
+	o.out, o.keepC = out, keepC
 	if code, err := compileSized(cbuf.Bytes(), plainer, variants, rep.Funcs, rep.Goroutines, cFile, out, root, keepC, flags.allowWarnings, flags.goStack != 0, stdout, stderr); err != nil {
 		return "", code, err
 	}
 	if flags.report {
-		if err := report(stdout, &rep, cFile, out, root, flags.goStack != 0); err != nil {
+		if err := report(reportTo, &rep, cFile, out, root, flags.goStack != 0); err != nil {
 			return "", 1, err
 		}
 	}

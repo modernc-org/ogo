@@ -716,11 +716,14 @@ func (s *server) notify(method string, params any) {
 }
 
 func (s *server) write(m any) {
-	b, err := json.Marshal(m)
-	if err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(m); err != nil {
 		fmt.Fprintf(s.log, "ogo lsp: %v\n", err)
 		return
 	}
+	b := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
 	fmt.Fprintf(s.out, "Content-Length: %d\r\n\r\n", len(b))
