@@ -21613,6 +21613,10 @@ func (e *emitter) unsafeSliceAddrOperand(ast []int32) ([]int32, bool) {
 // Encrypt was handed, and a caller's local buffer was refused (dom87). An
 // Expression is its operands and operators in a row, and a comparison binds
 // tighter than && and ||, so an operand beside a comparison's operator is its.
+// So is one computed with first, an operand of arithmetic all the way to the
+// comparison: Go's subtle.xorBytes asks `(uintptr(unsafe.Pointer(dst)) | ...) &
+// (wordSize-1) == 0`, and every caller handing a SHAKE a local buffer was
+// refused (dom101, comparedArithLeaves).
 func (e *emitter) uintptrConvOperands(ast []int32) (out [][]int32) {
 	kids := slices.Collect(it(ast))
 	for i, n := range kids {
@@ -21625,16 +21629,73 @@ func (e *emitter) uintptrConvOperands(ast []int32) (out [][]int32) {
 			}
 		}
 		if n.sym == SimpleExpr && (i > 0 && e.isComparisonOp(kids[i-1]) || i+1 < len(kids) && e.isComparisonOp(kids[i+1])) {
-			if fac, ok := e.f.soleFactorOf(n); ok {
-				if arg, ok := e.uintptrConvArg(fac); ok {
-					out = append(out, e.uintptrConvOperands(arg)...)
-					continue
+			if leaves, ok := e.comparedArithLeaves(n); ok {
+				for _, l := range leaves {
+					if arg, ok := e.uintptrConvArg(l); ok {
+						out = append(out, e.uintptrConvOperands(arg)...)
+						continue
+					}
+					out = append(out, e.uintptrConvOperands(l.ast)...)
 				}
+				continue
 			}
 		}
 		out = append(out, e.uintptrConvOperands(n.ast)...)
 	}
 	return out
+}
+
+// comparedArithLeaves answers the Factors an operand of a comparison is computed
+// from where it is arithmetic all the way down -- the operands of + - | ^ * / % <<
+// >> & &^, of a prefix + - ^, and of parentheses around such an operand -- and false
+// for any other shape. What the leaves are is the caller's to ask: the operand's
+// value is a number the comparison consumes, but a leaf that is a call is handed
+// what its arguments are.
+func (e *emitter) comparedArithLeaves(n Node) (leaves []Node, ok bool) {
+	switch n.sym {
+	case SimpleExpr, Term:
+		for k := range it(n.ast) {
+			if k.sym == AddOp || k.sym == MulOp {
+				continue
+			}
+			l, ok := e.comparedArithLeaves(k)
+			if !ok {
+				return nil, false
+			}
+			leaves = append(leaves, l...)
+		}
+		return leaves, true
+	case UnaryExpr:
+		kids := slices.Collect(it(n.ast))
+		if len(kids) == 0 {
+			return nil, false
+		}
+		for _, k := range kids[:len(kids)-1] {
+			if k.sym != UnaryOp {
+				return nil, false
+			}
+			for op := range it(k.ast) {
+				if op.sym != 0 {
+					return nil, false
+				}
+				switch e.f.ch(op.tok) {
+				case ADD, SUB, XOR:
+				default:
+					return nil, false
+				}
+			}
+		}
+		return e.comparedArithLeaves(kids[len(kids)-1])
+	case Factor:
+		kids := slices.Collect(it(n.ast))
+		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression && kids[2].sym == 0 {
+			if inner := slices.Collect(it(kids[1].ast)); len(inner) == 1 && inner[0].sym == SimpleExpr {
+				return e.comparedArithLeaves(inner[0])
+			}
+		}
+		return []Node{n}, true
+	}
+	return nil, false
 }
 
 // uintptrConvArg is the operand of a Factor that is `uintptr(x)`.

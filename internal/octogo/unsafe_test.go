@@ -155,6 +155,49 @@ func run() {
 }
 
 func main() { run() }
+`, false},
+		{"a callee comparing its parameters as numbers through operators and parentheses", `const wordSize = unsafe.Sizeof(uintptr(0))
+
+func aligned(p, q *byte) bool {
+	return (uintptr(unsafe.Pointer(p))|uintptr(unsafe.Pointer(q)))&(wordSize-1) == 0
+}
+
+func f(p *int) bool {
+	return gu < -(^uintptr(unsafe.Pointer(p))>>2)%7 || (gu+uintptr(unsafe.Pointer(p))*2) != 0
+}
+
+func run() {
+	var a, b [8]byte
+	var x int
+	_ = aligned(&a[0], &b[1]) || f(&x)
+}
+
+func main() { run() }
+`, false},
+		{"a callee comparing what a call makes of its parameter as a number", `func keep(u uintptr) uintptr { gu = u; return u }
+
+func f(p *int) bool {
+	return keep(uintptr(unsafe.Pointer(p))+4)&3 == 0
+}
+
+func run() {
+	var x int
+	_ = f(&x)
+}
+
+func main() { run() }
+`, true},
+		{"a callee storing its parameter as a number computed with, then comparing it", `func f(p *int) bool {
+	gu = uintptr(unsafe.Pointer(p)) | 1
+	return gu&1 == 1
+}
+
+func run() {
+	var x int
+	_ = f(&x)
+}
+
+func main() { run() }
 `, true},
 		{"a callee keeping an unsafe.Pointer", `func keep(p unsafe.Pointer) { gp = p }
 

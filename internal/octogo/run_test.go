@@ -58050,6 +58050,62 @@ func main() { run() }
 		want: "true false false\nfalse true false\n4 1 19 55\n-1\n4 69 115\n",
 	},
 	{
+		// Go's subtle.xorBytes (dom101): its alignment check ORs the uintptrs of
+		// its three slices' addresses and compares what a mask leaves, and a
+		// uintptr computed with before the comparison was taken to keep what it
+		// reaches, so every caller handing a SHAKE a local buffer was refused.
+		// The addresses are of uint32 arrays, so the branch taken is the same in
+		// Go, on the host and on the board.
+		name: "an alignment check comparing addresses ORed and masked, handed a local's slices",
+		src: `import "unsafe"
+
+const wordSize = unsafe.Sizeof(uintptr(0))
+
+func aligned(dst, x, y *byte) bool {
+	return (uintptr(unsafe.Pointer(dst))|uintptr(unsafe.Pointer(x))|uintptr(unsafe.Pointer(y)))&(wordSize-1) == 0
+}
+
+var calls int
+
+func xorBytes(dstb, xb, yb *byte, n int) {
+	dst := unsafe.Slice(dstb, n)
+	x := unsafe.Slice(xb, n)
+	y := unsafe.Slice(yb, n)
+	if aligned(dstb, xb, yb) && -(^uintptr(unsafe.Pointer(yb)))%wordSize != 3 {
+		calls = calls*10 + 1
+	} else {
+		calls = calls*10 + 2
+	}
+	for i := range dst {
+		dst[i] = x[i] ^ y[i]
+	}
+}
+
+var words [4]uint32
+
+func absorb(p []byte) {
+	state := unsafe.Slice((*byte)(unsafe.Pointer(&words[0])), 16)
+	xorBytes(&state[0], &state[0], &p[0], len(p))
+}
+
+func run() {
+	var pad [11]uint32
+	b := unsafe.Slice((*byte)(unsafe.Pointer(&pad[0])), 44)
+	for i := range b {
+		b[i] = byte(i*29 + 3)
+	}
+	absorb(b[:16])
+	absorb(b[1:12])
+	absorb(b[4:14])
+	state := unsafe.Slice((*byte)(unsafe.Pointer(&words[0])), 16)
+	println(state[0], state[5], state[9], state[10], state[15], calls)
+}
+
+func main() { run() }
+`,
+		want: "84 45 81 103 182 121\n",
+	},
+	{
 		// orb's Equal (dom88): `b, ok := b.(*Rect)` in one case of a type switch and
 		// the same in the next was refused, "multiple assignment requires a single
 		// function call", the switch's clauses having one scope: the second clause

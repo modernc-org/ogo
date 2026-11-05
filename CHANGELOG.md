@@ -79,8 +79,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   AES's Encrypt calls it, made the function taken to keep its slices, and a
   caller handing it a local buffer was refused, "its parameter 1 is stored where
   it outlives every frame". A conversion that is all of a comparison's operand
-  makes a bool and goes nowhere; one stored, handed on or computed with is still
-  taken to keep what it reaches. In every release checked.
+  makes a bool and goes nowhere, and so does one computed with on the way to the
+  comparison, `(uintptr(unsafe.Pointer(dst)) | ...) & (wordSize-1) == 0`, Go's
+  subtle.xorBytes's alignment check, which every SHAKE's Write calls; one stored
+  or handed on is still taken to keep what it reaches. In every release checked.
 - **A switch's clause may declare a name another clause declared**: `g2, ok :=
   g2.(*Ring)` in one case of a type switch and `g2, ok := g2.(*Polygon)` in the
   next, paulmach/orb's Equal, was refused, "multiple assignment requires a single
