@@ -283,6 +283,17 @@ silent fault puts the count back to 0. Each round's account is in
   one evaluated at the return), one false refusal fixed (a zero literal stored
   into a struct holding an array made on the stack, lzw's 64 KB `*w =
   Writer{}`) -- 0
+- dom99 (2026-11-04), a wildlife camera trap (Go 1.27's image/jpeg ported with
+  its tests, image's YCbCr and its subsample ratios, imageutil's DrawYCbCr, a
+  sensor cog encoding each frame in colour by day and in gray under an infrared
+  lamp by night, main finding what moved by blocks against a background and
+  capturing it as a thumbnail), against master on dom98's fixes: clean -- 1
+- dom100 (2026-11-04), a signal box's juridical recorder (Go 1.27's
+  index/suffixarray ported with its tests over dom89's regexp, the track's and
+  the signals' controllers on cogs, the log sealed in blocks by the suffix
+  array's Burrows-Wheeler transform, an FM-index and Index.Write to flash, an
+  investigator's FindAllIndex and Lookup), against master on dom98's fixes:
+  clean, one false refusal listed (a slice make not stored into a variable) -- 2
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1137,8 +1148,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   is run on the board even when the host matched**. **A run cut short on the board
   is run again past its time before it is called slow: a program that stops
   printing where Go and the host finish in a fraction of a second has died**
-  (dom78). A sweep's accessors record ORDER, `calls = calls*10 + k`, not a count
-  ("Process rules learned the hard way").
+  (dom78). **A domain program's time on the board is every mutant's: it is
+  measured before the mutants are drawn** (dom99). A sweep's accessors record
+  ORDER, `calls = calls*10 + k`, not a count ("Process rules learned the hard
+  way").
 - **A MUTATED PROGRAM IS A PROBE OF THE FRONT END**; **A MUTATION WITH GO AS THE
   ORACLE IS A PROBE OF THE CHECKER**; **A MUTANT GO ACCEPTS IS A PROBE OF THE
   EMITTER** -- **A mutant that compiles is run**; **A MUTANT IS RUN ON THE BOARD, AND
