@@ -290,7 +290,7 @@ report costs about a compile more than the build.
 	              build a program the C backend warned about
 	--report      say what the binary takes of Hub RAM, cogs and locks
 `,
-	"run": `usage: ogo run [--release] [--unchecked] [--no-inline] [--clock hz] [--gostack longs] [--allow-backend-warnings] [-9 dir] [package | file.ogo ...]
+	"run": `usage: ogo run [--release] [--unchecked] [--no-inline] [--clock hz] [--gostack longs] [--allow-backend-warnings] [--port port] [-9 dir] [package | file.ogo ...]
 
 Run builds a package exactly as ogo build does, loads the binary onto a connected
 Propeller 2 and opens a terminal on its serial output, reading at 230400 baud so
@@ -314,6 +314,10 @@ a terminal or a pipe. Ctrl-] or Ctrl-Z (the bytes 0x1d and 0x1a) leaves the
 terminal wherever it comes from, so neither reaches the program, and so does the
 end of standard input: a script with nothing to type keeps run's input open
 while it reads.
+
+--port port (or -p port, as ogo test takes it) loads through that serial port,
+/dev/ttyUSB0 or COM5; without it the loader tries the ports it finds, in its
+order, and takes the first with a P2 on it.
 
 -9 dir serves dir to the program as a file system, as loadp2's -9 does: the
 loader answers 9P2000 messages the program sends over the serial line, each

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -181,6 +182,17 @@ func TestParseArgs(t *testing.T) {
 	}
 	if _, _, err := parseArgs([]string{"-9"}); err == nil {
 		t.Error("-9 without a directory: want an error")
+	}
+	for _, flag := range []string{"--port", "-port", "-p"} {
+		if srcs, f, err := parseArgs([]string{flag, "COM5", "a.ogo"}); err != nil || f.port != "COM5" || !slices.Equal(srcs, []string{"a.ogo"}) {
+			t.Errorf("parseArgs(%s COM5 a.ogo): port=%q srcs=%v, %v", flag, f.port, srcs, err)
+		}
+	}
+	if _, _, err := parseArgs([]string{"--port"}); err == nil {
+		t.Error("--port without a port: want an error")
+	}
+	if code, err := Build([]string{"--port", "COM5", "a.ogo"}, nil, io.Discard, io.Discard); code != 2 || err == nil {
+		t.Errorf("build --port: code=%d err=%v, want 2 and an error: build loads nothing", code, err)
 	}
 
 	// A clock may be written in Hz or with the suffix it is usually spoken in --

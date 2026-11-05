@@ -34,6 +34,8 @@ import (
 func Build(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	if _, f, err := parseArgs(args); err == nil && f.fileRoot != "" {
 		return 2, fmt.Errorf("build: -9 serves files to a program ogo run loads, and build loads nothing")
+	} else if err == nil && f.port != "" {
+		return 2, fmt.Errorf("build: --port names the port ogo run loads through, and build loads nothing")
 	}
 	_, code, err := compile(args, stdout, stderr)
 	return code, err
@@ -81,7 +83,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) 
 		return 2, fmt.Errorf("run: no func main to run")
 	}
 
-	return loadp2.Load(loadp2.Options{Binary: bin, Terminal: true, FileRoot: f.fileRoot}), nil
+	return loadp2.Load(loadp2.Options{Binary: bin, Port: f.port, Terminal: true, FileRoot: f.fileRoot}), nil
 }
 
 // compile checks and emits C for the package named by args, then compiles it to a
@@ -800,6 +802,8 @@ type buildFlags struct {
 	// fileRoot is the directory ogo run's loader serves to the program as a 9P
 	// file system (loadp2's -9).
 	fileRoot string
+	// port is the serial port ogo run loads through, "" for the loader to find one.
+	port string
 }
 
 // parseHz reads a flag's frequency argument, advancing i past it. It takes plain Hz
@@ -871,6 +875,12 @@ func parseArgs(args []string) (srcs []string, f buildFlags, err error) {
 				return nil, buildFlags{}, fmt.Errorf("build: -9 requires a directory")
 			}
 			f.fileRoot = args[i]
+		case a == "--port" || a == "-port" || a == "-p":
+			i++
+			if i >= len(args) {
+				return nil, buildFlags{}, fmt.Errorf("build: %s requires a serial port", a)
+			}
+			f.port = args[i]
 		case a == "--clock" || a == "-clock":
 			if f.clock, err = hz(a, &i); err != nil {
 				return nil, buildFlags{}, err
