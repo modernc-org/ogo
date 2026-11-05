@@ -117,9 +117,18 @@ func main() {
 
 	switch subCommand {
 	case "fmt":
-		if rc, err := format.SubCommand(args, os.Stdin, os.Stdout, os.Stderr); rc != 0 || err != nil {
-			fail(rc, "err=%v", err)
+		// An error is written as it stands, as gofmt writes one: a source that does not
+		// parse is reported in file:line:column: lines, which a tool reading them finds
+		// at the start of the line. Written "err=fmt err: ..." it was not, and the
+		// command ended with "err=<nil>" after the errors of the files it was given.
+		rc, err := format.SubCommand(args, os.Stdin, os.Stdout, os.Stderr)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			if rc == 0 {
+				rc = 1
+			}
 		}
+		os.Exit(rc)
 	case "smith":
 		if rc, err := octosmith.SubCommand(args, os.Stdin, os.Stdout, os.Stderr); rc != 0 || err != nil {
 			fail(rc, "err=%v", err)
@@ -174,6 +183,11 @@ The commands are:
 	version     print the ogo version
 
 Use "%s help <command>" for more information about a command.
+
+ogo exits 0 when the command did what was asked, 1 when it could not -- a program
+that does not build, a test that fails, no board found -- and 2 when it does not
+understand its command line. ogo run exits with the status the program sends, if
+it sends one (see "ogo help run"), and ogo loadp2 with the loader's.
 `, os.Args[0])
 }
 
@@ -191,6 +205,12 @@ which case they must all be in one directory.
 The binary is written beside the package and named after its directory, except
 when a single file is named, which keeps that file's name: ogo build x.ogo writes
 x.binary. -o overrides the path.
+
+An error in the program is reported on standard error as a line of its own,
+file:line:column: message, at most one for a line, and the build exits 1. The file
+is named relative to the build's root -- the directory of the ogo.mod above the
+package, or where there is none, the directory built -- and the column counts
+bytes from 1, as Go's tools count them.
 
 A package that declares no func main is a LIBRARY. OctoGo has no package clause,
 so that is what tells the two apart. A library is checked -- fully, the lifetime
@@ -274,9 +294,19 @@ otherwise, exactly as for ogo build. The loader is passed a -f frequency, but th
 does not decide what the program runs at: a flexcc-compiled program sets its own
 clock as it starts, which is why the frequency has to be chosen at build time.
 
-Press Ctrl-] to leave the terminal. What is typed or piped in before the
-terminal says it is entering terminal mode does not reach the program: a script
-writing to run's input waits for that line.
+The terminal opens with this line on standard output, ahead of everything the
+board prints:
+
+	( Entering terminal mode.  Press Ctrl-] or Ctrl-Z to exit. )
+
+What is typed or piped in before it does not reach the program: a script or an
+editor writing to run's input waits for that line. After it, standard output is
+what the board sends, as it arrives, each line ending in CR LF as the target
+writes it, and standard input goes to the board as it is typed or written, from
+a terminal or a pipe. Ctrl-] or Ctrl-Z (the bytes 0x1d and 0x1a) leaves the
+terminal wherever it comes from, so neither reaches the program, and so does the
+end of standard input: a script with nothing to type keeps run's input open
+while it reads.
 
 -9 dir serves dir to the program as a file system, as loadp2's -9 does: the
 loader answers 9P2000 messages the program sends over the serial line, each
@@ -285,6 +315,8 @@ after the bytes 0xFF 0x01, with dir as the root.
 The terminal also ends where the program writes the bytes 0xFF 0x00, the
 loader's exit sequence, and run exits with the byte after them as its status. A
 program sending binary data over its serial line is read with another terminal.
+Left by a key or by the end of its input, run exits 0; a program that does not
+build or a board that is not found makes it exit 1.
 
 On Windows, run this from cmd.exe or PowerShell, not a Unix-emulation shell
 (git-bash, MSYS2, Cygwin): the serial handshake is flaky there and the exit key
@@ -295,6 +327,15 @@ may not respond (use Ctrl-C).
 Fmt formats .ogo source files in the canonical style. Each path may be a file or a
 directory, which is searched recursively. With no flags the formatted result goes
 to standard output and no file is touched, as gofmt does.
+
+With no path, fmt formats standard input to standard output:
+
+	ogo fmt < main.ogo
+
+Source that does not parse is not formatted: fmt writes nothing to standard
+output for it, reports the errors on standard error as ogo build does, a line
+file:line:column: message each, the file named <stdin> for standard input, and
+exits 1.
 
 	-l            list the files whose formatting differs
 	-w            rewrite the files in place

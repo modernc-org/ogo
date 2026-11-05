@@ -189,6 +189,25 @@ shipped section tells a reader on that version that they have behaviour they do 
   entry did not say, in every release checked. An argument that may panic costs
   a temporary bound ahead of the statement.
 
+### Toolchain
+
+- **Every error in a program is a `file:line:column:` line from its first
+  byte**: a refusal the emitter makes, a lifetime one among them, was written
+  "emit: main.ogo:3:9: ...", and `ogo fmt` wrote a source that does not parse
+  after "err=fmt err: " on standard input and after "format error a.ogo: " for a
+  file, so a reader of the lines, an editor's among them, took "emit: main.ogo"
+  for the file or missed the error; fmt also ended with "err=<nil>" after the
+  errors of the files it was given. Nothing is written to standard output for a
+  source fmt cannot parse, and the command exits 1, as before.
+- **`ogo help` says what was left unsaid, for a program that drives ogo, an
+  editor among them** (asked for by an IDE's handoff): the exit statuses, 0, 1
+  and 2; that an error's file is named relative to the build's root, its column
+  in bytes; that `ogo fmt` formats standard input to standard output; and of `ogo
+  run`, the line that opens the terminal on standard output, that Ctrl-Z leaves
+  it as Ctrl-] does and so does the end of standard input, that the board's
+  lines end in CR LF, and the status run exits with when left. Measured on a
+  P2-EDGE over plain pipes.
+
 ### Fixed
 
 - **A wrong answer, silent, measured on a P2-EDGE: a whole float constant past

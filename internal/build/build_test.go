@@ -302,6 +302,23 @@ func TestBuildLibraryEmits(t *testing.T) {
 	}
 }
 
+// TestEmitRefusalPosition holds a refusal the emitter makes, a lifetime one, to the
+// shape of the checker's: file:line:column: message from the line's first byte,
+// for a tool reading the lines as an editor does. It was "emit: lib.ogo:1:33:
+// ...", and a reader took "emit: lib.ogo" for the file.
+func TestEmitRefusalPosition(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "lib.ogo"), "func Bad(r int) string { return string(rune(r)) }\n")
+	var buf bytes.Buffer
+	code, err := Build([]string{dir}, nil, &buf, &buf)
+	if code != 1 || err == nil {
+		t.Fatalf("code=%d err=%v, want 1 and the refusal\n%s", code, err, buf.String())
+	}
+	if got := err.Error(); !regexp.MustCompile(`^lib\.ogo:1:\d+: cannot return`).MatchString(got) {
+		t.Errorf("refusal %q does not begin with its position", got)
+	}
+}
+
 // TestCompileCBackendCrash holds compileC to reporting a backend that CRASHES as an
 // error, not a panic of the whole compiler. doc/register-limit-crash.c is a
 // function the backend gives up on and then dereferences a register it never

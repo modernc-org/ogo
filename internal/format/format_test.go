@@ -134,3 +134,41 @@ func TestMissingPathFails(t *testing.T) {
 		t.Errorf("want the valid file formatted on stdout, got %q", got)
 	}
 }
+
+// TestUnparsedSourceErrors pins what an editor formatting a buffer through fmt
+// reads: source that does not parse writes nothing to stdout, the command fails,
+// and each error is a file:line:column: line from its first byte. Standard input
+// said "fmt err: <stdin>:3:1: ..." and a file "format error a.ogo: a.ogo:3:1: ...",
+// so a reader of those lines missed the first error of each.
+func TestUnparsedSourceErrors(t *testing.T) {
+	const bad = "func main() {\n\tx :=\n}\n"
+	var out, errb bytes.Buffer
+	rc, err := SubCommand(nil, strings.NewReader(bad), &out, &errb)
+	if rc != 1 || err == nil {
+		t.Fatalf("stdin: rc=%d err=%v, want 1 and the parse error", rc, err)
+	}
+	if out.Len() != 0 {
+		t.Errorf("stdin: want nothing on stdout, got %q", out.String())
+	}
+	if got := err.Error(); !strings.HasPrefix(got, "<stdin>:3:1: ") {
+		t.Errorf("stdin: want the error to begin <stdin>:3:1:, got %q", got)
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.ogo")
+	if err := os.WriteFile(path, []byte(bad), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	errb.Reset()
+	rc, err = SubCommand([]string{path}, nil, &out, &errb)
+	if rc != 1 || err != nil {
+		t.Fatalf("file: rc=%d err=%v, want 1 and the errors on stderr", rc, err)
+	}
+	if out.Len() != 0 {
+		t.Errorf("file: want nothing on stdout, got %q", out.String())
+	}
+	if got := errb.String(); !strings.HasPrefix(got, path+":3:1: ") {
+		t.Errorf("file: want stderr to begin %s:3:1:, got %q", path, got)
+	}
+}

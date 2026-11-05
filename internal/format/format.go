@@ -73,8 +73,10 @@ func SubCommand(args []string, stdin io.Reader, stdout, stderr io.Writer) (rc in
 		if _, err = io.Copy(b, stdin); err != nil {
 			return 1, fmt.Errorf("read stdin err: %v", err)
 		}
+		// FormatFile writes nothing where the source does not parse, and its error is
+		// the parser's file:line:column: lines, handed on as they are.
 		if err := octogo.FormatFile("<stdin>", b.Bytes(), stdout); err != nil {
-			return 1, fmt.Errorf("fmt err: %v", err)
+			return 1, err
 		}
 		return rc, nil
 	}
@@ -121,17 +123,19 @@ func SubCommand(args []string, stdin io.Reader, stdout, stderr io.Writer) (rc in
 			if err != nil {
 				mu.Lock()
 				fmt.Fprintf(stderr, "read error %s: %v\n", f, err)
-				mu.Unlock()
 				rc = 1
+				mu.Unlock()
 				return
 			}
 
 			var buf bytes.Buffer
 			if err := octogo.FormatFile(f, src, &buf); err != nil {
+				// The parser's errors name the file already, a file:line:column: line
+				// each, as gofmt writes them.
 				mu.Lock()
-				fmt.Fprintf(stderr, "format error %s: %v\n", f, err)
-				mu.Unlock()
+				fmt.Fprintln(stderr, err)
 				rc = 1
+				mu.Unlock()
 				return
 			}
 
@@ -159,8 +163,8 @@ func SubCommand(args []string, stdin io.Reader, stdout, stderr io.Writer) (rc in
 				if err := os.WriteFile(f, res, 0644); err != nil {
 					mu.Lock()
 					fmt.Fprintf(stderr, "write error %s: %v\n", f, err)
-					mu.Unlock()
 					rc = 1
+					mu.Unlock()
 				}
 			}
 		}(file)

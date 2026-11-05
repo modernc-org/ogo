@@ -39,6 +39,21 @@ func Build(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error
 	return code, err
 }
 
+// emitDiagnostic writes a refusal of the emitter's as the checker's are written, a
+// file:line:column: line: the "emit: " before it names the part of the compiler
+// that found it, and a tool reading the lines took "emit: main.ogo" for the file.
+// An error with no position keeps it.
+func emitDiagnostic(err error) error {
+	rest, ok := strings.CutPrefix(err.Error(), "emit: ")
+	if !ok || !positionedRE.MatchString(rest) {
+		return err
+	}
+	return errors.New(rest)
+}
+
+// positionedRE matches an error that begins with its position, file:line:column.
+var positionedRE = regexp.MustCompile(`^[^\n]+?:\d+:\d+: `)
+
 // Run implements `ogo run <file.ogo>`: build, then load and run on a connected
 // P2 board with an interactive terminal. It loads with a precise crystal clock
 // (loadp2 -f, 200 MHz) and a matching 230400 read baud so the program's serial
@@ -145,7 +160,7 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	}
 	var cbuf bytes.Buffer
 	if err := octogo.EmitC(pkg, &cbuf, markedOpts...); err != nil {
-		return "", 1, err
+		return "", 1, emitDiagnostic(err)
 	}
 	// The same program plainer, should this one outgrow the cog (compileMarked):
 	// its switches chains of compares, and then no function marked either. The

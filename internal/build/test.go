@@ -437,7 +437,7 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 		}
 		var cbuf bytes.Buffer
 		if err := octogo.EmitC(pkg, &cbuf, append(emitOpts[:len(emitOpts):len(emitOpts)], octogo.Inline())...); err != nil {
-			return nil, err
+			return nil, emitDiagnostic(err)
 		}
 		return &cbuf, nil
 	}
