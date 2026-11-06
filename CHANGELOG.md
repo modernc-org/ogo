@@ -210,6 +210,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An operand compared with itself builds on the host**: `x != x`, Go's NaN
+  test and what `cmp.Compare` reads instantiated for an integer type, was written
+  as it stands, which the host's compiler warns is always false or always true,
+  so no such program built under the host shim the tests run on: of an integer, a
+  bool or a pointer, a field, an element, arithmetic or a shift. The target took
+  it. It is folded to its answer now, as Go's compiler folds it, the operand
+  still read; one whose check may panic, an index or a dereference, is written
+  as before, which the host's compiler takes. A float is Go's NaN test and is
+  left alone. In every release checked.
 - **A store in a branch a switch's call leaves dead builds**: `func tracing()
   bool { return false }` and then `if !tracing() { return }` before `buf =
   [16]byte{}` and another store made the C backend crash, "flexcc crashed:

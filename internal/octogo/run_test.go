@@ -21773,6 +21773,72 @@ func main() {
 		want: "7 9 2\n",
 	},
 	{
+		// An operand compared with itself, Go's NaN test and what cmp.Compare
+		// reads instantiated for an integer type (dom103, slices.SortFunc in
+		// compress/bzip2). Written as it stands, the host's compiler warned that
+		// the comparison is always false or always true, an error there, for a
+		// variable, a field, a constant index, arithmetic and a shift alike;
+		// the target's compiler took it. It is folded to its answer, the operand
+		// kept as a void expression so that a variable whose one use it is is
+		// still read; one that may panic, an index or a dereference, stays as
+		// written, its check a call, and one with an effect is bound, two calls
+		// two names. A float is a NaN test, and is left alone.
+		name: "an operand compared with itself",
+		src: `type S struct {
+	f int32
+	g int64
+	a [3]int16
+	p *int32
+}
+
+var calls int
+
+func isNaN(x uint16) bool { return x != x }
+
+func same(x int) bool { return x == x }
+
+func next() int {
+	calls++
+	return calls
+}
+
+func once(x int) bool {
+	y := x + 1
+	return y < y
+}
+
+func main() {
+	var a uint16 = 3
+	var w int64 = -1 << 40
+	var u uint64 = 1 << 63
+	b := true
+	v := int32(5)
+	s := S{f: 7, g: 1 << 35, p: &v}
+	arr := [4]int{1, 2, 3, 4}
+	k := 2
+	ps := &s
+	f := float32(0)
+	println(isNaN(a), same(7), once(3))
+	println(w == w, w != w, w < w, w <= w, w > w, w >= w)
+	println(u == u, u != u, u < u, u >= u, b == b, b != b)
+	println(s.f == s.f, s.g != s.g, s.a[1] <= s.a[1], s.p == s.p, *s.p != *s.p)
+	println(arr[k] == arr[k], arr[k+1] != arr[k+1], ps.f < ps.f)
+	println(w+1 != w+1, a<<2 == a<<2, -v != -v, v&3 == v&3)
+	println(next() == next(), calls, f != f, f == f)
+	if a != a || k == k && s.g == s.g {
+		println("cond")
+	}
+	for i := 0; i < 2 && i == i; i++ {
+		println("loop", i)
+	}
+	println(a < a == false)
+}
+`,
+		want: "false true false\ntrue false false true false true\ntrue false false true true false\n" +
+			"true false true true false\ntrue false false\nfalse true false true\nfalse 2 false true\n" +
+			"cond\nloop 0\nloop 1\ntrue\n",
+	},
+	{
 		// The typedef section in dependency order. It used to be fixed groups --
 		// struct forwards, function typedefs, scalar slice headers, the named and
 		// struct typedefs, struct slice headers -- and real dependencies cut across

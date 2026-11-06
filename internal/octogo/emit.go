@@ -57343,6 +57343,12 @@ func (e *emitter) emitKidsStringCompare(kids []Node) {
 			seen++
 			continue
 		}
+		if text, ok := e.selfCompareC(kids, i); ok {
+			e.emit(text)
+			i += 3
+			seen++
+			continue
+		}
 		if lit, ok := e.float32CompareLitC(kids, i); ok {
 			e.emit(lit)
 		} else if lit, ok := e.wideCompareLitC(kids, i); ok {
@@ -57356,6 +57362,80 @@ func (e *emitter) emitKidsStringCompare(kids []Node) {
 		}
 		i++
 	}
+}
+
+// selfCompareC folds a comparison of an operand with itself, `x != x`, `a[i] ==
+// a[i]`, to its answer, "((void)(x), 0)", or reports false for any other. It is
+// Go's NaN test, and what slices.SortFunc's cmp.Compare reads instantiated for an
+// integer type (dom103), always false there: the host's compiler warns that it
+// is (-Wtautological-compare, an error there) for every pair of operands it finds
+// the same, arithmetic, fields and indexes among them, where the target's
+// compiler takes it. Only an operand that does nothing, rendered to a text that
+// calls nothing, is folded: a check that may panic is a call, and an operand with
+// an effect is bound to a temporary, which makes the two names. The operand is
+// kept as a void expression, so that a variable whose one use it is is still
+// read. A float is left alone, a NaN being what it asks and the warning
+// skipping it.
+func (e *emitter) selfCompareC(kids []Node, i int) (string, bool) {
+	if i+2 >= len(kids) || kids[i+1].sym != RelOp || e.isLogicalOp(kids[i+1]) ||
+		i > 0 && !(kids[i-1].sym == RelOp && e.isLogicalOp(kids[i-1])) {
+		return "", false // not a comparison of two operands: `y == x == x` is `(y == x) == x`
+	}
+	answer := "0"
+	switch e.opText(kids[i+1].ast) {
+	case "==", "<=", ">=":
+		answer = "1"
+	case "!=", "<", ">":
+	default:
+		return "", false
+	}
+	if e.nodeHasEffect(kids[i]) || e.nodeHasEffect(kids[i+2]) ||
+		!slices.Equal(e.nodeTokens(kids[i], nil), e.nodeTokens(kids[i+2], nil)) {
+		return "", false
+	}
+	ct, ok := e.inferNodes([]Node{kids[i]})
+	if !ok {
+		return "", false
+	}
+	if u := e.underlyingCType(ct); u == "float" || u == "double" {
+		return "", false
+	}
+	text, pro := e.capturePrologue(func() { e.emitExprNode(kids[i]) })
+	if len(pro) != 0 || strings.Contains(text, "){") || hasCCall(text) {
+		return "", false // a check that may panic, or a compound literal, which no cast may hold
+	}
+	return "((void)(" + text + "), " + answer + ")", true
+}
+
+// hasCCall reports whether emitted C text holds a call: a name followed by a
+// parenthesis. A cast, `(uint16_t)(x)`, has a parenthesis before it.
+func hasCCall(text string) bool {
+	for i := 0; i < len(text); i++ {
+		if text[i] != '(' {
+			continue
+		}
+		j := i - 1
+		for j >= 0 && text[j] == ' ' {
+			j--
+		}
+		if j >= 0 {
+			if c := text[j]; c == '_' || '0' <= c && c <= '9' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// nodeTokens appends the source text of each terminal of n to out, in order.
+func (e *emitter) nodeTokens(n Node, out []string) []string {
+	if n.sym == 0 {
+		return append(out, e.src(n.tok))
+	}
+	for k := range it(n.ast) {
+		out = e.nodeTokens(k, out)
+	}
+	return out
 }
 
 // constCompareC folds a comparison of two constants at a 64-bit level to its
