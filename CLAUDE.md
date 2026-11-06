@@ -314,6 +314,13 @@ silent fault puts the count back to 0. Each round's account is in
   literal, a string's byte at `nibble(v[:], i)`; the backend's crash on a block store
   in a branch a switch's inlined call leaves dead, fixed in the backend and all five
   regenerated) -- 1
+- dom103 (2026-11-06), a volcano observatory's seismic station (Go 1.27's
+  compress/bzip2, hash/crc64, hash/adler32, hash/fnv and encoding/ascii85 ported
+  with their tests, slices.SortFunc and cmp.Compare stenciled, the configuration
+  bundles bzip2'd and armoured over a radio cog's text link, a seismometer cog,
+  STA/LTA, events reported back), the second round against master on dom101's
+  fixes: clean, one loud fault fixed (an operand compared with itself, the NaN
+  test cmp.Compare reads of an integer, refused by the host's compiler) -- 2
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1207,7 +1214,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   reading storage as uintptrs is asked on the board** (dom87). **A spelling a
   compiler checks at the end of an initializer is asked of everything written
   inside its braces: a call's argument in a compound literal is inside them**
-  (dom90).
+  (dom90). **An expression the emitter writes as Go wrote it is asked what the
+  host's warnings make of it: isNaN's `x != x`, stenciled for an integer, is always
+  false to gcc, and under -Werror no build** (dom103).
 - **When a new refusal fails an old test, ask Go about the test's program before
   doubting the refusal.** **A false refusal fixed in the checker is a program the
   emitter is handed next**. **A new summary rule is run over every program the
