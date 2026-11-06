@@ -210,6 +210,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A range body declaring again what its clause declares builds**: `for i, v
+  := range s { v := v }`, the idiom of every Go before 1.22, and `for l := range
+  10 { l := l }`, declared the variable a second time in one C block, which the
+  host's compiler refused as a redefinition and the target's warned of, so no
+  binary was written: over a slice, an array, an integer, a string or a row,
+  with `:=` or `var`. Such a body is a block of its own now. A declaration
+  nested in the body, and an assigning clause's body, built already. In every
+  release checked.
 - **An operand compared with itself builds on the host**: `x != x`, Go's NaN
   test and what `cmp.Compare` reads instantiated for an integer type, was written
   as it stands, which the host's compiler warns is always false or always true,

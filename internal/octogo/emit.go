@@ -8097,6 +8097,7 @@ type emitter struct {
 	loopContLabel       string                       // the label ending the enclosing loop's body, for a continue a select's own C loop would take (selectInLoop)
 	selectInLoop        int                          // selects open since the enclosing loop's body began: each is a C loop of its own
 	pendingPost         func()                       // that loop's post statements, emitted after the label
+	rangeBodyBlock      bool                         // the range loop's body declares again a variable its clause declares: a block of its own
 	pendingSwitchLabel  string                       // the source label of a labeled switch, for emitSwitch to bind to its end label
 	deferBlockDepth     int                          // nesting inside if/for/switch bodies; a defer at depth > 0 needs a runtime flag
 	deferReplay         int                          // slot being replayed, or -1: makes emitCallArgs read the captured temporaries
@@ -22582,6 +22583,71 @@ func (e *emitter) bodyMentions(ast []int32, name string) bool {
 	return false
 }
 
+// bodyRedeclaresClause reports whether a range loop's body, at its own level,
+// declares a variable of a name the clause of h declares (blockDeclares).
+func (e *emitter) bodyRedeclaresClause(h *forHeader, body []int32) bool {
+	for _, v := range [][]int32{h.keyVar, h.valVar} {
+		if name, isName := e.exprIdent(v); v != nil && isName && name != "_" && e.blockDeclares(body, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// blockDeclares reports whether a statement of the block body's own list
+// declares a variable named name: `var name`, or `name :=` and a list ending in
+// `:=` that names it. A declaration nested in another statement -- a block, a
+// clause, a function literal -- is that one's, and C gives it a block of its
+// own.
+func (e *emitter) blockDeclares(body []int32, name string) bool {
+	for n := range it(body) {
+		if n.sym != Statement {
+			continue
+		}
+		for c := range it(n.ast) {
+			switch c.sym {
+			case VarDecl:
+				if e.bodyRedeclares(c.ast, name) {
+					return true
+				}
+			case AssignHead:
+				// The statement's names, up to a function literal or a block.
+				if e.shallowRedeclares(n.ast, name) {
+					return true
+				}
+			}
+			break
+		}
+	}
+	return false
+}
+
+// shallowRedeclares is bodyRedeclares of a simple statement, not entering a
+// function literal or a block it holds.
+func (e *emitter) shallowRedeclares(ast []int32, name string) bool {
+	for n := range it(ast) {
+		if n.sym == FuncLiteral || n.sym == Block {
+			continue
+		}
+		if n.sym != 0 {
+			if n.sym != Selector && e.shallowRedeclares(n.ast, name) {
+				return true
+			}
+			continue
+		}
+		if e.f.ch(n.tok) != IDENT || e.src(n.tok) != name {
+			continue
+		}
+		t := e.f.tok(n.tok)
+		for t = t.Next(); Symbol(t.Ch) == COMMA; t = t.Next().Next() {
+		}
+		if Symbol(t.Ch) == DEFINE {
+			return true
+		}
+	}
+	return false
+}
+
 // bodyRedeclares reports whether ast declares another variable of name: `name :=`,
 // a list ending in `:=` that names it, or `var name`.
 func (e *emitter) bodyRedeclares(ast []int32, name string) bool {
@@ -36137,6 +36203,8 @@ func (e *emitter) emitLoopBody(body []int32, inject func()) {
 	// alone, while postContLabel stays for the body about to be emitted.
 	post, postLabel := e.pendingPost, e.postContLabel
 	e.pendingPost = nil
+	ownBlock := post != nil || e.rangeBodyBlock
+	e.rangeBodyBlock = false
 	savedBreak := e.switchBreak
 	e.switchBreak = ""
 	// The end of this body, where a continue from inside a select jumps (see the
@@ -36149,7 +36217,9 @@ func (e *emitter) emitLoopBody(body []int32, inject func()) {
 	// there: `for i, j := 0, 0; i < 6; i, j = i+s, j+1 { s := 10 ... }` stepped by
 	// ten, the body's s, where Go's post clause belongs to the loop's scope and
 	// never sees it. So the body takes a block of its own, which its declarations
-	// end with; a continue's goto leaves it for the label that follows.
+	// end with; a continue's goto leaves it for the label that follows. So does a
+	// range body declaring again a variable the clause declares (rangeBodyBlock),
+	// whose declaration the inject writes at the top of the loop's own block.
 	if post != nil {
 		e.ind()
 		e.emit("{\n")
@@ -36158,8 +36228,13 @@ func (e *emitter) emitLoopBody(body []int32, inject func()) {
 	if inject != nil {
 		inject()
 	}
+	if ownBlock && post == nil {
+		e.ind()
+		e.emit("{\n")
+		e.indent++
+	}
 	e.emitBlockStmts(body)
-	if post != nil {
+	if ownBlock {
 		e.indent--
 		e.ind()
 		e.emit("}\n")
@@ -36203,6 +36278,13 @@ func (e *emitter) rangeVarC(h *forHeader, v []int32) string {
 }
 
 func (e *emitter) emitRange(h *forHeader, body []int32) {
+	// A body declaring again a variable the clause declares, `for i, v := range s
+	// { v := v }` -- the idiom of every Go before 1.22 -- takes a block of its own:
+	// the clause's variables are declared at the top of the C loop's block, and a
+	// second declaration there was "redefinition of 'v'" to the host's compiler
+	// and "Redefining v" to the target's, no binary either way (dom104).
+	e.rangeBodyBlock = h.rangeDef && e.bodyRedeclaresClause(h, body)
+	defer func() { e.rangeBodyBlock = false }()
 	// `range (arr)` is `range arr`: the parentheses change nothing about the value,
 	// and an array's paths read a name -- "it has no storage to name". Not around a
 	// literal, `range (IS{8, 9})`, which a header cannot write bare -- Go keeps

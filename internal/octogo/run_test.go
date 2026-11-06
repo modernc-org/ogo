@@ -21839,6 +21839,70 @@ func main() {
 			"cond\nloop 0\nloop 1\ntrue\n",
 	},
 	{
+		// A range body declaring again a variable its clause declares, `for i, v
+		// := range s { v := v }`, the idiom of every Go before 1.22 (dom104,
+		// compress/flate's TestWriter_Reset, `for l := range 10 { l := l }`). The
+		// clause's variables are declared at the top of the C loop's block, and the
+		// body's declaration was a second one there: "redefinition of 'v'" to the
+		// host's compiler and "Redefining v" to the target's, no binary either way,
+		// for a slice, an integer, an array, a string, a row and with var. Such a
+		// body takes a block of its own; an assigning clause declares nothing, and
+		// a declaration nested in the body is in a block already.
+		name: "a range body declaring again what its clause declares",
+		src: `func main() {
+	s := []int{7, 8, 9}
+	for i, v := range s {
+		v := v * 10
+		i := i + 1
+		print(i, v, " ")
+	}
+	println()
+	for l := range 3 {
+		l := l
+		print(l, " ")
+	}
+	println()
+	var a [3]int16
+	a[1] = 5
+	for i, x := range a {
+		var x = x + int16(i)
+		print(x, " ")
+	}
+	println()
+	for _, c := range "ab" {
+		c := c + 1
+		print(c, " ")
+	}
+	println()
+	m := [2][2]int{{1, 2}, {3, 4}}
+	for _, row := range m {
+		row := row
+		row[0] = 0
+		for j, v := range row {
+			j, v := v, j
+			print(j, v, " ")
+		}
+	}
+	println(m[0][0], m[1][0])
+	v := 100
+	for _, v = range s {
+		v := v + 1
+		print(v, " ")
+	}
+	println(v)
+	for i := range s {
+		if i > 0 {
+			i := -i
+			print(i, " ")
+		}
+		print(i, " ")
+	}
+	println()
+}
+`,
+		want: "170 280 390 \n0 1 2 \n0 6 2 \n98 99 \n00 21 00 41 1 3\n8 9 10 9\n0 -1 1 -2 2 \n",
+	},
+	{
 		// The typedef section in dependency order. It used to be fixed groups --
 		// struct forwards, function typedefs, scalar slice headers, the named and
 		// struct typedefs, struct slice headers -- and real dependencies cut across
