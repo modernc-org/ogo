@@ -321,6 +321,14 @@ silent fault puts the count back to 0. Each round's account is in
   STA/LTA, events reported back), the second round against master on dom101's
   fixes: clean, one loud fault fixed (an operand compared with itself, the NaN
   test cmp.Compare reads of an integer, refused by the host's compiler) -- 2
+- dom104 (2026-11-06), an ocean buoy's data logger on a satellite link (Go 1.27's
+  compress/flate -- its new encoders of levels 1 to 6, the lazy matcher, the
+  decompressor -- and compress/zlib ported with their tests, scaled for the Hub
+  RAM and split for the cog's registers, a sensor cog, batches at four levels and
+  with the last as the dictionary, frames over a link that loses one), the third
+  round against master on dom101's fixes: clean, one loud fault fixed (a
+  range body declaring again what its clause declares, `v := v`), one listed (an
+  array ranged for its indices alone, unused in the host's C) -- 3
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1482,6 +1490,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   in C and in the emitter alike** (dom88). **A name a clause declares is spelled
   as the new variable's, not rendered as what the name stands for where the
   clause is written: rendered, a range's key was a constant's value** (dom101).
+  **A block Go nests that the C folds into another is asked what both declare: a
+  range clause's variables and its body's were one C block, and `v := v` declared
+  v twice** (dom104).
 - **Where a statement renders a part of itself that Go evaluates conditionally,
   later, or repeatedly, that part is rendered inside emitOwnPrologue**; **a
   statement that renders parts of itself asks where each part's hoisted statements
