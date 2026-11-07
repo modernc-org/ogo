@@ -329,6 +329,12 @@ silent fault puts the count back to 0. Each round's account is in
   round against master on dom101's fixes: clean, one loud fault fixed (a
   range body declaring again what its clause declares, `v := v`), one listed (an
   array ranged for its indices alone, unused in the host's C) -- 3
+- the listed gaps measured again for rc.4's notes (2026-11-07), against master on
+  dom104's fix, rc.4 not tagged: silent (a Builder declared from NewBuilder, a
+  pointer to one, a field or an element of one went into an interface with
+  methods, and what its String handed a callee through it was followed nowhere,
+  a view of a dead frame kept; a blank package variable's initializer that may
+  panic left out, a difference filed as a gap since dom97) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1209,7 +1215,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   compiler is probed before it is answered: a note it read may be months behind the
   code.** **A note calling a row "by design" is checked against specs.go before it
   is believed.** **A limitation listed for users is checked against the compiler
-  like any other note**. **A limit kept for its cost is measured at its cost: the
+  like any other note**. **A gap listed for users is measured before a release
+  lists it: a refusal keyed on one declaration form is a hole in the others.**
+  **Only a refusal is a gap: a program that builds and does otherwise than Go is
+  a fault, whatever list it was put on** (rc.4's recheck). **A limit kept for its cost is measured at its cost: the
   table "this target has no room for" was 1750 bytes.**
 - **The target's build of every program the probes left behind is a probe of its
   own**; **A probe's program is a target-build test too, and the warnings are
