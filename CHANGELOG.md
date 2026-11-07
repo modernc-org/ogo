@@ -188,6 +188,24 @@ shipped section tells a reader on that version that they have behaviour they do 
   panic, `println(a[k], p.x)`, the second panicked first on the host, which the
   entry did not say, in every release checked. An argument that may panic costs
   a temporary bound ahead of the statement.
+- **A field of a variable typed by a struct written out is checked**: `for _, tt
+  := range tests` over a `[]struct{...}`, Go's table of test cases, and `tt :=
+  ts[0]`, `tt := mk()`, `p := &g`, and a variable declared `*struct{...}`, had
+  their fields asked nothing, so `tt.n = tt.f` of an int and a float32, `tt.a ==
+  tt.n` of a struct and an int, `!tt.e` of an error and `tt.p < tt.p` of
+  pointers built, where Go reports each, and so did the same of another
+  package's struct. A variable declared with the struct's type was checked. In
+  every release checked.
+- **An unused import is reported wherever Go reports one**: an import whose name
+  was a field's, `s.bytes`, a local's, `strings := 3`, or a local's selector was
+  taken for used, and an import a package the main package imports did not use
+  was not reported at all, so programs `go build` rejects built. A package's name
+  is used where it heads a selector. In every release.
+- **An initialization cycle Go reports is refused**: `var fv = g` with g reading
+  fv built, and so did a cycle through a package slice whose literal holds a call
+  or an interface value, `var tab = []int{f(), 2}` with f reading tab: the
+  ordering pass saw neither cycle. Each is refused now, "initialization cycle for
+  fv". In every release checked.
 
 ### Toolchain
 
@@ -302,28 +320,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   later" where Go writes "panic: first", on the board, where the host's compiler
   refused the C; of a local s it was refused, "panic is supported only with a
   string argument yet". In every release checked.
-- **A field of a variable typed by a struct written out is checked**: `for _, tt
-  := range tests` over a `[]struct{...}`, Go's table of test cases, and `tt :=
-  ts[0]`, `tt := mk()`, `p := &g`, and a variable declared `*struct{...}`, had
-  their fields asked nothing, so `tt.n = tt.f` of an int and a float32, `tt.a ==
-  tt.n` of a struct and an int, `!tt.e` of an error and `tt.p < tt.p` of
-  pointers built, where Go reports each, and so did the same of another
-  package's struct. A variable declared with the struct's type was checked. In
-  every release checked.
 - **Package variables are initialized in Go's order, step by step**: a variable
   waiting on one declared after it, `var a = f(1, b)` above b, ran after every
   variable declared after it that was ready, where Go runs it as soon as b is
   done; an initializer reading a package slice filled at package initialization
   -- a literal holding a call or an interface value -- declared above it read
-  zeros, and a cycle through such a slice built, where Go reports one; a
-  variable of a `var (...)` group declared with its type, `n int = f()`, or of an
-  interface type ran after the rest of the group, the group's in reverse; a
-  blank variable's initializer, `var _ = register()`, never ran; and a variable
-  with a constant value or none, `var v = 5`, `var y int`, was taken as
-  initialized from the start, so an initializer reading it ran before one Go
+  zeros; a variable of a `var (...)` group declared with its type, `n int =
+  f()`, or of an interface type ran after the rest of the group, the group's in
+  reverse; a blank variable's initializer, `var _ = register()`, never ran; and
+  a variable with a constant value or none, `var v = 5`, `var y int`, was taken
+  as initialized from the start, so an initializer reading it ran before one Go
   runs first -- `var d = v + y` above `var i = setY()` and `var v = 5` read y
-  before setY set it -- and a cycle through one, `var fv = g` with g calling fv,
-  built, where Go reports it. In every release checked.
+  before setY set it. In every release checked.
 - **A package variable is initialized when Go initializes it, by the methods
   its initializer calls**: a variable declared in an `if`, a `for` or a `switch`
   header, `if v := z; v > 0`, in a function an initializer calls, read nothing
@@ -404,11 +412,6 @@ shipped section tells a reader on that version that they have behaviour they do 
   function hands it, said otherwise than Go: a split function trimming the fields of
   a line handed back an empty token at every separator, and the scan never ended.
   Since v0.41.0.
-- **An unused import is reported wherever Go reports one**: an import whose name
-  was a field's, `s.bytes`, a local's, `strings := 3`, or a local's selector was
-  taken for used, and an import a package the main package imports did not use
-  was not reported at all, so programs `go build` rejects built. A package's name
-  is used where it heads a selector. In every release.
 - **A slice declared without a value builds under a name C's library has**: `var
   abs []Word`, math/big's NewInt, was declared as `abs` and read as `ogo_kw_abs`,
   and no C compiler took it; so was `var printf []int = nil`. In every release
