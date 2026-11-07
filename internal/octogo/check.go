@@ -16092,6 +16092,55 @@ func (f *File) reportBuilderInIface(s *Scope, pos token.Position, from, shown, i
 	return true
 }
 
+// builderOperand reports whether value is the predeclared Builder or a pointer to
+// one, in each way a value of it is written: a variable declared with its type or
+// from NewBuilder (builderVar, which names no type), its address, a pointer bound
+// to that address, a field or an element of one (exprNamedType's walk and
+// valueTypeAt's).
+func (f *File) builderOperand(s *Scope, value Node) bool {
+	if !isPredeclaredBuilder(s, "Builder") {
+		return false
+	}
+	name, ok := f.exprIdent(value)
+	if !ok {
+		name, ok = f.addrOfName(value)
+	}
+	if ok {
+		// `p := &sb` and `q := p` hold the address the first was bound to.
+		ws, wf := s, f
+		for range 8 {
+			d, isVar := ws.find(name.Src()).(*VarDeclaration)
+			if !isVar {
+				break
+			}
+			if d.builderVar || d.typeName.Src() == "Builder" && !d.typeQual.IsValid() {
+				return true
+			}
+			if d.typeName.IsValid() || d.init.sym == 0 || d.declScope == nil {
+				break
+			}
+			wf, ws = wf.fileOfToken(d.Token()), d.declScope
+			if name, ok = wf.addrOfName(d.init); !ok {
+				if name, ok = wf.exprIdent(d.init); !ok {
+					break
+				}
+			}
+		}
+	}
+	if nm, ql, _, named := f.exprNamedType(s, value); named {
+		return !ql.IsValid() && nm.Src() == "Builder"
+	}
+	if t, known := f.valueTypeAt(s, value); known && t.tn != nil {
+		tn := t.tn
+		for p, isPtr := tn.(*TypeNodePointer); isPtr; p, isPtr = tn.(*TypeNodePointer) {
+			tn = p.TypeNode
+		}
+		id, isID := tn.(*TypeNodeIdent)
+		return isID && !id.Qualifier.IsValid() && id.Name.Src() == "Builder"
+	}
+	return false
+}
+
 // checkImplementsNamed is the tail of checkImplements for a value whose type is
 // known by NAME rather than through a local declaration -- a read from another
 // package. It asks the same two questions in the same order: an interface holds a
@@ -16253,6 +16302,18 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 			f.err(f.tok(value.Pos()).Position(), "cannot use %s (value of type unsafe.Pointer) as %s value in %s: unsafe.Pointer does not implement %s (missing method %s)",
 				f.exprSource(value), ifaceName, what, ifaceName, missing)
 		}
+		return
+	}
+	// The Builder is held by no interface asking for a method, however the value
+	// is written. Asked by a declared type name alone, `&sb` of an `sb :=
+	// NewBuilder(back[:])`, `&h.sb`, `&bs[0]` and a `p := &sb` went to the emitter,
+	// which wrote the Builder a method table, and what its String handed a callee
+	// through the interface no lifetime rule followed: `keepS(&sb)` of a `keepS(s
+	// Stringer)` storing `s.String()` kept a view of the frame's array in a package
+	// string (rc.4's recheck of the listed gaps). An interface asking for nothing
+	// is left to the lifetime rules, which follow an assertion back to a Builder.
+	if len(set) != 0 && f.builderOperand(s, value) {
+		f.reportBuilderInIface(s, f.tok(value.Pos()).Position(), "Builder", f.exprSource(value), ifaceName, what)
 		return
 	}
 	// A value of a DEFINED type that an operation, a conversion or a call MADE, `y +

@@ -1,17 +1,55 @@
 // A *Builder is held by no interface yet: its methods are written where they are
 // called and fill no method table. Asked by the method set it was "missing method
-// Write", a method it has (dom91, a *Builder handed to an io.Writer).
+// Write", a method it has (dom91, a *Builder handed to an io.Writer). Asked by a
+// declared type name alone, a Builder declared from NewBuilder, a field, an element
+// and a pointer bound to one's address went through, and what String handed a
+// callee through a Stringer was followed by no lifetime rule (rc.4's recheck).
 
 type Writer interface {
 	Write(p []byte) (int, error)
+}
+
+type Stringer interface {
+	String() string
 }
 
 var back [32]byte
 
 var b Builder
 
+var gs string
+
 func put(w Writer, s string) {
 	w.Write([]byte(s))
+}
+
+func keepS(s Stringer) { gs = s.String() }
+
+type holder struct {
+	n  int
+	sb Builder
+}
+
+func forms() {
+	var local [16]byte
+	sb := NewBuilder(local[:])
+	// ERROR a Builder is held by no interface yet
+	keepS(&sb)
+	var vb = NewBuilder(local[:])
+	// ERROR a Builder is held by no interface yet
+	put(&vb, "x")
+	p := &sb
+	// ERROR a Builder is held by no interface yet
+	put(p, "x")
+	h := holder{sb: NewBuilder(local[:])}
+	// ERROR a Builder is held by no interface yet
+	put(&h.sb, "x")
+	var bs [1]Builder
+	// ERROR a Builder is held by no interface yet
+	put(&bs[0], "x")
+	// ERROR a Builder is held by no interface yet
+	var w Writer = &sb
+	println(w != nil)
 }
 
 func main() {
@@ -22,4 +60,5 @@ func main() {
 	// ERROR a Builder is held by no interface yet
 	w = &b
 	println(w != nil, b.String())
+	forms()
 }

@@ -206,6 +206,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   or an interface value, `var tab = []int{f(), 2}` with f reading tab: the
   ordering pass saw neither cycle. Each is refused now, "initialization cycle for
   fv". In every release checked.
+- **A Builder is held by no interface asking for a method, however it is
+  declared**: `sb := NewBuilder(back[:])` and then `keepS(&sb)` of a `keepS(s
+  Stringer)` storing `s.String()` in a package string built, and the string
+  viewed the dead frame's array; so did `var sb = NewBuilder(...)`, a pointer
+  bound to its address, a field and an element of one, into an interface by an
+  argument, a declaration, an assignment, a literal's field or a send. A Builder
+  declared `var sb Builder` and a `*Builder` parameter were refused already, and
+  each of these is now, "a Builder is held by no interface yet". In every
+  release checked.
 
 ### Toolchain
 
