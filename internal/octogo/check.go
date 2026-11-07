@@ -12741,6 +12741,17 @@ func (f *File) checkQualifiedRef(s *Scope, qual Token, suffix Node) {
 			f.err(m.Position(), "undefined: %s.%s", qual.Src(), m.Src())
 			return
 		}
+		// errors.New named but not called, `f := errors.New`: New has no body, its
+		// error is made where the call stands (errorsNewC), and a call through a
+		// value has nowhere to make one -- a function written for it would hand
+		// every call one error to share. Taken, the C named an errors_New nothing
+		// defines, and the C compiler refused it (dom105).
+		if pkg.ImportPath == "errors" && m.Src() == "New" {
+			if steps, _ := callSteps(suffix); len(steps) < 2 || steps[0].sym != Selector || steps[1].sym != CallSuffix {
+				f.err(m.Position(), "errors.New is not a value yet: it makes its error where it is called; call it where the error is wanted")
+				return
+			}
+		}
 		// A field taken on a value the qualified expression REACHES rather than
 		// names: `pkg.Bank[i].f` and `pkg.Make().f`. The walks below start from a
 		// name, and neither of those has one, so the export rule was not applied to

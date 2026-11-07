@@ -1,0 +1,28 @@
+// errors.New is called where its error is wanted, not taken as a value: it has
+// no body, its error is made where the call stands, and a call through a value
+// would have nowhere to make one. Taken, the C named an errors_New nothing
+// defines, which the C compiler refused (dom105).
+
+import "errors"
+
+type ctor func(string) error
+
+func call(f func(string) error, s string) error { return f(s) }
+
+// ERROR errors.New is not a value yet
+var mk = errors.New
+
+var ok = errors.New("called, a sentinel")
+
+func main() {
+	// ERROR errors.New is not a value yet
+	_ = errors.New
+	// ERROR errors.New is not a value yet
+	f := errors.New
+	// ERROR errors.New is not a value yet
+	var c ctor = errors.New
+	// ERROR errors.New is not a value yet
+	println(call(errors.New, "x").Error())
+	g := errors.Is
+	println(f("a").Error(), c("b").Error(), g(ok, ok), mk("c").Error(), errors.New("d").Error())
+}

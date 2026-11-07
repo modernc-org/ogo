@@ -237,6 +237,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **errors.New taken as a value is refused where it is named**: `f :=
+  errors.New`, `_ = errors.New`, an argument, a package variable and a typed
+  function value built C naming an errors_New nothing defines, which the target's
+  compiler and the host's linker refused. New makes its error where the call
+  stands, and a call through a value has nowhere to make one, so the value is
+  refused, "errors.New is not a value yet", at its name. Since the errors package.
+
 - **A wrong answer, silent: a blank package variable's initializer that may
   panic is evaluated**: `var _ = xs[i]` with i past the end, `var _ = *p` of a
   nil p and `var _ = 7 / zero` were left out for calling nothing, and main ran,
