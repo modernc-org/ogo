@@ -43601,17 +43601,22 @@ func (e *emitter) chainResultCur(base string, steps []Node) (accessCur, bool) {
 					i++
 					continue
 				}
-				rts, okm := e.funcRet[e.methodCName(bt, field)]
-				if !okm || len(rts) > 1 {
-					return accessCur{}, false
+				// No method of the name: a FIELD holding a function, `c.newPoint()`, read
+				// below and called as the value it holds. Taken for a method, the chain
+				// went untyped, and `q, err := c.newPoint().SetBytes(b)` was "target/result
+				// count mismatch" (ecdsa's Curve, dom105).
+				if rts, okm := e.funcRet[e.methodCName(bt, field)]; okm {
+					if len(rts) > 1 {
+						return accessCur{}, false
+					}
+					if len(rts) == 1 {
+						cur = e.plainOrSlice(rts[0])
+					} else {
+						cur = accessCur{} // void method: no result type (a void chain yields none)
+					}
+					i++
+					continue
 				}
-				if len(rts) == 1 {
-					cur = e.plainOrSlice(rts[0])
-				} else {
-					cur = accessCur{} // void method: no result type (a void chain yields none)
-				}
-				i++
-				continue
 			}
 			// A field of a call result types like any other field; chainCText binds
 			// the result to a temporary so it can be read at all.

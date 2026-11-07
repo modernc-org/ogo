@@ -244,6 +244,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method of several results on what a field holding a function returns
+  builds**: `q, err := c.newPoint().SetBytes(Q)`, ecdsa's Curve, was refused,
+  "multiple-assignment target/result count mismatch", with no position, in a
+  declaration, an assignment, a `var` and an if's header, and `return
+  c.newPoint().SetBytes(b)` was "a return supplying every result needs a call
+  whose results are exactly ..."; a call handed its results,
+  `show(c.newPoint().SetBytes(b))`, wrote C both C compilers refused. The field
+  was taken for a method of the struct's type, of which there was none. A method
+  of one result, and an array element holding a function, built. In every release
+  checked.
 - **errors.New taken as a value is refused where it is named**: `f :=
   errors.New`, `_ = errors.New`, an argument, a package variable and a typed
   function value built C naming an errors_New nothing defines, which the target's

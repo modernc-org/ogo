@@ -12390,6 +12390,57 @@ func main() {
 		want: "11 2 6\n3\n",
 	},
 	{
+		// A method of several results called on what a function-typed FIELD
+		// returns, ecdsa's `c.newPoint().SetBytes(Q)`: the chain typer took the
+		// field for a method of the struct's type, found none, and left the call
+		// untyped, so a declaration was "multiple-assignment target/result count
+		// mismatch", a return "needs a call whose results are exactly ...", and a
+		// call forwarding the results wrote C both compilers refused (dom105).
+		name: "a method of several results on what a field holding a function returns",
+		src: `type Point struct{ x int }
+
+var pool [4]Point
+
+func newPoint() *Point { return &pool[0] }
+
+func (p *Point) SetBytes(b []byte) (*Point, error) {
+	p.x += len(b)
+	return p, nil
+}
+
+type Curve struct {
+	name     string
+	newPoint func() *Point
+}
+
+var gc = Curve{name: "P-256", newPoint: newPoint}
+
+func set(c *Curve) (*Point, error) {
+	return c.newPoint().SetBytes([]byte{1, 2})
+}
+
+func show(p *Point, err error) { println(p.x, err == nil) }
+
+func main() {
+	c := &Curve{name: "P-256", newPoint: newPoint}
+	q, err := c.newPoint().SetBytes([]byte{1})
+	println(q.x, err == nil)
+	q, err = gc.newPoint().SetBytes([]byte{1, 2, 3})
+	println(q.x, err == nil)
+	var r, err2 = c.newPoint().SetBytes([]byte{1})
+	println(r.x, err2 == nil)
+	if p, err := set(&gc); err == nil {
+		println(p.x)
+	}
+	show(c.newPoint().SetBytes([]byte{1, 1}))
+	v := Curve{newPoint: newPoint}
+	_, err = v.newPoint().SetBytes(nil)
+	println(pool[0].x, err == nil, v.name == "", c.name)
+}
+`,
+		want: "1 true\n4 true\n5 true\n7\n9 true\n9 true true P-256\n",
+	},
+	{
 		// A blank variable's initializer that calls nothing and may panic is
 		// evaluated in its place, as Go evaluates it: left out for doing nothing,
 		// `var _ = xs[i]` past the end ran main, where Go panics before it.
