@@ -12338,6 +12338,58 @@ func main() {
 		want: "5 5 5 10 5 2 8 7 8\n2222224336\n7 y\n",
 	},
 	{
+		// A method called on a call's result and handed an int len or cap made of a
+		// local slice, the result bound to a name: the declaration's walk went into
+		// the call's arguments, a method on a call's result being no call it knew
+		// the summary of, and took the slice's frame for what the name held, so
+		// `return n` was refused; `n = ...` asked the value whole and was taken
+		// (bigmod's NewModulusProduct, dom105). A number holds no reference.
+		name: "a method on a call's result handed len of a local slice, bound and handed back",
+		src: `type Nat struct{ limbs []uint }
+
+var pool [2]Nat
+
+var arena [16]uint
+
+func newNat() *Nat {
+	p := &pool[0]
+	p.limbs = arena[:0]
+	return p
+}
+
+func (x *Nat) reset(n int) *Nat {
+	x.limbs = x.limbs[:n]
+	return x
+}
+
+func product(a []uint) *Nat {
+	var xBack [8]uint
+	x := xBack[:len(a)]
+	copy(x, a)
+	n := newNat().reset(len(x) + cap(x))
+	for i := range x {
+		n.limbs[i] = x[i] * 2
+	}
+	return n
+}
+
+func sized(a []uint) *Nat {
+	var back [4]uint
+	s := back[:len(a)]
+	var m = newNat().reset(cap(s) - len(s))
+	return m
+}
+
+func main() {
+	n := product([]uint{1, 2, 3})
+	println(len(n.limbs), n.limbs[0], n.limbs[2])
+	m := sized([]uint{9})
+	println(len(m.limbs))
+}
+`,
+		want: "11 2 6\n3\n",
+	},
+	{
 		// A blank variable's initializer that calls nothing and may panic is
 		// evaluated in its place, as Go evaluates it: left out for doing nothing,
 		// `var _ = xs[i]` past the end ran main, where Go panics before it.

@@ -110,6 +110,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   said "missing method Write", a method the Builder has; no interface holds a
   Builder yet, and the message says so.
 
+- **A method on a call's result handed len or cap of a local slice may be
+  handed back**: `n := NewNat().reset(len(x.limbs) + len(y.limbs))` and `return
+  newModulus(n.trim())`, bigmod's NewModulusProduct, was refused, "cannot return
+  local n, which holds a pointer into local x", where `n = ...` and a direct
+  return built: the declaration's walk went into the call's arguments and took a
+  number, len's or cap's, for what reaches the slice. In every release checked.
+
 ### Behaviour changes
 
 - **What a typed constant's method hands back goes only where its type does**:

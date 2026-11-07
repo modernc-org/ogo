@@ -50441,7 +50441,12 @@ func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
 			e.markHolder(name, r.origin)
 			return
 		}
-		if e.summarisedCall(n) {
+		// Nor is a call of len, cap or copy: an int, which holds no reference
+		// whatever its argument reaches. Walked into, `n := newNat().reset(len(x.limbs))`
+		// took x's frame for what n holds, a method on a call's result being no call
+		// summarisedCall knows, and `return n` was refused (bigmod's
+		// NewModulusProduct, dom105); `n = ...` asked the value whole and was taken.
+		if e.summarisedCall(n) || e.intBuiltinCall(n) {
 			continue
 		}
 		e.noteDeclFrameHolder(ctype, name, n.ast)
@@ -50449,6 +50454,23 @@ func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
 			return
 		}
 	}
+}
+
+// intBuiltinCall reports whether n is nothing but a call, under the levels of an
+// expression, of the builtin len, cap or copy, whose result is an int
+// (callResultCType).
+func (e *emitter) intBuiltinCall(n Node) bool {
+	kids := slices.Collect(it(n.ast))
+	for n.sym != Factor && len(kids) == 1 && kids[0].sym != 0 {
+		n = kids[0]
+		kids = slices.Collect(it(n.ast))
+	}
+	if n.sym != Factor {
+		return false
+	}
+	recv, suffix, isCall := e.factorCall(e.unparenKids(kids))
+	return isCall && len(suffix) == 1 && suffix[0].sym == CallSuffix &&
+		(recv == "len" || recv == "cap" || recv == "copy") && e.universe(recv)
 }
 
 // summarisedStepsCall reports a call's result with steps after it, read or
