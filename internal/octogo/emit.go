@@ -26201,9 +26201,11 @@ func (e *emitter) pkgArrayInit(initExpr []int32) (arrDim, bool) {
 // register()`, for what it does: Go runs it in its place in the order, and it
 // went with the name (dom97, sweeps/init-schedule). One that does nothing -- `var
 // _ I = (*T)(nil)`, the assertion that T implements I -- is still left out, its C
-// what it was.
+// what it was; one that may panic does something. Left out too, `var _ = xs[i]`
+// past the end, `var _ = *p` of a nil p and `var _ = 7 / zero` ran main where Go
+// panics before it (dom97's listed gap, a silent one, rc.4's recheck).
 func (e *emitter) pkgInitBlank(initExpr []int32) {
-	if initExpr == nil || !e.exprHasEffect(initExpr) {
+	if initExpr == nil || !e.exprHasEffect(initExpr) && !e.exprMayPanic(initExpr) {
 		return
 	}
 	text, pro := e.pkgInitRender(func() { e.emitExpr(initExpr) })
@@ -45041,13 +45043,19 @@ var checkCalls = []string{"ogo_nil_", "ogo_bound", "ogo_sbound", "ogo_reslice", 
 // by its printer, wrote a typedef of the array the program's C never named. A
 // function literal among it is not asked, being lifted where it is rendered.
 func (e *emitter) printArgMayPanic(a Node) bool {
-	if hasSymDeep(a.ast, FuncLiteral) {
+	return e.exprMayPanic(a.ast)
+}
+
+// exprMayPanic is printArgMayPanic's question of an expression wherever it
+// stands: a blank package variable's initializer asks it too.
+func (e *emitter) exprMayPanic(ast []int32) bool {
+	if hasSymDeep(ast, FuncLiteral) {
 		return false
 	}
 	saved := e.err
 	var text string
 	var pro []string
-	e.unminted(func() { text, pro = e.capturePrologue(func() { e.emitExpr(a.ast) }) })
+	e.unminted(func() { text, pro = e.capturePrologue(func() { e.emitExpr(ast) }) })
 	if e.err != saved {
 		e.err = saved
 		return false

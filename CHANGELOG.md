@@ -237,6 +237,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A wrong answer, silent: a blank package variable's initializer that may
+  panic is evaluated**: `var _ = xs[i]` with i past the end, `var _ = *p` of a
+  nil p and `var _ = 7 / zero` were left out for calling nothing, and main ran,
+  where Go panics before it. In every release.
 - **A range body declaring again what its clause declares builds**: `for i, v
   := range s { v := v }`, the idiom of every Go before 1.22, and `for l := range
   10 { l := l }`, declared the variable a second time in one C block, which the

@@ -12338,6 +12338,26 @@ func main() {
 		want: "5 5 5 10 5 2 8 7 8\n2222224336\n7 y\n",
 	},
 	{
+		// A blank variable's initializer that calls nothing and may panic is
+		// evaluated in its place, as Go evaluates it: left out for doing nothing,
+		// `var _ = xs[i]` past the end ran main, where Go panics before it.
+		name:   "a blank package variable's initializer that panics stops the program before main",
+		panics: true,
+		src: `var xs = []int{1, 2, 3}
+
+var i = 5
+
+var _ = xs[1]
+
+var _ = xs[i]
+
+func main() {
+	println("main ran", i, len(xs))
+}
+`,
+		want: "panic: index out of range",
+	},
+	{
 		// Go initializes, step by step, the variable earliest in declaration
 		// order that is ready. The steps were placed in passes, so a waits on b
 		// ran after c too; a package slice's fill was a step named by its
