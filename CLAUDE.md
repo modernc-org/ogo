@@ -335,6 +335,19 @@ silent fault puts the count back to 0. Each round's account is in
   methods, and what its String handed a callee through it was followed nowhere,
   a view of a dead frame kept; a blank package variable's initializer that may
   panic left out, a difference filed as a gap since dom97) -- 0
+- dom105 (2026-11-07), an EV charger's calibration-law meter (Go 1.27's fips140
+  nistec, fiat, bigmod and ecdsa ported with their tests, a meter cog signing its
+  readings by ECDSA over P-256 in OCMF records, a backend billing them across a
+  spoiling gateway), the first round against master on the recheck's fixes:
+  silent (a Builder in an interface asking for nothing, asserted to one asking for
+  its methods, answered false), two loud faults fixed (errors.New taken as a
+  value; testing's Log and its kin as values and a testing.T in a method table,
+  every test package asserting to an interface asking for Log among them), two
+  false refusals fixed (a method on a call's result handed len of a local slice;
+  a method of several results on what a field holding a function returns, loud
+  forwarded whole), two listed (a lifetime refusal in a branch a constant leaves
+  dead; `*q` of an assertion to a pointer to a pointer of another package's
+  type) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -893,8 +906,10 @@ had it on 2026-10-13"; the sections named in capitals below are its journal's.
   (TestFilterMatchesGoTest, TestSubtestNamesMatchGoTest, TestD,
   TestBenchmarkFakeClock under the shim's OGO_FAKE_CLOCK) and on the board
   (TestOnBoardOgoTest, ...Filter, ...Bench, ...Names). Not yet: Cleanup,
-  RunParallel, Elapsed, a deferred or started t.Log (refused), the deferred calls
-  FailNow skips, Helper's attribution of a line to the caller. A table-driven test
+  RunParallel, Elapsed, a deferred or started t.Log (refused), t.Log as a value and a
+  *testing.T in an interface, `any` among them (refused: no function stands for Log,
+  whose line is the caller's), the deferred calls FailNow skips, Helper's
+  attribution of a line to the caller. A table-driven test
   or benchmark cannot capture its case in a literal (no closures); it goes through
   a package variable.
   The rules it left: **A library function a goroutine may call does not recurse**.
@@ -1300,7 +1315,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   Go's.** **A typed constant takes its value from the exact fold, whatever kind the
   fold answers: a whole float is an integer to an integer type** (dom78).
 - **AN INTERFACE WRITTEN OUT IS A TYPE**: **A rule asked by name is a row of every
-  type that has none.** **AN ALIAS OF A TYPE WRITTEN OUT IS THAT TYPE**: **a type
+  type that has none.** **A value no interface may hold is refused by every
+  interface, one asking for nothing among them: what it holds is asserted to the
+  others, and the assertions test only the types that have a table** (dom105). **AN ALIAS OF A TYPE WRITTEN OUT IS THAT TYPE**: **a type
   that names no defined type is stored under the literal's table, and every place
   naming a table asks the same name**. **A name in a type position is a row of every
   declaration that resolves to no package**.
@@ -1523,7 +1540,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   serves: two float32 helpers in the float64 runtime were missing from every
   program that called them and had no float64** (dom64).
 - **A method the compiler writes in C asks of its receiver what a body's dereference
-  would** (the Builder's helpers and a nil *Builder). **A byte converted to a
+  would** (the Builder's helpers and a nil *Builder). **A function the compiler
+  writes where it is called is asked where it is named without a call: a value of
+  it, a method value, a method expression and a method table each name a function
+  nothing defines** (dom105). **A byte converted to a
   string is a rune of its number: text is copied by slicing, never by converting
   its bytes** (dom86, parsePrintfFormat). **A string handed to C as its char* is
   asked where C stops reading it: a Go string ends at its length, and a NUL is a
