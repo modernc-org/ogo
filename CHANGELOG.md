@@ -244,6 +244,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An interface converted to another builds on the host at any depth**:
+  handing a `WriteCloser` to a parameter of type `Writer` wrote the rebind of its
+  table as an `if` at column 0, and where the statement after it stood at the
+  column the `if`'s body began, gcc's -Wmisleading-indentation took it for a
+  body the `if` does not guard and -Werror refused the host's build, in a test
+  and in scripts/probe.sh; the target's builds were not affected. The rebind is
+  indented at the statement's depth. In every release checked.
 - **A wrong answer, silent: a Builder is held by no interface, one asking for
   nothing among them**: `var a any = &sb` and then `_, ok := a.(interface{ Len()
   int })` answered false, and a type switch's case of an interface the Builder's

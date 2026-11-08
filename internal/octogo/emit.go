@@ -9687,11 +9687,17 @@ func (e *emitter) ifaceWidenC(target, iface, src, from string) string {
 		}
 		types = append(types, ct)
 	}
-	text, ok := e.ifaceRebindC(target, iface, src, from, types, 0)
+	// The first line is indented where the text is written, by the caller or
+	// the prologue, and the rest here, at the statement's depth. They were
+	// written at column 0, an `if` above an indented statement, which gcc's
+	// -Wmisleading-indentation takes for a body it does not guard where the two
+	// columns meet, and -Werror refuses (dom106: a WriteCloser handed to a
+	// Writer five blocks deep).
+	text, ok := e.ifaceRebindC(target, iface, src, from, types, e.indent)
 	if !ok {
 		return ""
 	}
-	return text
+	return strings.TrimLeft(text, "\t")
 }
 
 // ifaceWidenFrom is ifaceWidenC for any expression of the other interface type -- an
@@ -52010,7 +52016,9 @@ func (e *emitter) widenValC(tct, ctype, val string) (pre []string, v string, ok 
 		}
 		pre = append(pre, ctype+" "+src+" = "+val+";\n", tct+" "+dst+" = {0};\n")
 		for line := range strings.SplitSeq(strings.TrimSuffix(text, "\n"), "\n") {
-			pre = append(pre, line+"\n")
+			// Each line is indented where it is written (ifaceWidenC indents its
+			// own).
+			pre = append(pre, strings.TrimLeft(line, "\t")+"\n")
 		}
 		return pre, dst, true
 	}

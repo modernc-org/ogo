@@ -12441,6 +12441,49 @@ func main() {
 		want: "1 true\n4 true\n5 true\n7\n9 true\n9 true true P-256\n",
 	},
 	{
+		// An interface converted to another where a value is wanted, a
+		// WriteCloser handed to a Writer, is a rebind of its table, a statement
+		// per type that may be in it: written at column 0, above a statement
+		// three blocks deep, it was an if gcc's -Wmisleading-indentation took to
+		// guard a body it does not where the columns met, and -Werror refused
+		// the host's build (dom106).
+		name: "an interface converted to another three blocks deep, its rebind indented",
+		src: `type W interface{ Write(p []byte) (int, error) }
+
+type WC interface {
+	W
+	Close() error
+}
+
+type Pxy struct{ n int }
+
+func (p *Pxy) Write(b []byte) (int, error) { p.n += len(b); return len(b), nil }
+
+func (p *Pxy) Close() error { return nil }
+
+var buf [8]byte
+
+func put(w W, n int) { w.Write(buf[:n]) }
+
+var pp Pxy
+
+func run(w WC, k int) {
+	for i := 0; i < k; i++ {
+		if k > 0 {
+			put(w, 2)
+			put(w, 3)
+		}
+	}
+}
+
+func main() {
+	run(&pp, 2)
+	println(pp.n)
+}
+`,
+		want: "10\n",
+	},
+	{
 		// The assertions test every type of the program implementing the
 		// interface, and testing's T and B have a Log with no body: their tables
 		// named a testing_T_Log nothing defines, in every program holding a
