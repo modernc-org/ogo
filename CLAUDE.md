@@ -348,6 +348,14 @@ silent fault puts the count back to 0. Each round's account is in
   forwarded whole), two listed (a lifetime refusal in a branch a constant leaves
   dead; `*q` of an assertion to a pointer to a pointer of another package's
   type) -- 0
+- dom106 (2026-11-08), an electronic shelf label system (Go 1.27's image/png
+  reader ported with its tests, image, image/color and hash/crc32, the tags the
+  shop's server encodes with Go's own image/png relayed by a base station to the
+  labels' cog over a link that loses and spoils frames), the first round against
+  master on dom105's fixes: clean, one loud host fault fixed (an interface
+  converted to another, rebound at column 0 under an indented statement), one
+  listed (a method of several results on an element of a head in parentheses)
+  -- 1
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1248,7 +1256,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   inside its braces: a call's argument in a compound literal is inside them**
   (dom90). **An expression the emitter writes as Go wrote it is asked what the
   host's warnings make of it: isNaN's `x != x`, stenciled for an integer, is always
-  false to gcc, and under -Werror no build** (dom103).
+  false to gcc, and under -Werror no build** (dom103). **Text the emitter writes
+  in several lines is indented line by line at the depth it lands at: the host's
+  compiler reads the columns, and an if they mislead is no build under -Werror**
+  (dom106).
 - **When a new refusal fails an old test, ask Go about the test's program before
   doubting the refusal.** **A false refusal fixed in the checker is a program the
   emitter is handed next**. **A new summary rule is run over every program the
@@ -1589,7 +1600,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   (`grep -c '\tres\t1' prog.p2asm` counts them), so a new lowering is asked what it
   hands a call BY VALUE. **A program written as Go that fails the cog's registers is
   split where its message says, and the split is the program's: the backend keeps
-  every printf argument live through the call** (dom63).
+  every printf argument live through the call** (dom63). **A limit the backend
+  reports with no name is found by stubbing: the functions whose bodies, taken
+  away, take the error with them are the ones to split** (dom106,
+  build/probes/tools/regstub.py).
 - **A CALL IS DEAR, AND THE BACKEND INLINES WHAT IT IS TOLD TO**: **every inlined
   copy brings the registers of its locals to where it lands**; **A policy is
   measured by what it breaks**; **no program fails to build for having been made
