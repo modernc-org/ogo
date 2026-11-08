@@ -812,7 +812,9 @@
 // the bytes it shows: take the String when the building is done. Go's
 // strings.Builder starts a fresh buffer on Reset so its earlier results survive;
 // there is no heap to do that with here. A *Builder may be passed to a function, so
-// building can be factored into helpers.
+// building can be factored into helpers. No interface holds one yet, one asking for
+// nothing among them: its methods are written where they are called and fill no
+// method table, and what an interface holds may be asserted to one asking for them.
 //
 // Intent: Builder is predeclared for now, and is meant to move into the strings
 // package, which exists, as strings.Builder. Its methods already have Go's names and

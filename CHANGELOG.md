@@ -244,6 +244,27 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A wrong answer, silent: a Builder is held by no interface, one asking for
+  nothing among them**: `var a any = &sb` and then `_, ok := a.(interface{ Len()
+  int })` answered false, and a type switch's case of an interface the Builder's
+  methods satisfy was not taken, where Go's are true: the assertions test the
+  types that have a method table, and the Builder has none, its methods written
+  where they are called. An interface asking for a method was refused since rc.4's
+  recheck; one asking for nothing is now, "a Builder is held by no interface yet",
+  in every position a value goes into one. In every release checked.
+- **A test package asserting to an interface asking for Log builds, and a
+  testing.T is held by no interface**: `if l, ok := a.(logger); ok { l.Log() }`
+  for a `logger` asking for `Log(args ...any)` wrote C naming a testing_T_Log
+  nothing defines, which the C compilers refused, in every test package and every
+  program holding a testing.T, whether or not one went into the interface: the
+  assertions test every type implementing it, and testing's Log and its kin have
+  no body, being written where they are called. The assertions leave T and B out
+  now, and no interface holds one, "testing.T is held by no interface yet", a
+  method table being no place for a message decorated with its caller's line; nor
+  is `f := tt.Logf`, `w.Logf` of a type embedding one, or `(*testing.T).Log`, called
+  or not, a value: "is not a value yet". Each built bad C. Measured in
+  v1.0.0-rc.3. An interface asking for none of them, only Run or Name, held a T
+  there and is refused now too, since what it holds may be asserted to the others.
 - **A method of several results on what a field holding a function returns
   builds**: `q, err := c.newPoint().SetBytes(Q)`, ecdsa's Curve, was refused,
   "multiple-assignment target/result count mismatch", with no position, in a

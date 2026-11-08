@@ -12441,6 +12441,40 @@ func main() {
 		want: "1 true\n4 true\n5 true\n7\n9 true\n9 true true P-256\n",
 	},
 	{
+		// The assertions test every type of the program implementing the
+		// interface, and testing's T and B have a Log with no body: their tables
+		// named a testing_T_Log nothing defines, in every program holding a
+		// testing.T and asserting to an interface asking for Log. No interface
+		// holds one now, and the assertions leave them out (dom105).
+		name: "an assertion to an interface asking for Log, in a program holding a testing.T",
+		src: `import "testing"
+
+type logger interface{ Log(args ...any) }
+
+type mine struct{ n int }
+
+func (m *mine) Log(args ...any) { m.n += len(args) }
+
+var m mine
+
+var tt testing.T
+
+func main() {
+	var a any = &m
+	if l, ok := a.(logger); ok {
+		l.Log(&m, &m)
+	}
+	switch l := a.(type) {
+	case logger:
+		l.Log(&m)
+	}
+	_, isT := a.(*testing.T)
+	println(m.n, isT, tt.Name() == "")
+}
+`,
+		want: "3 false true\n",
+	},
+	{
 		// A blank variable's initializer that calls nothing and may panic is
 		// evaluated in its place, as Go evaluates it: left out for doing nothing,
 		// `var _ = xs[i]` past the end ran main, where Go panics before it.

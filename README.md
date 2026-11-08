@@ -124,7 +124,9 @@ string, as the builtin `printf`'s is, since nothing is formatted into memory.
 `FailNow` and its kin stop the test where they are called, however deep, but run no
 deferred call on the way out, as a panic runs none here; and a message is placed on
 the line it is written on, `Helper` or not. A `t.Log` can't be deferred or started
-with `go` directly yet; wrap it in a function literal. `ogo test ./...` tests
+with `go` directly yet; wrap it in a function literal. Nor is it a value yet, `f :=
+t.Logf`, and no interface holds a `*testing.T` or a `*testing.B` yet, `any` among
+them: a helper takes a `*testing.T` parameter. `ogo test ./...` tests
 every package under a root, one board run each; `ogo test -run Push` runs only the
 tests whose name matches, and compiles only those, which is what makes iterating on
 one of them worth the board's ten seconds. `ogo test -c` builds
@@ -380,7 +382,8 @@ notes say what passed. It is also unfinished. This section is the honest invento
   backing writes what fits and returns a non-nil error, "short write", rather than
   growing it — you chose the size — and that `String` is a
   view of the backing, overwritten by a `Reset` and the writes after it, since
-  there is no heap to copy it into. It is meant to move into the `strings`
+  there is no heap to copy it into. No interface holds one yet, `any` among them;
+  a parameter of type `*Builder` takes it. It is meant to move into the `strings`
   package as `strings.Builder`.
 * `go`, `chan` and `select`, mapped to cogs and hardware locks. A method may be
   launched too, `go w.run(ch)`, its receiver evaluated and copied where the `go`
@@ -420,7 +423,8 @@ notes say what passed. It is also unfinished. This section is the honest invento
   makes its error where the call stands, there being no heap, so a sentinel,
   `var ErrTimeout = errors.New("timeout")`, is declared at package level and a
   function returns one of those; `errors.New` in a function makes an error that
-  function may use and not return. `Is`, `As` and `Unwrap` walk a tree of wrapped
+  function may use and not return, and it is called where its error is wanted,
+  never taken as a value. `Is`, `As` and `Unwrap` walk a tree of wrapped
   errors as Go's do. `p2` wraps thirty-three intrinsics
   (pin control, smart pins including the ADC, timing and the clock, the serial line
   in both directions, the hardware locks, the cog's LUT RAM), `testing` is Go's `*testing.T`

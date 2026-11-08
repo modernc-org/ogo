@@ -10983,7 +10983,7 @@ func (f *File) reportUnsupportedFuncValue(s *Scope, n Node) bool {
 	if !ok {
 		return false
 	}
-	_, ptrRecv, atPkg, isMV := f.methodValueParts(s, head, field)
+	fd, ptrRecv, atPkg, isMV := f.methodValueParts(s, head, field)
 	if !isMV {
 		return false
 	}
@@ -10991,13 +10991,18 @@ func (f *File) reportUnsupportedFuncValue(s *Scope, n Node) bool {
 	// (checkFactorNames): once is what is said.
 	at := field.Position().String()
 	if f.mvReported[at] {
-		return !(ptrRecv && atPkg && !f.methodValueSavesPtr(s, head, field))
+		return f.testingBodiless(fd) || !(ptrRecv && atPkg && !f.methodValueSavesPtr(s, head, field))
 	}
 	if f.mvReported == nil {
 		f.mvReported = map[string]bool{}
 	}
 	f.mvReported[at] = true
 	switch {
+	case f.testingBodiless(fd):
+		// `f := tt.Log` of a package's testing.T: the lifted function called a
+		// testing_T_Log nothing defines, and the C compiler refused it (dom105).
+		f.err(field.Position(), "%s.%s is not a value yet: it is written where it is called, its arguments a print's; call it where the value would be called",
+			head.Src(), field.Src())
 	case !ptrRecv:
 		f.err(field.Position(), "cannot take %s.%s as a value: a method value copies its receiver, and only a pointer-receiver method may be taken here",
 			head.Src(), field.Src())
@@ -11168,6 +11173,10 @@ func (f *File) reportChainMethodValue(s *Scope, n Node) bool {
 	shown := f.exprSource(n)
 	why, reported := "", false
 	switch {
+	case f.testingBodiless(td.methods[m.Src()]):
+		// `w.T.Logf` or `w.Logf` of a package variable holding or embedding a
+		// testing.T: as `tt.Log` (reportUnsupportedFuncValue).
+		why = fmt.Sprintf("%s is not a value yet: it is written where it is called, its arguments a print's; call it where the value would be called", shown)
 	case !td.ptrRecv[m.Src()]:
 		why = fmt.Sprintf("cannot take %s as a value: a method value copies its receiver, and only a pointer-receiver method may be taken here", shown)
 	default:
@@ -13862,6 +13871,10 @@ var testingFormatMethods = map[string]string{
 	"Logf": "format", "Errorf": "format", "Fatalf": "format", "Skipf": "format",
 }
 
+// testingFormatOrder is testingFormatMethods' names in the order a message names
+// the first a type holds.
+var testingFormatOrder = []string{"Log", "Logf", "Error", "Errorf", "Fatal", "Fatalf", "Skip", "Skipf"}
+
 // checkTestingFormatArgs checks the arguments of t.Logf and its kin as printf's are
 // checked: a format that is a constant string first, where the method takes one.
 // The verbs are counted against the arguments, and each asked whether its verb
@@ -16090,6 +16103,60 @@ func (f *File) operandTypeName(s *Scope, n Node, k Kind) string {
 	return kindName(k)
 }
 
+// testingBodiless reports whether fd is one of the testing package's methods with
+// no body, Log and its kin (testingFormatMethods), which the emitter writes where
+// each is called (emitTestingCall): C has no function of them to name.
+func (f *File) testingBodiless(fd *FuncDeclNode) bool {
+	if fd == nil || fd.Block != nil || testingFormatMethods[fd.Name.Src()] == "" {
+		return false
+	}
+	wf := f.fileOfToken(fd.Name)
+	return wf.Package != nil && wf.Package.ImportPath == "testing"
+}
+
+// testingBodilessOf names a method of testing's with no body (testingBodiless) in
+// the method set of the type written from, declared there or promoted, or "" when
+// the set holds none: a *testing.T, a *testing.B, or a type embedding one.
+func (f *File) testingBodilessOf(s *Scope, from string) string {
+	td, home, isNamed := f.typeDeclNamedIn(s, from, true)
+	if !isNamed {
+		return ""
+	}
+	for _, name := range testingFormatOrder {
+		fd := td.methods[name]
+		if fd == nil {
+			if otd, promoted := f.methodOwner(home, td.Token(), name); promoted {
+				fd = otd.methods[name]
+			}
+		}
+		if f.testingBodiless(fd) {
+			return name
+		}
+	}
+	return ""
+}
+
+// reportTestingInIface refuses a value whose method set holds one of testing's
+// methods with no body as a value of ANY interface, and reports whether it did. A
+// method table names a function for each method, and Log has none: an interface
+// asking for one wrote C naming a testing_T_Log nothing defines, and so did every
+// assertion to such an interface in a test package -- the emitter tests every type
+// of the program implementing it, a *testing.T among them (dom105, sweeps/
+// dom105-rows). No function can stand for one: Go decorates the message with the
+// line that called it, which a function reached through a table does not know. And
+// an interface asking for nothing is refused too: what it holds may be asserted to
+// one asking for Log, which the emitter can answer only by a table, so the type
+// stands in no interface, and the assertions leave it out (implementsIface).
+func (f *File) reportTestingInIface(s *Scope, pos token.Position, from, shown, ifaceName, what string) bool {
+	m := f.testingBodilessOf(s, from)
+	if m == "" {
+		return false
+	}
+	f.err(pos, "cannot use %s as %s value in %s: %s is held by no interface yet, its %s written where it is called; a parameter of type *%s takes it",
+		shown, ifaceName, what, from, m, from)
+	return true
+}
+
 // reportBuilderInIface refuses the predeclared Builder as an interface's value,
 // and reports whether it did: its methods are written where they are called and
 // fill no method table, so no interface holds one yet. Asked by the method set,
@@ -16174,6 +16241,9 @@ func (f *File) checkImplementsKind(s *Scope, ifaceName string, value Node, from,
 				"an interface holds a pointer here; write &%s", shown, from, ifaceName, what, shown)
 			return
 		}
+	}
+	if f.reportTestingInIface(s, pos, from, shown, ifaceName, what) {
+		return
 	}
 	missing, ptrRecv, wrong, have, want, ok := f.implements(s, from, valueIsPtr, ifaceName)
 	if ok {
@@ -16321,9 +16391,13 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 	// which wrote the Builder a method table, and what its String handed a callee
 	// through the interface no lifetime rule followed: `keepS(&sb)` of a `keepS(s
 	// Stringer)` storing `s.String()` kept a view of the frame's array in a package
-	// string (rc.4's recheck of the listed gaps). An interface asking for nothing
-	// is left to the lifetime rules, which follow an assertion back to a Builder.
-	if len(set) != 0 && f.builderOperand(s, value) {
+	// string (rc.4's recheck of the listed gaps). Nor by one asking for nothing:
+	// what it holds may be asserted to one asking for the Builder's methods, which
+	// the emitter answers by the types it tests (implementsIface), the Builder not
+	// among them, so `a.(interface{ Len() int })` of an `any` holding &sb was
+	// false, and a case of one not taken, where Go's are true (dom105, sweeps/
+	// dom105-rows).
+	if f.builderOperand(s, value) {
 		f.reportBuilderInIface(s, f.tok(value.Pos()).Position(), "Builder", f.exprSource(value), ifaceName, what)
 		return
 	}
@@ -16417,12 +16491,13 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 	}
 	// `&x` names the same variable as `x` and a different method set: the pointer
 	// carries every method, the value only those declared on it.
-	valueIsPtr := false
+	valueIsPtr, addrTaken := false, false
 	id, ok := f.exprIdent(value)
 	if !ok {
 		// `&x` for a VARIABLE x. The root of `&T{...}` is the literal's type name,
 		// which is no variable and is asked about below instead.
 		if root, suffixed, isAddr := f.addressOperandRoot(s, value); isAddr && !suffixed {
+			addrTaken = true
 			if d, isVar := s.find(root.Src()).(*VarDeclaration); isVar {
 				// The address of a POINTER, `&pp` for a `pp *T`, is a **T, which has
 				// no methods: read as the *T it points at, it implemented the
@@ -16603,6 +16678,12 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 	if valueIsPtr && !d.isPtr {
 		shown = "&" + shown
 		kind = "variable of type *" + from
+	}
+	// Not of `&t` for a `t *testing.T`, a pointer to a pointer, which has no
+	// methods: it is asked below as the variable, an interface asking for none
+	// taking it.
+	if !(addrTaken && d.isPtr) && f.reportTestingInIface(s, f.tok(value.Pos()).Position(), from, shown, ifaceName, what) {
+		return
 	}
 	missing, ptrRecv, wrong, have, want, ok := f.implements(s, from, valueIsPtr, ifaceName)
 	if ok {
@@ -25009,6 +25090,12 @@ func (f *File) checkMethodExpr(s *Scope, me methodExpr, rest []Node) {
 		return
 	case !me.ptr && me.ptrRecv && !me.viaPtr:
 		f.err(me.member.Position(), "invalid method expression %s (needs pointer receiver (*%s).%s)", me, recvT, me.member.Src())
+		return
+	case f.testingBodiless(me.fd):
+		// `(*testing.T).Log`, called or not: the emitter writes the method where a
+		// method call stands, and this named a testing_T_Log nothing defines
+		// (dom105).
+		f.err(me.member.Position(), "%s is not a value yet: it is written where a call of the method stands, its arguments a print's; call it on the receiver, x.%s(...)", me, me.member.Src())
 		return
 	}
 	if len(rest) == 0 || rest[0].sym != CallSuffix {

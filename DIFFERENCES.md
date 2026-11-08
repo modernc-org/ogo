@@ -415,9 +415,14 @@ supported.
   variable `n`: the buffer's slots are made where the make stands, with no heap.
 - **A value into an interface**: an interface holds a pointer, `var s Shape = &q`,
   never `= q`. Go would copy `q` and this target has nowhere to copy it.
-- **A `*Builder` in an interface**: no interface holds one yet, so a Builder is not
-  an `io.Writer`; its methods are written where they are called. A parameter of
-  type `*Builder` takes it.
+- **A `*Builder` in an interface**: no interface holds one yet, `any` among them, so
+  a Builder is not an `io.Writer`; its methods are written where they are called. A
+  parameter of type `*Builder` takes it.
+- **A `*testing.T` or a `*testing.B` in an interface**, `any` among them, and
+  **`t.Log` and its kin as a value**, `f := t.Logf` or `(*testing.T).Log`: they are
+  written where they are called, each message after the line that calls it. A
+  helper takes a `*testing.T` parameter. `errors.New` is called where its error is
+  wanted too, never taken as a value: it makes its error where the call stands.
 - **A method value of a local or of a value receiver**: the receiver is bound at
   compile time, by address.
 - **A reference that outlives its storage**: the address of a local, a slice of a

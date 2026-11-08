@@ -1,0 +1,84 @@
+// What has no method table stands in no interface, an interface asking for
+// nothing among them, and a method of it that has no body is no value: the
+// predeclared Builder, whose methods are written where they are called, and
+// testing's T and B, whose Log and its kin are. An interface asking for nothing
+// is refused too, what it holds being asserted to one that asks for the methods:
+// the emitter tests the types that have a table, so `a.(interface{ Len() int })`
+// of an `any` holding a Builder was false where Go's is true, and a *testing.T in
+// a logger or a method value of its Log named a testing_T_Log nothing defines,
+// which the C compiler refused (dom105).
+
+import "testing"
+
+type logger interface{ Log(args ...any) }
+
+type lener interface{ Len() int }
+
+type runner interface {
+	Run(name string, f func(*testing.T)) bool
+}
+
+type mine struct{ n int }
+
+func (m *mine) Log(args ...any) { m.n++ }
+
+func (m *mine) Len() int { return m.n }
+
+var sb Builder
+
+var tt testing.T
+
+type W struct{ *testing.T }
+
+var w W
+
+func show(xs ...any) int { return len(xs) }
+
+func say(l logger) { l.Log() }
+
+// ERROR cannot use &sb as any value in return statement: a Builder is held by no interface yet
+func held() any { return &sb }
+
+func main() {
+	var m mine
+	// ERROR cannot use &sb as any value in variable declaration: a Builder is held by no interface yet
+	var a any = &sb
+	// ERROR cannot use &sb as lener value in argument to show2: a Builder is held by no interface yet
+	show2(&sb)
+	// ERROR cannot use &sb as any value in argument to show: a Builder is held by no interface yet
+	println(show(&sb))
+	// ERROR cannot use &tt as any value in variable declaration: testing.T is held by no interface yet, its Log written where it is called
+	var b any = &tt
+	// ERROR cannot use &tt as logger value in argument to say: testing.T is held by no interface yet
+	say(&tt)
+	// ERROR cannot use &w as logger value in variable declaration: W is held by no interface yet
+	var l logger = &w
+	// An interface asking for none of them holds no T either: what it holds is
+	// asserted to the others.
+	// ERROR cannot use &tt as runner value in variable declaration: testing.T is held by no interface yet
+	var r runner = &tt
+	// ERROR tt.Log is not a value yet: it is written where it is called
+	f := tt.Log
+	// ERROR w.Logf is not a value yet: it is written where it is called
+	g := w.Logf
+	// ERROR \(\*testing.T\).Log is not a value yet: it is written where a call of the method stands
+	h := (*testing.T).Log
+	// ERROR \(\*testing.T\).Errorf is not a value yet: it is written where a call of the method stands
+	(*testing.T).Errorf(&tt, "x")
+
+	// What holds a table: a type of the program's own with a Log, asserted, in a
+	// program holding a testing.T; the address of a pointer to one, which has no
+	// methods; an assertion to *testing.T, which no interface holds; and testing's
+	// methods with a body, Name, as values.
+	var c any = &m
+	if lg, ok := c.(logger); ok {
+		lg.Log()
+	}
+	p := &tt
+	var d any = &p
+	_, isT := c.(*testing.T)
+	nm := tt.Name
+	println(a, b, l, r, f, g, h, d, isT, nm(), m.n)
+}
+
+func show2(l lener) {}

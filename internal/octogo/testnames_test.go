@@ -115,9 +115,10 @@ func main() {
 }
 
 // TestRunsSubtests holds the second question, asked of the C a test program was
-// emitted as: whether it reaches T.Run or B.Run, by a call, a method expression in
-// a package variable or an interface's table -- and not where Run is the program's
-// own method.
+// emitted as: whether it reaches T.Run or B.Run, by a call or a method expression
+// in a package variable -- and not where Run is the program's own method. No
+// interface's table reaches it: a *testing.T is held by no interface yet
+// (testdata/tableless_iface.ogo).
 func TestRunsSubtests(t *testing.T) {
 	const head = `import "testing"
 
@@ -145,14 +146,6 @@ var sink = bench`, true},
 		{"package method expression", `var run = (*testing.T).Run
 
 func test(t *testing.T) { run(t, "x", leaf) }`, true},
-		{"interface", `type runner interface {
-	Run(name string, f func(*testing.T)) bool
-}
-
-func test(t *testing.T) {
-	var r runner = t
-	r.Run("x", leaf)
-}`, true},
 		{"own Run", `type M struct{ n int }
 
 func (m *M) Run(n int) int {

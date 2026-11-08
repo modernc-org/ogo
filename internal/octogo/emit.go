@@ -7971,6 +7971,7 @@ type emitter struct {
 	interfaceTypes    map[string]bool           // source names declared as an interface type
 	ifaceMethods      map[string][]ifaceMethod  // mangled interface name -> its methods, in declaration order: the vtable's slot order
 	ifaceVTables      map[string]bool           // "<interface>|<concrete>" pairs a static vtable has been emitted for
+	testingHeld       map[string]string         // concrete C type -> a method of testing's with no body in its set, or "" (testingBodilessHeld)
 	vtables           bytes.Buffer              // the thunks and static vtables those pairs produced
 	namedUnderlying   map[string]string         // that typedef -> the C type it stands for, so a value of it is represented as what it is
 	namedArrays       map[string]arrDim         // named array type (e.g. `type Row [3]int`) -> its dimensions, resolved wherever an array type is expected (see arrayDim)
@@ -9636,7 +9637,7 @@ func (e *emitter) ifaceStoreC(target, key, iface string, rhs []int32) string {
 		e.fail("an interface holds a pointer: write the address of a variable, or &T{...}")
 		return ""
 	}
-	if !e.needVTable(iface, concrete) {
+	if e.refuseTestingInIface(concrete, rhs) || !e.needVTable(iface, concrete) {
 		return ""
 	}
 	if temp {
@@ -9993,7 +9994,7 @@ func (e *emitter) ifaceValueC(iface string, rhs []int32) (string, bool) {
 		return e.ifaceWidenValue(iface, rhs, from)
 	}
 	concrete, data, _, ok := e.ifaceOperand(rhs)
-	if !ok || !e.needVTable(iface, concrete) {
+	if !ok || e.refuseTestingInIface(concrete, rhs) || !e.needVTable(iface, concrete) {
 		return "", false
 	}
 	return "(" + iface + "){" + data + ", &" + e.ifaceVTVar(iface, concrete) + "}", true
@@ -10043,7 +10044,7 @@ func (e *emitter) ifaceBraceC(iface string, rhs []int32) (string, bool) {
 		return "{" + name + ".data, " + name + ".vt}", true
 	}
 	concrete, data, _, ok := e.ifaceOperand(rhs)
-	if !ok || !e.needVTable(iface, concrete) {
+	if !ok || e.refuseTestingInIface(concrete, rhs) || !e.needVTable(iface, concrete) {
 		return "", false
 	}
 	return "{" + data + ", &" + e.ifaceVTVar(iface, concrete) + "}", true
@@ -10278,6 +10279,16 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 	methods, ok := e.ifaceMethods[iface]
 	if !ok {
 		return false
+	}
+	// A table naming one of testing's methods with no body cannot be made: Log has
+	// no function. A value goes into no interface (refuseTestingInIface), and a
+	// table of one asking for none of them is still made, an assertion to
+	// *testing.T comparing with it: never the operand's.
+	for _, m := range methods {
+		if e.testingBodilessMethod(concrete, m.name) {
+			e.fail("%s is held by no interface yet: its %s, testing's, is written where it is called", e.goTypeName(concrete+"*"), m.name)
+			return false
+		}
 	}
 	e.ifaceVTables[key] = true
 	var b strings.Builder
@@ -37555,6 +37566,13 @@ func (e *emitter) ifaceImplementors(iface string) []string {
 // parameter is compared by its extents (arrParams), its C type being the element's
 // pointer.
 func (e *emitter) implementsIface(concrete, iface string) bool {
+	// A type holding one of testing's methods with no body stands in no interface
+	// (reportTestingInIface), so no assertion or case tests for it. Tested, its
+	// table named a testing_T_Log nothing defines, in every test package asserting
+	// to an interface asking for Log, a *testing.T in one or not (dom105).
+	if e.testingBodilessHeld(concrete) != "" {
+		return false
+	}
 	for _, m := range e.ifaceMethods[iface] {
 		// Resolved through the embedding chain, exactly as needVTable resolves it.
 		// Reading the method off the concrete type DIRECTLY made a promoted method
@@ -37581,6 +37599,64 @@ func (e *emitter) implementsIface(concrete, iface string) bool {
 			return false
 		}
 	}
+	return true
+}
+
+// testingBodilessHeld names a method of testing's with no body in the method set
+// of concrete, declared or promoted -- Log and its kin, written where each is
+// called (emitTestingCall), which no C function stands for -- or "" when the set
+// holds none: a *testing.T, a *testing.B, or a type embedding one.
+//
+// concrete is what an interface's data word points at, so one ending in a star is
+// a pointer to a pointer, `&t` of a *testing.T, which has no methods: the lookup
+// takes one star off whatever it is handed (methodBaseType), and it is asked
+// nothing.
+func (e *emitter) testingBodilessHeld(concrete string) string {
+	if strings.HasSuffix(concrete, "*") {
+		return ""
+	}
+	if m, ok := e.testingHeld[concrete]; ok {
+		return m
+	}
+	m := ""
+	for _, name := range testingFormatOrder {
+		if e.testingBodilessMethod(concrete, name) {
+			m = name
+			break
+		}
+	}
+	if e.testingHeld == nil {
+		e.testingHeld = map[string]string{}
+	}
+	e.testingHeld[concrete] = m
+	return m
+}
+
+// testingBodilessMethod reports whether concrete's method of that name, declared
+// or promoted, is one of testing's with no body (testingBodilessHeld).
+func (e *emitter) testingBodilessMethod(concrete, name string) bool {
+	if _, isCall := testingCalls[name]; !isCall || strings.HasSuffix(concrete, "*") {
+		return false
+	}
+	cname, _, _, has := e.promotedMethod(concrete, name)
+	return has && (cname == e.methodCName(e.mangle("testing", "T"), name) || cname == e.methodCName(e.mangle("testing", "B"), name))
+}
+
+// refuseTestingInIface refuses a value of concrete, which holds one of testing's
+// methods with no body, as an interface's (reportTestingInIface, which says it
+// where the checker names the value), and reports whether it did. And the
+// Builder's, its methods written where they are called, which the assertions do
+// not test for (reportBuilderInIface).
+func (e *emitter) refuseTestingInIface(concrete string, at []int32) bool {
+	if concrete == "ogo_builder" {
+		e.failAt(at, "a Builder is held by no interface yet; a parameter of type *Builder takes it")
+		return true
+	}
+	m := e.testingBodilessHeld(concrete)
+	if m == "" {
+		return false
+	}
+	e.failAt(at, "%s is held by no interface yet: its %s, testing's, is written where it is called", e.goTypeName(concrete+"*"), m)
 	return true
 }
 
@@ -51939,6 +52015,9 @@ func (e *emitter) widenValC(tct, ctype, val string) (pre []string, v string, ok 
 		return pre, dst, true
 	}
 	concrete, isPtr := strings.CutSuffix(ctype, "*")
+	if isPtr && e.refuseTestingInIface(concrete, nil) {
+		return nil, "", false
+	}
 	if !isPtr || !e.needVTable(tct, concrete) {
 		if e.err == nil {
 			e.fail("cannot use %s as %s: an interface holds a pointer here", e.goTypeName(ctype), e.goTypeName(tct))
