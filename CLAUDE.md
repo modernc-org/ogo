@@ -368,6 +368,9 @@ silent fault puts the count back to 0. Each round's account is in
   refusal fixed and a loud fault of its cause (a pointer to a pointer a call
   hands back, compared with nil; Go's rejects of it refused by the backend), one
   listed (a duplicate index refused with no position) -- 3
+- **v1.0.0-rc.4** (2026-11-09), tagged after dom108, the third clean round in a
+  row, on master as dom105's, dom106's and dom108's fixes left it: rounds against
+  it count from 0 of 3, and its two weeks in public from its release
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its

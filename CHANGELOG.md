@@ -16,7 +16,13 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
-## Unreleased
+## v1.0.0-rc.4
+
+The fourth release candidate for v1.0. Of the rounds run since rc.3, twelve found
+silent faults, and so did a measurement of the gaps the rounds had listed, made
+when the candidate first came due; their fixes are here, and the last three
+rounds, dom106 to dom108, were clean in a row. Its three clean rounds and its two
+weeks in public count from here.
 
 ### Language
 
@@ -236,14 +242,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
-- **Every error in a program is a `file:line:column:` line from its first
-  byte**: a refusal the emitter makes, a lifetime one among them, was written
-  "emit: main.ogo:3:9: ...", and `ogo fmt` wrote a source that does not parse
+- **An error that names a position names it first, `file:line:column:`**: a
+  refusal the emitter makes, a lifetime one among them, was written "emit:
+  main.ogo:3:9: ...", and `ogo fmt` wrote a source that does not parse
   after "err=fmt err: " on standard input and after "format error a.ogo: " for a
   file, so a reader of the lines, an editor's among them, took "emit: main.ogo"
   for the file or missed the error; fmt also ended with "err=<nil>" after the
   errors of the files it was given. Nothing is written to standard output for a
-  source fmt cannot parse, and the command exits 1, as before.
+  source fmt cannot parse, and the command exits 1, as before. Some of the
+  emitter's refusals name no position yet: `emit: cannot infer a type for the
+  declaration of "p"`, and the one of a duplicate index in an array literal.
 - **`ogo help` says what was left unsaid, for a program that drives ogo, an
   editor among them** (asked for by an IDE's handoff): the exit statuses, 0, 1
   and 2; that an error's file is named relative to the build's root, its column
