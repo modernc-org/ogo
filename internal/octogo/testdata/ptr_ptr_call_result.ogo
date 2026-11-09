@@ -1,0 +1,41 @@
+// COMPILE
+
+// What a pointer to a pointer a call hands back points at is a pointer, compared
+// with nil and with another pointer: `pos, parent := t.locate(k)` of a `**node`
+// and then `*pos == nil`, go/token's tree (dom108). The variable's flags name the
+// pointee two stars down, and `*pos` was read as a node.
+
+type node struct {
+	left *node
+	v    int
+}
+
+type tree struct {
+	root *node
+	pp   **node
+}
+
+var n1 = node{v: 7}
+
+func (t *tree) locate(k int) (pos **node, parent *node) {
+	pos = &t.root
+	return pos, parent
+}
+
+func locate1(t *tree) **node { return &t.root }
+
+func main() {
+	t := tree{root: &n1}
+	t.pp = &t.root
+	pos, parent := t.locate(1)
+	p := locate1(&t)
+	var q = locate1(&t)
+	f := t.pp
+	switch *p {
+	case nil:
+		println("nil")
+	case &n1:
+		println("n1")
+	}
+	println(*pos == nil, parent == nil, *p != &n1, *q == nil, *f == *p)
+}

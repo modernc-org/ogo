@@ -12484,6 +12484,51 @@ func main() {
 		want: "10\n",
 	},
 	{
+		// What a pointer to a pointer a call hands back points at is a pointer:
+		// `pos, parent := t.locate(k)` of a `**node` and then `*pos == nil`,
+		// go/token's tree, was refused, "nil is no value of struct", the
+		// variable's flags naming the pointee two stars down (dom108).
+		name: "a pointer to a pointer a call hands back, compared with nil",
+		src: `type node struct {
+	left *node
+	v    int
+}
+
+type tree struct {
+	root *node
+	pp   **node
+}
+
+var n1 = node{v: 7}
+
+func (t *tree) locate(k int) (pos **node, parent *node) {
+	pos = &t.root
+	return pos, parent
+}
+
+func locate1(t *tree) **node { return &t.root }
+
+func main() {
+	t := tree{root: &n1}
+	t.pp = &t.root
+	pos, parent := t.locate(1)
+	p := locate1(&t)
+	var q = locate1(&t)
+	f := t.pp
+	switch *p {
+	case nil:
+		println("nil")
+	case &n1:
+		println("n1")
+	}
+	println(*pos == nil, parent == nil, *p != &n1, *q == nil, *f == *p)
+	*pos = nil
+	println(*p == nil, t.root == nil)
+}
+`,
+		want: "n1\nfalse true false false true\ntrue true\n",
+	},
+	{
 		// The assertions test every type of the program implementing the
 		// interface, and testing's T and B have a Log with no body: their tables
 		// named a testing_T_Log nothing defines, in every program holding a

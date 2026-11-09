@@ -5474,14 +5474,18 @@ func (f *File) nonBoolOperand(s *Scope, n Node) (string, bool) {
 				return f.nonBoolType(d.declScope, p.TypeNode)
 			}
 			return "", false
-		case d.typeName.IsValid():
-			return f.nonBoolNamed(s, d.declaredTypeName())
-		case d.inferredType != nil:
+		case d.inferredType != nil && d.inferredType.f != nil:
 			// `pp := &p` for a pointer p: no name says what pp points at
-			// (addressOfInfo), and the type its initializer gave it does.
-			if p, isPtr := d.inferredType.tn.(*TypeNodePointer); isPtr && d.inferredType.f != nil {
+			// (addressOfInfo), and the type its initializer gave it does. And it
+			// is asked before the name: `pos := t.locate(k)` of a `**node` names
+			// node, the pointee two stars down, and `*pos == nil` was "nil is no
+			// value of struct" (dom108, go/token's tree).
+			if p, isPtr := d.inferredType.tn.(*TypeNodePointer); isPtr {
 				return d.inferredType.f.nonBoolType(d.inferredType.s, p.TypeNode)
 			}
+			return "", false
+		case d.typeName.IsValid():
+			return f.nonBoolNamed(s, d.declaredTypeName())
 		}
 		return "", false
 	}

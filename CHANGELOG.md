@@ -20,6 +20,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A pointer to a pointer a call hands back compares with nil**: `pos, parent
+  := t.locate(k)` of a `**node`, and then `*pos == nil`, go/token's tree, was
+  refused, "nil is no value of struct", and so were `*p == &n`, `*p != q` and a
+  switch's `case nil:` on `*p`, for a `**T` bound from a call's result, a
+  method's or a field's: the variable's type was read off the name of what it
+  points at, two stars down. In every release checked.
 - **A package variable reads a value list declared below it**: `var d = v + y`
   above `var v, y = 5, 3` was refused, "cannot infer a type for the package
   variable d", where a variable declared alone, or `var a, b = f()`, was read
@@ -119,6 +125,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **What a pointer to a pointer a call hands back points at meets no struct**:
+  `*p == n` and `var x node = *p`, for a `p := f()` of a `**node` and a node n,
+  both of which Go refuses, passed the checker, and the target's compiler refused
+  the C, "a fault of ogo's", as the host's did; they are refused in Go's terms
+  now. In every release checked.
 - **What a typed constant's method hands back goes only where its type does**:
   `var u uint32 = pos` for a `pos := Position.Pixel()` of a Pixel built, and so did
   the value put into another defined type, a uint32 parameter or arithmetic with a

@@ -1,0 +1,20 @@
+// The errors of ptr_ptr_call_result.ogo: what `*p` gives is a pointer, and meets
+// no node value. Each passed the checker, and the target's compiler refused the C.
+
+type node struct{ v int }
+
+type tree struct{ root *node }
+
+var n1 = node{v: 7}
+
+func locate1(t *tree) **node { return &t.root }
+
+func main() {
+	t := tree{root: &n1}
+	p := locate1(&t)
+	// ERROR invalid operation: \*p == n1 \(mismatched types\): \*p is a pointer and n1 is a struct
+	println(*p == n1)
+	// ERROR cannot use \*p as node value in variable declaration: it is a pointer
+	var x node = *p
+	println(x.v)
+}
