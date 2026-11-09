@@ -356,6 +356,11 @@ silent fault puts the count back to 0. Each round's account is in
   converted to another, rebound at column 0 under an indented statement), one
   listed (a method of several results on an element of a head in parentheses)
   -- 1
+- dom107 (2026-11-08), a bench oscilloscope's web interface (Go 1.27's image/png
+  writer, net/http's chunked coding, content sniffing and ascii ported with their
+  tests, image/draw's general paths, bufio's Writer, a scope's MCU on a cog
+  drawing its screen and serving it as PNGs over HTTP/1.1 to a browser that
+  decodes them), the second round against master on dom105's fixes: clean -- 2
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1203,7 +1208,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   is run again past its time before it is called slow: a program that stops
   printing where Go and the host finish in a fraction of a second has died**
   (dom78). **A domain program's time on the board is every mutant's: it is
-  measured before the mutants are drawn** (dom99). A sweep's accessors record
+  measured before the mutants are drawn** (dom99). **A domain program's twin is
+  run as run.py runs it, at GOMAXPROCS=1, before the mutants are drawn: a race
+  of the program's own shows there first** (dom107). A sweep's accessors record
   ORDER, `calls = calls*10 + k`, not a count ("Process rules learned the hard
   way").
 - **A MUTATED PROGRAM IS A PROBE OF THE FRONT END**; **A MUTATION WITH GO AS THE
