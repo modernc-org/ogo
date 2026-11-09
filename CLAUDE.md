@@ -361,6 +361,13 @@ silent fault puts the count back to 0. Each round's account is in
   tests, image/draw's general paths, bufio's Writer, a scope's MCU on a cog
   drawing its screen and serving it as PNGs over HTTP/1.1 to a browser that
   decodes them), the second round against master on dom105's fixes: clean -- 2
+- dom108 (2026-11-09), a building controller's rule engine (Go 1.27's go/token,
+  go/scanner, path and strconv's quoting ported with their tests, rules in Go's
+  syntax with //line directives compiled for a controller's cog, a plant on
+  another), the third round against master on dom105's fixes: clean, one false
+  refusal fixed and a loud fault of its cause (a pointer to a pointer a call
+  hands back, compared with nil; Go's rejects of it refused by the backend), one
+  listed (a duplicate index refused with no position) -- 3
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1210,9 +1217,11 @@ section. A new finding goes there; the rule it leaves goes here too.
   (dom78). **A domain program's time on the board is every mutant's: it is
   measured before the mutants are drawn** (dom99). **A domain program's twin is
   run as run.py runs it, at GOMAXPROCS=1, before the mutants are drawn: a race
-  of the program's own shows there first** (dom107). A sweep's accessors record
-  ORDER, `calls = calls*10 + k`, not a count ("Process rules learned the hard
-  way").
+  of the program's own shows there first** (dom107). **A domain program's twin
+  is run under Go's race detector before the mutants are drawn: a race no
+  output shows is the first question a mutant's DIFF asks** (dom108). A sweep's
+  accessors record ORDER, `calls = calls*10 + k`, not a count ("Process rules
+  learned the hard way").
 - **A MUTATED PROGRAM IS A PROBE OF THE FRONT END**; **A MUTATION WITH GO AS THE
   ORACLE IS A PROBE OF THE CHECKER**; **A MUTANT GO ACCEPTS IS A PROBE OF THE
   EMITTER** -- **A mutant that compiles is run**; **A MUTANT IS RUN ON THE BOARD, AND
@@ -1365,7 +1374,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   declaration would write it: an unnamed variable is one every rule asking a name
   skips** (`pp := &w.head`, dom59). **A name a walk records is a mark like the
   flags: a check reading a name as a defined type's asks the type the walk gave
-  first** (`p := &a[1]; *p = 300`, A FLOAT64 IS ASKED WHAT A DOUBLE WAS). **A check
+  first** (`p := &a[1]; *p = 300`, A FLOAT64 IS ASKED WHAT A DOUBLE WAS). **A name
+  a declaration records for what a pointer points at is asked how many stars
+  down it is: the type the initializer gave answers first** (dom108). **A check
   reading a value against a type reads each by its own file: the value's file asks,
   and the type goes by its scope** (A COUNTER THAT COUNTS PASSES EVERY ORDER).
 - **WHAT THE FLAGS SAY IS A TYPE**: **A walk that types by what was written answers
