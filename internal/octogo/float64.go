@@ -708,8 +708,8 @@ static ogo_f64 ogo_f64_from_u64(uint64_t v) {
 	return ogo_f64_normround(0, 0x432, x.w[1], x.w[0]);
 }
 
-// Truncated toward zero, as Go converts, in words; out of range is Go's to leave
-// undefined: the most negative int64 here, as gc's on 386.
+// Truncated toward zero, as Go converts, in words; out of range, Go leaves it to the
+// implementation: the most negative int64 here, as gc's on amd64 (DIFFERENCES.md).
 static ogo_w2 ogo_f64_trunc_w(ogo_f64 a, int bits) {
 	ogo_w2 z;
 	uint32_t s0 = OGO_F64_F0(a) | 0x00100000, s1 = a.lo;

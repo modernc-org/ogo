@@ -36,6 +36,47 @@ Go prints:
 2147483648
 ```
 
+### A float converted to an integer it does not fit is not gc's value
+
+Go leaves the result to the implementation when a float is converted to an integer
+type that cannot hold it: a NaN, an infinity, or a number out of the type's range.
+gc's own ports differ. An `int32` of a NaN is -2147483648 on 386 and amd64 and 0 on
+arm and arm64; of 3e10 it is -2147483648 on 386 and amd64 and 2147483647 on arm and
+arm64.
+
+OctoGo converts a `float64` to 64 bits as gc does on amd64, the most negative
+`int64` for any value out of range, and to 32 bits, `int` and `uint` among them, by
+taking the low word of that: a NaN or an infinity is 0, and a number out of the
+32-bit range but inside the 64-bit one wraps. A `float32` out of range converts as
+the C compiler converts it, and the host's and the board's differ. A value that
+fits converts as in Go everywhere. What Go prints below is amd64's.
+
+<!-- go-varies: gc's ports give different values -->
+
+```go
+import "math"
+
+func main() {
+	nan, big := math.NaN(), 3e10
+	println(int32(nan), uint32(nan), int64(nan))
+	println(int32(big), uint32(big))
+}
+```
+
+OctoGo prints:
+
+```
+0 0 -9223372036854775808
+-64771072 4230196224
+```
+
+Go prints:
+
+```
+-2147483648 0 -9223372036854775808
+-2147483648 4230196224
+```
+
 ### `append` does not grow a slice past its capacity
 
 A slice's backing is fixed when it is made. An `append` that does not fit panics, where

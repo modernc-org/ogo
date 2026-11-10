@@ -16,6 +16,18 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Language
+
+- **[DIFFERENCES.md](DIFFERENCES.md) says what a float converted to an integer
+  it does not fit gives**: Go leaves the value to the implementation and gc's
+  ports differ, an `int32` of a NaN -2147483648 on 386 and amd64 and 0 on arm and
+  arm64. OctoGo's `float64` gives amd64's `int64` and the low word of it for 32
+  bits, a NaN 0; a `float32` out of range converts as the C compiler does, on the
+  host and the board differently. Its example is a test, run on the host and on
+  the board.
+
 ## v1.0.0-rc.4
 
 The fourth release candidate for v1.0. Of the rounds run since rc.3, twelve found
