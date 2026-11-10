@@ -1038,7 +1038,11 @@ had it on 2026-10-13"; the sections named in capitals below are its journal's.
   call, 2026-10-16, the review's "contracts" item), which says it keeps nothing, so
   a local buffer may go to a checksum in PASM: the directive is read off the `func`
   token's separator (`noescapeOf`) and refused anywhere else in gc's words
-  (`checkDirectives`, `testdata/noescape_directive.ogo`). `ogo build` and `ogo
+  (`checkDirectives`, `testdata/noescape_directive.ogo`), and since 2026-11-10
+  (dom111) whatever gc refuses of its other directives is refused as gc refuses
+  it in the file's twin, misplaced, //go:build anywhere, //go:embed, //go:linkname
+  without unsafe or naming nothing (`directives.go`, its model cmd/compile's noder,
+  `testdata/go_directives*.ogo`, build/probes/sweeps/directives' 606 rows). `ogo build` and `ogo
   test` pass the build's root to the backend as `-I`. Tests: TestScanSpin2,
   TestSpin2Binding, TestSpin2Emit, TestSpin2Refusals (host), TestBuildSpin2 and
   TestTestSpin2 (the backend), TestOnBoardSpin2. A new way a value reaches the frame

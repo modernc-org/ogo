@@ -1,0 +1,112 @@
+// gc's compiler directives: what gc refuses of a //go: comment is refused, in
+// gc's words, at the directive (directives.go). A file here is its Go twin
+// without the package clause, so //go:build stands nowhere gc takes it. The
+// rows of the whole grid are build/probes/sweeps/directives' (dom111).
+
+import "unsafe"
+
+var _ unsafe.Pointer
+
+// A function's directives are a function's: gc takes them and means nothing
+// here by them.
+//go:noinline
+//go:nosplit
+//go:norace
+//go:nocheckptr
+func f() int { return 1 }
+
+type T int
+
+//go:noinline
+func (T) m() {}
+
+// A directive gc does not know is a comment, and so are //go:generate's and
+// //go:fix's.
+//go:frobnicate
+//go:generate echo hi
+//go:fix inline
+func g() int { return 2 }
+
+// ERROR "misplaced compiler directive"
+//go:noinline
+var v int
+
+// ERROR "misplaced compiler directive"
+var w int //go:noinline
+
+var (
+	// ERROR "misplaced compiler directive"
+	//go:nosplit
+	g1 int
+)
+
+// ERROR "misplaced compiler directive"
+//go:build ignore
+const c = 1
+
+// ERROR "misplaced compiler directive"
+//go:noinline
+type U int
+
+// ERROR "//go:systemstack only allowed in runtime"
+//go:systemstack
+func h() {}
+
+// ERROR "//go:uintptrkeepalive is only allowed in the standard library"
+//go:uintptrkeepalive
+func k() {}
+
+// ERROR "//go:cgo_ldflag .x. only allowed in cgo-generated code"
+//go:cgo_ldflag "x"
+func l() {}
+
+// ERROR "usage: //go:wasmimport importmodule importname"
+//go:wasmimport a
+func wi() {}
+
+// ERROR "go:embed requires import .embed. \(or import _ .embed., if package is not used\)"
+//go:embed x.txt
+var e string
+
+// ERROR "misplaced go:embed directive"
+//go:embed x.txt
+func ef() {}
+
+// ERROR "usage: //go:embed pattern..."
+//go:embed
+var e0 string
+
+// A //go:linkname stands anywhere, in a file importing unsafe, naming a
+// function or a variable of the package.
+//go:linkname f other.f
+//go:linkname v other.v
+//go:linkname g
+
+// ERROR "//go:linkname must refer to declared function or variable"
+//go:linkname c other.c
+
+// ERROR "//go:linkname must refer to declared function or variable"
+//go:linkname nothere other.x
+
+// ERROR "duplicate //go:linkname for f"
+//go:linkname f other.f2
+
+// ERROR "usage: //go:linkname localname \[linkname\]"
+//go:linkname a b c d
+
+func main() {
+	// ERROR "misplaced compiler directive"
+	//go:noinline
+	x := f()
+	// ERROR "misplaced go:embed directive"
+	//go:embed y.txt
+	println(x, v, w, g1, c, g(), e, e0)
+	T(0).m()
+	h()
+	k()
+	l()
+	wi()
+	ef()
+	var u U
+	println(u)
+}

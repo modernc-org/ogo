@@ -1954,6 +1954,17 @@
 // another declaration, inside a body or after code on its line, "misplaced compiler
 // directive". `// go:noescape`, with a space, is a comment.
 //
+// gc's other directives mean nothing here, but what gc refuses of one is refused
+// in gc's words, as gc refuses it in the file's Go twin, the file with a package
+// clause in front: a directive after code on its line; a function's directive
+// (//go:noinline, //go:nosplit and the rest) above anything but a function's or a
+// method's declaration; //go:build anywhere, a file here having no package clause
+// for it to stand above; //go:embed, which needs the embed package this compiler
+// does not have; //go:linkname in a file not importing unsafe, or naming no
+// function or variable of the package, or twice; the runtime's directives, the
+// standard library's and cgo's. A directive gc takes is taken, and //go:generate,
+// //go:fix and one gc does not know are comments.
+//
 // The object is compiled by the P2's C compiler, which imports it into the C of the
 // program, one instance for the whole program. `ogo build` has it read the object,
 // and whatever the object names in turn, from the directory the build reads its

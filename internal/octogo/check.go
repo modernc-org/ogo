@@ -717,7 +717,7 @@ func (f *File) checkBodies(pkg *Scope, n Node) {
 	for _, x := range f.ifaceInits {
 		f.checkImplements(pkg, x.iface, x.value, "variable declaration")
 	}
-	f.checkDirectives(n)
+	f.checkDirectives(pkg, n)
 	for n := range it(n.ast) {
 		if n.sym != TopLevelDecl {
 			continue

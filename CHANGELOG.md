@@ -44,6 +44,20 @@ shipped section tells a reader on that version that they have behaviour they do 
   was "multiple-assignment target/result count mismatch", and a return
   forwarding its results was refused too.
 
+### Behaviour changes
+
+- **What gc refuses of a `//go:` directive is refused**: only `//go:noescape`
+  was asked where it stands, so a program gc refuses for any other directive
+  built -- `//go:noinline` inside a body or above a variable, `//go:build` past
+  the first declaration, `//go:embed` without the embed package, `//go:linkname`
+  in a file not importing unsafe or naming nothing the package declares, the
+  runtime's, the standard library's and cgo's directives. Each is refused in
+  gc's words, as gc refuses it in the file's twin, the file with a package
+  clause in front, which puts every `//go:build` below one. A directive gc takes
+  is taken, and means nothing here but `//go:noescape`. Of 606 programs, each
+  directive gc knows at each place one stands, 419 built that gc refuses; none
+  now. In every release.
+
 ### Fixed
 
 - **A wrong answer, silent: an array of bools handed back overran the caller's

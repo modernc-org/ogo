@@ -1,0 +1,9 @@
+// A //go:linkname is gc's only in a file importing unsafe (directives.go).
+
+func f() int { return 1 }
+
+// ERROR "//go:linkname only allowed in Go files that import .unsafe."
+//go:linkname f other.f
+func main() {
+	println(f())
+}

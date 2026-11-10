@@ -115,42 +115,131 @@ func (f *File) noescapeOf(decl Node) bool {
 	return slices.Contains(starts, true)
 }
 
-// checkDirectives refuses a //go:noescape standing anywhere but on a line of its
-// own above a function's or a method's declaration -- before another declaration,
-// in a body, after code on its line -- in gc's words, "misplaced compiler
-// directive", at the directive's name, where gc reports it. root is the file's
-// SourceFile.
-func (f *File) checkDirectives(root Node) {
-	funcToks := map[int]bool{}
-	for n := range it(root.ast) {
-		if n.sym != TopLevelDecl {
+// checkDirectives refuses what gc refuses of a file's //go: comments
+// (directives.go), in gc's words, at the directive, where gc reports it: one
+// after code on its line, a flag directive anywhere but above a function's or a
+// method's declaration -- //go:noescape before another declaration, in a body,
+// after code on its line among them -- //go:build anywhere, //go:embed, and a
+// //go:linkname in a file not importing unsafe or naming no function or variable
+// of the package. root is the file's SourceFile, pkg the package's scope.
+func (f *File) checkDirectives(pkg *Scope, root Node) {
+	funcToks, varToks := f.directiveTokens(root)
+	var links []gcLinkname
+	for i := 0; i < f.parser.sc.Len(); i++ {
+		tok := f.parser.sc.Token(i)
+		sep := tok.Sep()
+		if !strings.Contains(sep, "//go:") {
 			continue
 		}
-		for d := range it(n.ast) {
-			if d.sym != FuncDecl {
-				continue
+		for _, d := range goDirectives(sep, tok.sepBeginsLine()) {
+			pos := tok.sepPosition(d.off + 2)
+			errf := func(format string, args ...any) { f.err(pos, format, args...) }
+			use, ln := gcDirective(d, errf)
+			if ln != nil {
+				ln.tok, ln.off = tok, d.off
+				links = append(links, *ln)
 			}
-			for c := range it(d.ast) {
-				if c.sym == 0 {
-					funcToks[int(c.tok)] = true
-					break
+			allowed := gcPragma(0)
+			if funcToks[i] {
+				allowed = gcFuncPragmas
+			}
+			if use.flag&^allowed != 0 {
+				errf("misplaced compiler directive")
+			}
+			if use.embed {
+				if varToks[i] {
+					// The first of checkEmbed's refusals: this compiler has no
+					// embed package to import.
+					errf("go:embed requires import \"embed\" (or import _ \"embed\", if package is not used)")
+				} else {
+					errf("misplaced go:embed directive")
 				}
 			}
 		}
 	}
+	if len(links) == 0 {
+		return
+	}
+	seen := f.earlierLinknames(pkg)
+	unsafeImported := f.importsUnsafe()
+	for _, l := range links {
+		pos := l.tok.sepPosition(l.off + 2)
+		switch {
+		case !unsafeImported:
+			f.err(pos, "//%s only allowed in Go files that import \"unsafe\"", l.directive)
+		case strings.Contains(l.remote, "[") && strings.Contains(l.remote, "]"):
+			f.err(pos, "//%s reference of an instantiation is not allowed", l.directive)
+		case !linknameResolves(pkg, l.local):
+			f.err(pos, "//%s must refer to declared function or variable", l.directive)
+		case seen[l.local]:
+			f.err(pos, "duplicate //%s for %s", l.directive, l.local)
+		default:
+			seen[l.local] = true
+		}
+	}
+}
+
+// importsUnsafe reports whether the file imports unsafe.
+func (f *File) importsUnsafe() bool {
+	for _, s := range f.ImportSpecs {
+		if s.ImportPath == "unsafe" {
+			return true
+		}
+	}
+	return false
+}
+
+// linknameResolves reports whether a //go:linkname's local name is a function's
+// or a variable's of the package, as gc's lookup in the package's scope asks:
+// a method, a type, a constant and an import are none.
+func linknameResolves(pkg *Scope, local string) bool {
+	switch pkg.Declarations[local].(type) {
+	case *FuncDeclaration, *VarDeclaration:
+		return true
+	}
+	return false
+}
+
+// fileLinknames are the //go:linkname directives of a file gc records, each
+// on a line of its own and of two or three words.
+func (f *File) fileLinknames() (r []gcLinkname) {
 	for i := 0; i < f.parser.sc.Len(); i++ {
 		tok := f.parser.sc.Token(i)
 		sep := tok.Sep()
-		if !strings.Contains(sep, noescapeDirective) {
+		if !strings.Contains(sep, "//go:link") {
 			continue
 		}
-		offs, starts := noescapes(sep, tok.sepBeginsLine())
-		for j, off := range offs {
-			if !starts[j] || !funcToks[i] {
-				f.err(tok.sepPosition(off+2), "misplaced compiler directive")
+		for _, d := range goDirectives(sep, tok.sepBeginsLine()) {
+			if _, ln := gcDirective(d, func(string, ...any) {}); ln != nil {
+				r = append(r, *ln)
 			}
 		}
 	}
+	return r
+}
+
+// earlierLinknames are the local names the package's files before f link, as
+// gc walks the files in their order: a second //go:linkname of a name is a
+// duplicate in the file it stands in.
+func (f *File) earlierLinknames(pkg *Scope) map[string]bool {
+	seen := map[string]bool{}
+	if f.Package == nil {
+		return seen
+	}
+	for _, g := range f.Package.Files {
+		if g == f {
+			break
+		}
+		if !g.importsUnsafe() {
+			continue
+		}
+		for _, l := range g.fileLinknames() {
+			if !(strings.Contains(l.remote, "[") && strings.Contains(l.remote, "]")) && linknameResolves(pkg, l.local) {
+				seen[l.local] = true
+			}
+		}
+	}
+	return seen
 }
 
 // spin2Pub matches a PUB method's declaration on a line cleared of comments and
