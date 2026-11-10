@@ -56474,6 +56474,110 @@ func main() {
 		want: "106268006420 98765430797 1228935 4000000000 98447 192 59535\n17188782592 98765436797 1229303 0 65535\n106268006420 98765430797 65523\n",
 	},
 	{
+		// AND NOT of a constant expression that passes through a value past 64
+		// bits, `mask&(1<<64-1)` of a 128-bit mask, Go 1.27's textproto's
+		// validHeaderValueByte: the fold the complement asked stopped at the
+		// mask's name, and the name, which has no C value, was refused, for
+		// `x &^ C` and `x &^= C` alike. dom110's port found it.
+		name: "and-not of a constant past 64 bits on the way",
+		src: `// The mask is a 128-bit bitmap, as Go 1.27's textproto writes one.
+const mask = 0 |
+	(1<<(0x7f-0x21)-1)<<0x21 |
+	1<<0x20 |
+	1<<0x09
+
+func valid(c byte) bool {
+	return ((uint64(1)<<c)&^(mask&(1<<64-1)) |
+		(uint64(1)<<(c-64))&^(mask>>64)) == 0
+}
+
+func clear64(x uint64) uint64 {
+	x &^= mask & (1<<64 - 1)
+	return x
+}
+
+func low32(x uint32) uint32 { return x &^ (mask & (1<<32 - 1)) }
+
+func low16(x uint16) uint16 { return x &^ (mask>>100 & 0xffff) }
+
+func signed(x int32) int32 { return x &^ (mask >> 96) }
+
+func main() {
+	for _, c := range []byte("a \t\x7f\x00\xff~") {
+		println(c, valid(c))
+	}
+	println(clear64(0xFFFFFFFFFFFFFFFF), low32(0xFFFFFFFF), low16(0xFFFF), signed(-1))
+}
+`,
+		want: "97 true\n32 true\n9 true\n127 false\n0 false\n255 true\n126 true\n4294966783 4294966783 0 -2147483648\n",
+	},
+	{
+		// A method of several results promoted from an embedded struct and called
+		// through a field, `c.Text.ReadResponse(250)` of Go's net/smtp: named on the
+		// field's own type, the method was none, and a multiple assignment reported
+		// a target/result count mismatch, a return forwarding its results "needs a
+		// call whose results are exactly ...". dom110's port found it.
+		name: "a method of several results promoted through a field",
+		src: `// A method of several results promoted from an embedded struct, called
+// through a field, as Go's net/smtp calls c.Text.ReadResponse.
+type Reader struct{ n int }
+
+func (r *Reader) Three(x int) (int, string, error) {
+	r.n++
+	return x + r.n, "m", nil
+}
+
+func (r Reader) Two(x int) (int, bool) { return x * r.n, r.n > 1 }
+
+type Conn struct {
+	Reader
+	id int
+}
+
+type Deep struct {
+	Conn
+}
+
+type ByPtr struct {
+	*Reader
+}
+
+type Client struct {
+	Text *Conn
+	Val  Conn
+	D    *Deep
+	P    ByPtr
+}
+
+var conn Conn
+
+var deep Deep
+
+var rd = Reader{n: 10}
+
+func forward(c *Client) (int, string, error) { return c.Text.Three(100) }
+
+func main() {
+	c := &Client{Text: &conn, D: &deep, P: ByPtr{&rd}}
+	a, b, err := c.Text.Three(1)
+	println(a, b, err == nil, conn.n)
+	var x int
+	var s string
+	x, s, err = c.Val.Three(2)
+	println(x, s, err == nil, c.Val.n)
+	y, ok := c.Text.Two(3)
+	println(y, ok)
+	x, s, _ = c.D.Three(4)
+	println(x, s, deep.n)
+	x, s, _ = c.P.Three(5)
+	println(x, s, rd.n)
+	x, s, err = forward(c)
+	println(x, s, err == nil, conn.n)
+}
+`,
+		want: "2 m true 1\n3 m true 1\n3 false\n5 m 1\n16 m 11\n102 m true 2\n",
+	},
+	{
 		// The way a Go program reads into a buffer of its own and passes on what
 		// went wrong: `if err := fill(buf[:]); err != nil { return 0, err }`. The
 		// error is the address of a package variable or nil, and nothing of the

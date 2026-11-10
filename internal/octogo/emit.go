@@ -30708,6 +30708,23 @@ func (e *emitter) constExpr(ast []int32) bool {
 	return len(args) == 1 && e.constExpr(args[0].ast)
 }
 
+// namesHugeConst reports whether an expression names a constant no 64-bit type
+// holds, `1 << 100`, which has no C symbol (isHugeConstName).
+func (e *emitter) namesHugeConst(ast []int32) bool {
+	for n := range it(ast) {
+		if n.sym == 0 {
+			if e.f.ch(n.tok) == IDENT && e.isHugeConstName(e.src(n.tok)) {
+				return true
+			}
+			continue
+		}
+		if e.namesHugeConst(n.ast) {
+			return true
+		}
+	}
+	return false
+}
+
 func (e *emitter) emitComplement(ast []int32, ct string, emitOperand func()) {
 	// A constant operand is never the destination of the assignment it sits in, so
 	// the bug below cannot reach it and it keeps the short spelling. That is not
@@ -30748,6 +30765,22 @@ func (e *emitter) emitComplement(ast []int32, ct string, emitOperand func()) {
 		emitOperand()
 		e.emit(")")
 		return
+	}
+	// A constant expression whose value passes through one past 64 bits folds
+	// exactly, and not in the 64 bits constExpr asks: `x &^ (mask&(1<<64-1))` of
+	// a 128-bit mask, Go's textproto's validHeaderValueByte (dom110). Its operand
+	// has no spelling C holds, the mask's name none at all, so the complement is
+	// the folded value's, as a constant's is above.
+	if e.namesHugeConst(ast) {
+		if v, ok := e.constIntValue(ast); ok {
+			ut := e.underlyingCType(ct)
+			if w := cIntWidths[ut]; isUnsignedCType(ut) && w > 0 && w < 64 {
+				e.emit(unsignedNarrowLit(^v&(1<<w-1), w))
+			} else {
+				e.emit(e.constSpelling(^v, ut))
+			}
+			return
+		}
 	}
 	ones := "-1" // an unknown type keeps the plain int -1, which is what ~ promotes to
 	if ct != "" {
@@ -53411,7 +53444,17 @@ func (e *emitter) methodOnField(recv string, suffix []Node) (fields []string, cn
 		}
 		ct = a.name
 	}
-	cname = e.methodCName(methodBaseType(ct), e.soleIdent(sels[len(sels)-1].ast))
+	member := e.soleIdent(sels[len(sels)-1].ast)
+	// A method PROMOTED from an embedded struct, `c.Text.ReadResponse(250)` of
+	// Go's net/smtp, ReadResponse being textproto's Reader's, which its Conn
+	// embeds: the receiver is the embedded member, reached as the explicit
+	// `c.Text.Reader.ReadResponse(250)` reaches it. Named on the field's own type,
+	// the method was none, and a call of several results reported a
+	// target/result count mismatch (dom110).
+	if cn, path, _, okp := e.promotedMethod(ct, member); okp && len(path) > 0 {
+		return append(fields, path...), cn, e.methodPtr[cn], true
+	}
+	cname = e.methodCName(methodBaseType(ct), member)
 	return fields, cname, e.methodPtr[cname], true
 }
 

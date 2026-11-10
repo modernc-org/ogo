@@ -27,6 +27,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   bits, a NaN 0; a `float32` out of range converts as the C compiler does, on the
   host and the board differently. Its example is a test, run on the host and on
   the board.
+- **An AND NOT of a constant past 64 bits on the way builds**: `x &^
+  (mask&(1<<64-1))` of a 128-bit mask, Go 1.27's net/textproto's header bytes,
+  and `x &^= C` alike, were refused, "constant mask overflows every integer
+  type": the complement asked a 64-bit fold, which stopped at the mask's name.
+  The exact value is folded now, as it was for `&`.
+- **A method of several results promoted through a field is called**:
+  `code, msg, err := c.Text.ReadResponse(250)` of Go's net/smtp,
+  ReadResponse being textproto's Reader's, which the Conn in `c.Text` embeds,
+  was "multiple-assignment target/result count mismatch", and a return
+  forwarding its results was refused too.
 
 ## v1.0.0-rc.4
 
