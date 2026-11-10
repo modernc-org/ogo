@@ -74,6 +74,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   called mk first. x/net's dnsmessage tests met both, their messages' resources
   being literals of Names a call makes. Each value fills its own storage now,
   bound in its turn. In every release checked.
+- **A program Go rejects, silent: a target through a star of a call's several
+  results was asked nothing**: `*q, err = mk()` for a q nothing declares, or a q
+  that is no pointer, went to the C compiler, and built where a C name of q stood
+  in its scope -- another case clause's, a mutant of dnsmessage's
+  unpackResourceBody. It is refused now as Go refuses it, "undefined: q",
+  "invalid operation: cannot indirect q (variable of type int)", at the head and
+  as a later target, through a field or an element too.
 - **A literal's pointer bound for its order builds in an interface field**:
   `Outer{Pre: f(), B: &T{x: f()}, Post: f()}` for an interface field B was
   refused, "internal error: a literal's value bound to keep evaluation order was

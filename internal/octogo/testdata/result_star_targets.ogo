@@ -1,0 +1,48 @@
+// A target through a star of a call's several results is asked what such a
+// target of one value is: the name under the star is declared, and what the star
+// reads through is a pointer, in Go's words at the name (dom112). The valid forms
+// are result_star_targets_ok.ogo's.
+
+type A struct{ x int }
+
+type H struct {
+	p *A
+	n int
+}
+
+var pa [2]A
+
+func mk() (A, error) { return A{7}, nil }
+
+func mk3() (error, A) { return nil, A{8} }
+
+func f() int {
+	var err error
+	var q int = 3
+	var h = H{p: &pa[0]}
+	var hs [2]int
+	// ERROR "undefined: nothere"
+	*nothere, err = mk()
+	// ERROR "undefined: nothere2"
+	err, *nothere2 = mk3()
+	// ERROR "invalid operation: cannot indirect q \(variable of type int\)"
+	*q, err = mk()
+	// ERROR "invalid operation: cannot indirect q \(variable of type int\)"
+	err, *q = mk3()
+	// ERROR "invalid operation: cannot indirect h \(variable of type H\)"
+	*h, err = mk()
+	// ERROR "invalid operation: cannot indirect h.n \(variable of type int\)"
+	*h.n, err = mk()
+	// ERROR "invalid operation: cannot indirect hs\[0\] \(variable of type int\)"
+	*hs[0], err = mk()
+	// ERROR "undefined: nothere3"
+	*nothere3.p, err = mk()
+	if err != nil {
+		return -1
+	}
+	return pa[0].x + q + h.n + hs[0]
+}
+
+func main() {
+	println(f())
+}

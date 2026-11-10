@@ -20807,6 +20807,12 @@ func (f *File) checkWalkedTargets(s *Scope, head, postfix Node, rhs []Node, lhsI
 			base, stars, ok := f.targetHead(ah)
 			return ok && f.stringElemTarget(s, ah, base, stars, steps, false)
 		})
+		if len(rhs) == 1 {
+			f.eachListTarget(head, steps, postfix, func(ah Node, steps []Node) bool {
+				f.checkResultTargetBase(s, ah, steps)
+				return false
+			})
+		}
 		return
 	}
 	f.checkWalkedTarget(s, head, steps, rhs[0], lhsItems == 0)
@@ -21040,6 +21046,40 @@ func (f *File) eachListTarget(head Node, steps []Node, postfix Node, fn func(ah 
 			}
 		}
 	}
+}
+
+// checkResultTargetBase asks a target through a star, one of a call's several
+// results, what such a target of one value is asked (checkDerefAssign): that the
+// name under the star is declared and that what the star reads through is a
+// pointer, in Go's words at the name. A target with a star reads no name off its
+// head for the statement's own checks, and checkResultsAssign asks only a target
+// the walk could type: `*q, err = mk()` for a q nothing declares, or one of type
+// int, went to the C compiler, and built where a name of q stood in the C scope
+// -- another case clause's (dom112, a mutant of dnsmessage's unpackResourceBody).
+func (f *File) checkResultTargetBase(s *Scope, ah Node, steps []Node) {
+	base, stars, ok := f.targetHead(ah)
+	if !ok || stars == 0 || base.Src() == "_" {
+		return
+	}
+	if f.foundOrQualifier(s, base.Src()) == nil && !f.isImportQualifier(s, base.Src()) {
+		f.errUndefined(base.Position(), base.Src())
+		return
+	}
+	if tn, _ := f.targetTypeNode(s, base, steps, stars); tn != nil {
+		return
+	}
+	t0, in0 := f.targetTypeNode(s, base, steps, stars-1)
+	if t0 == nil {
+		return // a step the walk cannot follow, which the steps' own checks ask
+	}
+	if _, isP := f.underlyingTypeAt(typeAt{t0, in0, f}).tn.(*TypeNodePointer); isP {
+		return
+	}
+	what := strings.Repeat("*", stars-1) + base.Src()
+	if len(steps) != 0 {
+		what = strings.Repeat("*", stars-1) + f.sourceSpan(ah.Pos()+int32(stars), steps[len(steps)-1].End())
+	}
+	f.err(base.Position(), "invalid operation: cannot indirect %s (variable of type %s)", what, f.typeAtMessage(typeAt{t0, in0, f}))
 }
 
 // checkWalkedTarget is checkWalkedTargets for one target: the AssignHead ah, the

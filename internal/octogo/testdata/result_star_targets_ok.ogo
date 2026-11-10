@@ -1,0 +1,37 @@
+// COMPILE
+// A target through a star of a call's several results, each a pointer's: the
+// forms result_star_targets.ogo refuses, written right.
+
+type A struct{ x int }
+
+type H struct {
+	p  *A
+	ps [2]*A
+}
+
+var pa [2]A
+
+func mk() (A, error) { return A{7}, nil }
+
+func mk3() (error, A) { return nil, A{8} }
+
+func f() int {
+	var err error
+	q := &pa[0]
+	h := H{p: &pa[0], ps: [2]*A{&pa[0], &pa[1]}}
+	qq := &q
+	*q, err = mk()
+	err, *q = mk3()
+	(*q), err = mk()
+	**qq, err = mk()
+	*h.p, err = mk()
+	*h.ps[1], err = mk()
+	if *q, err = mk(); err != nil {
+		return -1
+	}
+	return pa[0].x + pa[1].x
+}
+
+func main() {
+	println(f())
+}
