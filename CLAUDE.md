@@ -378,6 +378,17 @@ silent fault puts the count back to 0. Each round's account is in
   the first round against rc.4: clean, two listed (printf's explicit argument
   index; a package's tables of calls outgrowing a cog in its initialization, the
   advice naming main) -- 1
+- dom110 (2026-11-10), a cold store's alarm notifier (Go 1.27's net/textproto,
+  net/smtp, net/mail, mime and mime/quotedprintable ported with their tests, the
+  alarms mailed through an SMTP relay on a cog and read back from its mailbox),
+  the second round against rc.4: silent (the target's compiler answers 4 for
+  sizeof(_Bool), and an array of bools handed back was copied four times its size
+  over the caller's frame, on the board), two false refusals fixed (an AND NOT of
+  a constant through a value past 64 bits; a method of several results promoted
+  from an embedded struct, called through a field), two host-only faults fixed (a
+  named result beside a function literal's own; a trigraph in a string), two
+  listed (a method of several results on a parenthesised literal's address; a
+  value read out of a local table taken to hold the frame) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1252,7 +1263,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   runs is a switch that is off.** (dom102, doc/dead-block-store-crash.c).
   **A value Go leaves to the implementation is asked of gc's other ports before
   its DIFF is called a fault: an int of a NaN is -2147483648 on 386 and 0 on
-  arm64.** (dom109).
+  arm64.** (dom109). **A difference a mutant shows is stated in DIFFERENCES.md
+  before it is called by design: the prints of two cogs mixing was noise to the
+  rounds of October, and no page said so.** (dom110).
 - **A PROGRAM GO REJECTS IS A ROW** (`scripts/rejects.sh`): **What `ogo build` does
   with such a program is the measure** -- **And measure with a struct of MORE THAN
   ONE WORD, and RUN the binary**.
@@ -1701,7 +1714,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   the target's layout is measured on the board in C first**; **The host's compiler
   is no witness for an initializer's layout**. **A ROW OF 64-BIT ELEMENTS INDEXED BY
   A CALL IS LOST ON THE TARGET**. **A float literal the emitter writes is one the
-  target reads exactly**.
+  target reads exactly**. **A size the emitter asks of the target's compiler by a
+  type's name is asked against the type's stride: sizeof(_Bool) is 4 on the board,
+  and a bool takes one byte** (dom110, doc/bool-sizeof.c).
 - **A fault measured in one statement form is measured in the others: a plain store
   right says nothing of its compound form** (doc/row-call-compound.c). **A
   workaround's gate is asked of every shape its fault takes: the fault was an
