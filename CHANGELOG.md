@@ -40,6 +40,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A wrong answer, silent: an array of bools handed back overran the caller's
+  frame on the board**: the target's C compiler answers 4 for `sizeof(_Bool)`,
+  where a bool takes one byte in an array, a struct and a variable, and the
+  copy of an array of bools through the caller's storage -- a result, alone or
+  beside others -- was sized by it, four times the array. Go 1.27's
+  strings.TrimLeft of a cutset of two makes such an array, `makeASCIISet`'s
+  `[256]bool`, and a program calling it ran no further on the board; the host
+  was right. A bool's size is spelled as the byte it takes now
+  (doc/bool-sizeof.c). In every release checked.
 - **A named result beside a function literal's own builds on the host**: a
   literal's result list and its naked return, `addrErr := func(addr, why
   string) (host, port string, err error)` of Go's net.SplitHostPort, were taken

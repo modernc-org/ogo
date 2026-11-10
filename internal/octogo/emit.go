@@ -908,6 +908,20 @@ const cString = "ogo_string"
 // checker forbids arithmetic on bool, so nothing relies on it being int.
 const cBool = "_Bool"
 
+// cSizeof is C's sizeof(t) of a C type t, spelled as the target's compiler
+// reads it: it answers 4 for sizeof(_Bool), and of a typedef of it, where a
+// _Bool takes one byte in an array, in a struct and as a variable, and every
+// other type's size is its stride (doc/bool-sizeof.c). So a bool's size is
+// spelled as the byte it takes: an array of bools handed back, `return as,
+// true` of strings.makeASCIISet's [256]bool, was copied with
+// sizeof(_Bool)*256, four times the array, over the caller's frame (dom110).
+func (e *emitter) cSizeof(t string) string {
+	if e.underlyingCType(t) == cBool {
+		return "sizeof(uint8_t)"
+	}
+	return "sizeof(" + t + ")"
+}
+
 const stringTypedef = "typedef struct { const char* str; int len; } ogo_string;\n"
 
 // builderTypedef is the compiler-known Builder: a write cursor over a caller-owned
@@ -3993,7 +4007,7 @@ func (e *emitter) emitStructCopy(dst, ctype string, src []int32) {
 		// one: a temporary of it put a 64 KB Writer on the stack, and a program
 		// calling it outgrew the Hub RAM, where Go zeroes in place.
 		e.ind()
-		e.emit("memset(&" + dst + ", 0, sizeof(" + ctype + "));\n")
+		e.emit("memset(&" + dst + ", 0, " + e.cSizeof(ctype) + ");\n")
 		return
 	case ok:
 		tmp := e.newTmp()
@@ -4012,7 +4026,7 @@ func (e *emitter) emitStructCopy(dst, ctype string, src []int32) {
 	// bounds check, and naming it twice would repeat that in the source even though
 	// C leaves a sizeof operand unevaluated.
 	e.ind()
-	e.emit("memcpy(&" + dst + ", &" + from + ", sizeof(" + ctype + "));\n")
+	e.emit("memcpy(&" + dst + ", &" + from + ", " + e.cSizeof(ctype) + ");\n")
 }
 
 // structAddrC copies a value of a struct type holding an array into a temporary of
@@ -21945,7 +21959,7 @@ func usliceHelperDef(elem string, checks bool) string {
 		// with no elements, and the elements within the address space past p.
 		def += "\tif (n < 0 || n > 0x7fffffff) ogo_panic(\"unsafe.Slice: len out of range\");\n"
 		def += "\tif (!p && n > 0) ogo_panic(\"unsafe.Slice: ptr is nil and len is not zero\");\n"
-		def += "\tif ((uint64_t)n * sizeof(" + elem + ") > (uint64_t)((uintptr_t)0 - (uintptr_t)p)) ogo_panic(\"unsafe.Slice: len out of range\");\n"
+		def += "\tif ((uint64_t)n * sizeof(*p) > (uint64_t)((uintptr_t)0 - (uintptr_t)p)) ogo_panic(\"unsafe.Slice: len out of range\");\n" // an element's size by the expression: the target answers 4 for sizeof(_Bool) (cSizeof)
 	}
 	return def + "\treturn (" + sc + "){p, (int)n, (int)n};\n}\n"
 }
@@ -28887,10 +28901,10 @@ func (e *emitter) emitPackageDestructure(names []string, rhs []int32) {
 		switch a, isArr := e.isArrayResult(resTypes[i]); {
 		case isArr:
 			e.includes["string.h"] = true
-			store = fmt.Sprintf("memcpy(%s, %s._%d, sizeof(%s)%s);", gn, tmp, i, a.elem, arrayCountC(a))
+			store = fmt.Sprintf("memcpy(%s, %s._%d, %s%s);", gn, tmp, i, e.cSizeof(a.elem), arrayCountC(a))
 		case e.holdsArray(resTypes[i]):
 			e.includes["string.h"] = true
-			store = fmt.Sprintf("memcpy(&%s, &%s._%d, sizeof(%s));", gn, tmp, i, resTypes[i])
+			store = fmt.Sprintf("memcpy(&%s, &%s._%d, %s);", gn, tmp, i, e.cSizeof(resTypes[i]))
 		}
 		e.pkgInit = append(e.pkgInit, pkgInitStep{
 			target:  gn,
@@ -40786,7 +40800,7 @@ func (e *emitter) emitReturn(nodes []Node) {
 	// returned: C cannot return an array. The copy is by size, so a
 	// multi-dimensional result travels as one block.
 	if a, ok := e.funcArrayRet[e.curFunc]; ok {
-		size := "sizeof(" + a.elem + ")" + arrayCountC(a)
+		size := e.cSizeof(a.elem) + arrayCountC(a)
 		if len(exprs) == 0 && e.curArrayResult != "" {
 			// A bare `return` in a function with a NAMED array result: what the
 			// caller gets is that variable, copied into its storage as `return r`
@@ -41125,7 +41139,7 @@ func (e *emitter) resultC(name string) string {
 // emitReturn, which this mirrors).
 func (e *emitter) emitStructOutReturn(rt string, exprs []Node) {
 	e.includes["string.h"] = true
-	size := "sizeof(" + rt + ")"
+	size := e.cSizeof(rt)
 	named := ""
 	if len(e.curResultNames) == 1 && e.curResultNames[0] != "0" {
 		named = e.resultC(e.curResultNames[0])
@@ -41242,7 +41256,7 @@ func (e *emitter) emitArrayInto(dst string, a arrDim, ex []int32) bool {
 	if !e.checkArrayShape(a, ex, "return statement") {
 		return false
 	}
-	if e.zeroArrayStore(dst, "sizeof("+a.elem+")"+arrayCountC(a), ex) {
+	if e.zeroArrayStore(dst, e.cSizeof(a.elem)+arrayCountC(a), ex) {
 		return true
 	}
 	src, ok := e.arraySourceC(ex)
@@ -41252,7 +41266,7 @@ func (e *emitter) emitArrayInto(dst string, a arrDim, ex []int32) bool {
 	}
 	e.includes["string.h"] = true
 	e.ind()
-	e.emit("memcpy(" + dst + ", " + src + ", sizeof(" + a.elem + ")" + arrayCountC(a) + ");\n")
+	e.emit("memcpy(" + dst + ", " + src + ", " + e.cSizeof(a.elem) + arrayCountC(a) + ");\n")
 	return true
 }
 
@@ -41286,7 +41300,7 @@ func (e *emitter) emitTupleOutReturn(rt string, exprs []Node) {
 			// An array, held by a variable or a temporary: copied by its size.
 			e.includes["string.h"] = true
 			e.ind()
-			e.emit("memcpy(" + dst + ", " + text + ", sizeof(" + a.elem + ")" + arrayCountC(a) + ");\n")
+			e.emit("memcpy(" + dst + ", " + text + ", " + e.cSizeof(a.elem) + arrayCountC(a) + ");\n")
 			return
 		}
 		if e.holdsArray(ct) {
@@ -41297,7 +41311,7 @@ func (e *emitter) emitTupleOutReturn(rt string, exprs []Node) {
 				e.emit(decl)
 			}
 			e.ind()
-			e.emit("memcpy(&" + dst + ", " + addr + ", sizeof(" + ct + "));\n")
+			e.emit("memcpy(&" + dst + ", " + addr + ", " + e.cSizeof(ct) + ");\n")
 			return
 		}
 		e.ind()
@@ -41351,7 +41365,7 @@ func (e *emitter) emitTupleOutReturn(rt string, exprs []Node) {
 			}
 			e.includes["string.h"] = true
 			e.ind()
-			e.emit("memcpy(" + arrayResultParam + ", &" + hold + ", sizeof(" + rt + "));\n")
+			e.emit("memcpy(" + arrayResultParam + ", &" + hold + ", " + e.cSizeof(rt) + ");\n")
 		}
 	case len(exprs) != len(types):
 		e.fail("wrong number of return values: %d for %d results", len(exprs), len(types))
@@ -44045,7 +44059,7 @@ func (e *emitter) layoutCheck(kids []Node, v int64) {
 	if !ok || ct == "" || e.underlyingCType(ct) == cBool {
 		return
 	}
-	e.layoutChecks = append(e.layoutChecks, fmt.Sprintf("sizeof(%s) == %d", ct, v))
+	e.layoutChecks = append(e.layoutChecks, fmt.Sprintf("%s == %d", e.cSizeof(ct), v))
 }
 
 // lenConstKids is lenConstOf for a Factor's children, `len` and its call, or
@@ -50511,7 +50525,7 @@ func (e *emitter) declareCopy(name, tmp string) {
 		e.includes["string.h"] = true
 		e.emit(ct + " " + cn + ";\n")
 		e.ind()
-		e.emit("memcpy(&" + cn + ", &" + tmp + ", sizeof(" + ct + "));\n")
+		e.emit("memcpy(&" + cn + ", &" + tmp + ", " + e.cSizeof(ct) + ");\n")
 		return
 	}
 	e.emit(ct + " " + cn + " = " + tmp + ";\n")
@@ -50761,7 +50775,7 @@ func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
 			e.ind()
 			e.emit(ctype + " " + cn + ";\n")
 			e.ind()
-			e.emit("memcpy(&" + cn + ", &" + tmp + ", sizeof(" + ctype + "));\n")
+			e.emit("memcpy(&" + cn + ", &" + tmp + ", " + e.cSizeof(ctype) + ");\n")
 			return
 		}
 		e.ind()
@@ -52137,7 +52151,7 @@ func (e *emitter) emitStructStore(t assignTarget, declare bool, ctype, val strin
 		dst = "&" + e.captureC(func() { e.emitAccessChain(t.name, t.chain) })
 	}
 	e.ind()
-	e.emit("memcpy(" + dst + ", &" + val + ", sizeof(" + ctype + "));\n")
+	e.emit("memcpy(" + dst + ", &" + val + ", " + e.cSizeof(ctype) + ");\n")
 }
 
 // emitArrayStore is emitStore for an ARRAY -- the typedef an array beside another
@@ -52173,7 +52187,7 @@ func (e *emitter) emitArrayStore(t assignTarget, declare bool, a arrDim, val str
 		dst = e.captureC(func() { e.emitAccessChain(t.name, t.chain) })
 	}
 	e.ind()
-	e.emit("memcpy(" + dst + ", " + val + ", sizeof(" + a.elem + ")" + arrayCountC(a) + ");\n")
+	e.emit("memcpy(" + dst + ", " + val + ", " + e.cSizeof(a.elem) + arrayCountC(a) + ");\n")
 }
 
 // lhsItemTarget reads one LhsItem (LhsItem = AssignHead { Selector | Index |

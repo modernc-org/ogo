@@ -56640,6 +56640,66 @@ func main() {
 		want: "=?UTF-8?Q??= 12\na??(b??)c??<d??>e??/f??'g??!h??-i\nx??=y 5\n??= 4 ???\n",
 	},
 	{
+		// An array of bools handed back through the caller's storage: the copy was
+		// sized sizeof(_Bool)*n, and the target's compiler answers 4 for
+		// sizeof(_Bool), where a _Bool takes one byte, so the copy was four times
+		// the array, over the caller's frame, and the program ran no further on the
+		// board (doc/bool-sizeof.c). Go 1.27's strings.makeASCIISet, dom110.
+		name: "an array of bools handed back",
+		src: `// An array of bools handed back through the caller's storage, beside another
+// result and alone, and of a defined bool type: Go 1.27's
+// strings.makeASCIISet.
+type asciiSet [256]bool
+
+func makeASCIISet(chars string) (as asciiSet, ok bool) {
+	for i := 0; i < len(chars); i++ {
+		c := chars[i]
+		if c >= 0x80 {
+			return as, false
+		}
+		as[c] = true
+	}
+	return as, true
+}
+
+func (as *asciiSet) contains(c byte) bool { return as[c] }
+
+func trimLeft(s, cutset string) string {
+	if as, ok := makeASCIISet(cutset); ok {
+		for len(s) > 0 && as.contains(s[0]) {
+			s = s[1:]
+		}
+	}
+	return s
+}
+
+type flag bool
+
+func flags(n int) (f [8]flag) {
+	for i := 0; i < n; i++ {
+		f[i] = true
+	}
+	return f
+}
+
+func flip(a [4]bool) [4]bool {
+	a[0] = !a[0]
+	return a
+}
+
+func main() {
+	println(trimLeft(" \tq", " \t"), trimLeft("xxyz", "x"), trimLeft("abc", "é"))
+	guard := [4]int32{1, 2, 3, 4}
+	f := flags(3)
+	b := flip([4]bool{true, false, true, false})
+	println(f[2], f[3], b[0], b[2], guard[0], guard[3])
+	set, ok := makeASCIISet("ab")
+	println(ok, set.contains('a'), set.contains('c'))
+}
+`,
+		want: "q yz abc\ntrue false false true 1 4\ntrue true false\n",
+	},
+	{
 		// The way a Go program reads into a buffer of its own and passes on what
 		// went wrong: `if err := fill(buf[:]); err != nil { return 0, err }`. The
 		// error is the address of a package variable or nil, and nothing of the
