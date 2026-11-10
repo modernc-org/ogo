@@ -7983,7 +7983,7 @@ type emitter struct {
 	localConstSeq     int                       // orders localConstSpecs as they were declared
 	inheritedTypes    map[string]bool           // the local types a function literal has of the function around it, which its own may shadow
 	boundOperands     map[*int32]*boundOperand  // the operands of the level being emitted bound to temporaries for their evaluation order, by their place in the AST (see bindEffectOperands)
-	hoistedArrayCalls map[int32]string          // source position of an ARRAY-returning call, or of the star of a dereferenced pointer-to-array expression -> the temporary it was bound to, so one occurrence is evaluated once (see hoistArrayCallArg, arrayPtrExprDeref); the statement's
+	hoistedArrayCalls map[int32]string          // source position of an ARRAY-returning call, of the star of a dereferenced pointer-to-array expression, or of a value of a struct holding an array a literal binds for its order (bindLitValues) -> the temporary it was bound to, so one occurrence is evaluated once (see hoistArrayCallArg, arrayPtrExprDeref); the statement's
 	methodPtr         map[string]bool           // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
 	recvByRef         map[string]bool           // mangled method name -> a VALUE receiver of a struct holding an array, received by pointer and copied (see methodSignatureC)
 	globals           map[string]string         // package-level constant/variable name -> C type, for typing `x := g`
@@ -9783,6 +9783,22 @@ func (e *emitter) hasIfaceMethod(iface, method string) bool {
 // already of pointer type, or `&T{...}`. A value is refused -- the checker says so
 // first, in Go's words and with the fix; this is the backstop.
 func (e *emitter) ifaceOperand(rhs []int32) (concrete, data string, temp, ok bool) {
+	// A pointer a literal bound for its order (bindLitValues) is its temporary,
+	// read here: the interface was built from the operand again, which bound
+	// nothing and ran its calls a second time, and the binding unread refused the
+	// program, "internal error: a literal's value bound to keep evaluation order
+	// was not read through its temporary" -- `Outer{Pre: pre(), B: &T{x: f()},
+	// Post: pre()}` for an interface field B (dom112). The address of a literal
+	// is this frame's, as ifaceAddrLitOperand answers for one.
+	if len(rhs) != 0 {
+		if b, isBound := e.boundOperands[&rhs[0]]; isBound {
+			if ct, isPtr := e.inferCType(rhs); isPtr && e.isPointer(ct) {
+				b.used = true
+				_, _, isLit := e.addrOfCompositeLit(rhs)
+				return e.elemType(ct), b.name, isLit, true
+			}
+		}
+	}
 	// `&T{...}` is asked first: addrOfRoot takes the literal's TYPE name for the
 	// root of the address, there being an identifier in front of the brace, and
 	// would answer for a variable that does not exist.
@@ -26186,6 +26202,13 @@ func (e *emitter) litFixupCopies(dst string, fixups []litFixup) ([]string, bool)
 	for _, f := range fixups {
 		at := litPathC(dst, f.path)
 		if f.ctype != "" {
+			// Bound ahead of the statement for its place in the evaluation order
+			// (bindLitValues): the element is copied from the temporary.
+			if name, bound := e.hoistedArrayCalls[Node{sym: Expression, ast: f.src}.Pos()]; bound {
+				e.includes["string.h"] = true
+				out = append(out, "memcpy(&"+at+", &"+name+", "+e.cSizeof(f.ctype)+");")
+				continue
+			}
 			// A struct that holds an array takes the memcpy every copy of one takes.
 			stmt := strings.TrimSuffix(e.captureC(func() { e.emitStructCopy(at, f.ctype, f.src) }), "\n")
 			if stmt == "" {
@@ -26382,8 +26405,16 @@ func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 	// did not compile though Go accepts it. Not an ARRAY of interfaces, whose ctype
 	// is its element's: `multi{[2]error{&ge, nil}}` handed the array literal to
 	// ifaceBraceC as one interface and was refused.
+	//
+	// Rendered with no owner for the literal's deferred copies where the value is
+	// no literal of its own (notLitOwner): a literal inside it, `Resource{h,
+	// newBody(CNAME{mk()})}`, is a call's argument, and recorded at the outer's
+	// path its copy went through the interface, `memcpy(&r.Body.CNAME, ...)`,
+	// which neither compiler builds (dom112).
 	if e.isIfaceCType(expectType) && expect.dim.bound == "" {
-		text, ok := e.ifaceBraceC(expectType, v.ast)
+		var text string
+		var ok bool
+		e.notLitOwner(v, func() { text, ok = e.ifaceBraceC(expectType, v.ast) })
 		if !ok {
 			e.fail("cannot use this value as %s in a literal: an interface holds a pointer here, "+
 				"so write the address of a variable", e.goTypeName(expectType))
@@ -28575,6 +28606,13 @@ func (e *emitter) litValueOrder(lit Node, out []Node) []Node {
 	return out
 }
 
+// arrayCallValue reports whether v is a call returning an array, which
+// hoistArrayCallArg binds once however often it is asked.
+func (e *emitter) arrayCallValue(v Node) bool {
+	_, _, isCall := e.arrayResultCall(v.ast)
+	return isCall
+}
+
 // bindLitValues binds the values of a composite literal that do something when
 // evaluated to temporaries in the order written, when two or more do -- every one
 // but the last, as bindEffectOperands binds a level's operands -- and answers a
@@ -28589,8 +28627,10 @@ func (e *emitter) litValueOrder(lit Node, out []Node) []Node {
 // emitExpr, which answers a bound one with its temporary, where a level's comparison
 // renders the call for itself. A call returning an ARRAY is bound through
 // hoistArrayCallArg, whose temporary the copy that fills the element reads back
-// (litFixupCopies); a value of any other type -- an interface, a struct holding an
-// array -- is read by paths of its own, and a literal holding one binds nothing.
+// (litFixupCopies), and so is a value of a struct holding an array, which fills its
+// element after the literal as an array call's does (dom112); a value of any other
+// type -- an interface -- is read by paths of its own, and a literal holding one
+// binds nothing.
 func (e *emitter) bindLitValues(lit Node) (release func()) {
 	release = func() {}
 	if e.declInit || e.deferReplay >= 0 {
@@ -28606,16 +28646,31 @@ func (e *emitter) bindLitValues(lit Node) (release func()) {
 		if _, bound := e.boundOperands[&v.ast[0]]; bound {
 			continue
 		}
+		// A value an enclosing literal bound, a struct holding an array, is bound
+		// once: a literal nested in it asks for its values again (dom112).
+		if _, bound := e.hoistedArrayCalls[v.Pos()]; bound && !e.arrayCallValue(v) {
+			continue
+		}
 		cands, lastAt = append(cands, v), i
 	}
 	// A call returning an ARRAY fills its element after the literal is built (its
 	// fixup), so even as the last value that does something it runs after every
 	// value written after it: `R{mk(), g}` read g before mk changed it, where Go's
 	// compiler and every other position here read it after. Such a call is bound
-	// in its turn when a value after it reads anything.
+	// in its turn when a value after it reads anything. So is a value of a struct
+	// that holds an array, which fills its element after the literal too
+	// (recordStructLitFixup; dom112).
 	keepLast := false
 	if len(cands) > 0 {
-		if _, _, isCall := e.arrayResultCall(cands[len(cands)-1].ast); isCall {
+		last := cands[len(cands)-1]
+		_, _, filledAfter := e.arrayResultCall(last.ast)
+		if !filledAfter {
+			e.capturePrologue(func() {
+				ct, ok := e.inferNode(last)
+				filledAfter = ok && e.isStruct(ct) && e.hasArrayField(ct)
+			})
+		}
+		if filledAfter {
 			for _, v := range order[lastAt+1:] {
 				if _, isConst := e.foldConstVal(v.ast); len(v.ast) != 0 && !isConst {
 					keepLast = true
@@ -28632,6 +28687,7 @@ func (e *emitter) bindLitValues(lit Node) (release func()) {
 	}
 	cts := make([]string, len(cands))
 	arrayCall := make([]bool, len(cands))
+	holdsArr := make([]bool, len(cands))
 	bindable := true
 	e.capturePrologue(func() {
 		for i, v := range cands {
@@ -28640,7 +28696,11 @@ func (e *emitter) bindLitValues(lit Node) (release func()) {
 				continue
 			}
 			ct, ok := e.inferNode(v)
-			if !ok || !(e.bindableCType(ct) || e.isStruct(ct) && !e.hasArrayField(ct)) {
+			if ok && e.isStruct(ct) && e.hasArrayField(ct) {
+				cts[i], holdsArr[i] = ct, true
+				continue
+			}
+			if !ok || !(e.bindableCType(ct) || e.isStruct(ct)) {
 				bindable = false
 				return
 			}
@@ -28653,7 +28713,19 @@ func (e *emitter) bindLitValues(lit Node) (release func()) {
 	if e.boundOperands == nil {
 		e.boundOperands = map[*int32]*boundOperand{}
 	}
+	// The values are rendered here, ahead of the literal, and none of them is an
+	// element the literal fills: a literal INSIDE one is the argument of a call
+	// bound for its turn, and fills storage of its own, so they are rendered with
+	// no owner for a literal's deferred copies, as notLitOwner renders a call
+	// written as an element. With the literal's owner kept, `Outer{Pre: f(), Es:
+	// g(Elem{N: mk()})}` recorded Elem's copy of N at the path it has in Elem,
+	// which the outer's copies then wrote into Outer: its own field of that path
+	// took the value, and the element kept a zero one, silently where the outer
+	// has such a field and loudly where it has not (dom112).
+	savedFixable := e.litFixable
+	e.litFixable = false
 	var keys []*int32
+	var bound []Node
 	for i, v := range cands {
 		if arrayCall[i] {
 			if _, ok := e.hoistArrayCallArg(Node{sym: Expression, ast: v.ast}); !ok {
@@ -28661,16 +28733,39 @@ func (e *emitter) bindLitValues(lit Node) (release func()) {
 			}
 			continue
 		}
+		if holdsArr[i] {
+			// A value of a struct that holds an array fills its element after the
+			// literal is built, copied in (recordStructLitFixup): bound here in its
+			// turn, the copy reads the temporary back (litFixupCopies), as the copy
+			// of an array call's element does. A literal holding one bound nothing
+			// before, and the value, evaluated ahead of the statement for its copy,
+			// ran before every value written before it: `Outer{Pre: pre(), N:
+			// mk(), Post: pre()}` called mk first (dom112). A call's result is
+			// its own temporary already, and is not copied again.
+			text := e.captureC(func() { e.emitExprNode(v) })
+			name := text
+			if !strings.HasPrefix(text, "_ogo_t") || !isCIdent(text) {
+				name = e.newTmp()
+				e.prologue = append(e.prologue, e.bindC(cts[i], name, text)...)
+			}
+			if e.hoistedArrayCalls == nil {
+				e.hoistedArrayCalls = map[int32]string{}
+			}
+			e.hoistedArrayCalls[Node{sym: Expression, ast: v.ast}.Pos()] = name
+			continue
+		}
 		name := e.hoist(cts[i], func() { e.emitExprNode(v) })
-		keys = append(keys, &v.ast[0])
+		keys, bound = append(keys, &v.ast[0]), append(bound, v)
 		e.boundOperands[keys[len(keys)-1]] = &boundOperand{name: name}
 	}
+	e.litFixable = savedFixable
 	return func() {
-		for _, key := range keys {
+		for i, key := range keys {
 			b := e.boundOperands[key]
 			delete(e.boundOperands, key)
 			if !b.used {
-				e.fail("internal error: a literal's value bound to keep evaluation order was not read through its temporary")
+				e.fail("internal error: a literal's value bound to keep evaluation order was not read through its temporary: %s at %s",
+					e.f.exprSource(bound[i]), e.astPos(bound[i].ast))
 			}
 		}
 	}

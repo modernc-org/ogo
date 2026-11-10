@@ -32889,6 +32889,116 @@ func main() {
 		want: "1234 123 1234 123 123 123 1234 12 1234\n1 3 8 3 4 4 4\n9 3 3 9 3 4 3 3\n",
 	},
 	{
+		// A literal's values bound for their order (bindLitValues), dom112's.
+		// A value holding a literal of its own -- a call's argument -- was rendered
+		// with the outer literal still the owner of the copies C cannot put in an
+		// initializer, so the argument's element of a struct holding an array went
+		// into the outer at the path it has in the argument: o.Header.Name took
+		// "abc" and the element kept a zero Name. A value of a struct holding an
+		// array bound nothing, and ran ahead of the values written before it (each
+		// line's last number is the calls' order). A pointer bound for an
+		// interface field was not read through its temporary, an internal error;
+		// and a call standing as an interface field had its literal argument's
+		// copy written through the interface.
+		name: "a composite literal's values bound for their order, holding a literal of their own",
+		src: `type Name struct {
+	Data   [8]byte
+	Length uint8
+}
+
+var trace int
+
+func mk(s string) Name {
+	trace = trace*10 + len(s)
+	var n Name
+	copy(n.Data[:], s)
+	n.Length = uint8(len(s))
+	return n
+}
+
+func f(n int) int {
+	trace = trace*10 + n
+	return n
+}
+
+func show() int {
+	t := trace
+	trace = 0
+	return t
+}
+
+type Hdr struct {
+	Name Name
+	T    int
+}
+
+type Elem struct {
+	Header Hdr
+	X      int
+}
+
+type I interface{ M() int }
+
+func (e *Elem) M() int { return int(e.Header.Name.Length)*10 + e.X }
+
+type Outer struct {
+	Header Hdr
+	Pre    int
+	Es     []Elem
+	One    Elem
+	B      I
+	Post   int
+}
+
+var store [2]Elem
+
+func elemsOf(v ...Elem) []Elem {
+	trace = trace*10 + 9
+	copy(store[:], v)
+	return store[:len(v)]
+}
+
+func one(e Elem) Elem {
+	trace = trace*10 + 8
+	return e
+}
+
+var held Elem
+
+func keep(e Elem) *Elem {
+	trace = trace*10 + 7
+	held = e
+	return &held
+}
+
+var gate = 6
+
+func bump() Name {
+	gate++
+	return mk("bump")
+}
+
+type Two struct {
+	N Name
+	G int
+}
+
+func main() {
+	o := Outer{Pre: f(1), Es: elemsOf(Elem{Hdr{Name: mk("abc"), T: 5}, 2}), One: one(Elem{Hdr{Name: mk("de"), T: 6}, 3}), Post: f(4)}
+	println(o.Header.Name.Length, o.Es[0].Header.Name.Length, o.Es[0].Header.Name.Data[0], o.One.Header.Name.Length, o.One.X, show())
+	p := Outer{Pre: f(1), One: Elem{Hdr{Name: mk("abc"), T: f(2)}, 3}, Post: f(4)}
+	println(p.One.Header.Name.Length, p.One.Header.T, show())
+	q := Outer{Pre: f(1), B: &Elem{Hdr{T: f(2)}, 3}, Post: f(4)}
+	println(q.B.M(), show())
+	r := Outer{Pre: f(1), B: keep(Elem{Hdr{Name: mk("abc")}, 3}), Post: f(4)}
+	println(r.Header.Name.Length, r.B.M(), show())
+	t := Two{N: bump(), G: gate}
+	println(t.N.Length, t.G, show())
+}
+`,
+		want: "0 3 97 2 3 139284\n3 2 1324\n3 124\n0 33 1374\n4 7 4\n",
+	},
+	{
 		// A value list binds each value to a temporary in order, as statements, but a
 		// value needing a statement ahead of the whole statement -- an array a call
 		// returns -- had it placed before every value before it: `a, b := f(1),

@@ -60,6 +60,26 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A wrong answer, silent: a composite literal's value was put where it does
+  not belong, or run out of Go's order**: a literal binds its values that do
+  something to temporaries in the order written, and a value bound so -- a call,
+  its argument a literal -- was rendered with the literal around it still taking
+  the copies C cannot put in an initializer. So the argument's field of a struct
+  holding an array, `Outer{Pre: f(), Es: elemsOf(Elem{Hdr{Name: mk("abc")}, 1}),
+  Post: f()}`, was copied into the outer literal at the path it has in the
+  argument: the outer's own field of that path took the value where it has one,
+  and the element kept a zero one; where it has none, neither compiler built
+  it. And a value of a struct holding an array bound nothing, so it ran before
+  the values written before it: `Outer{Pre: pre(), N: mk("x"), Post: pre()}`
+  called mk first. x/net's dnsmessage tests met both, their messages' resources
+  being literals of Names a call makes. Each value fills its own storage now,
+  bound in its turn. In every release checked.
+- **A literal's pointer bound for its order builds in an interface field**:
+  `Outer{Pre: f(), B: &T{x: f()}, Post: f()}` for an interface field B was
+  refused, "internal error: a literal's value bound to keep evaluation order was
+  not read through its temporary", and a call standing as an interface field, its
+  argument a literal holding an array, had the argument's copy written through
+  the interface, which neither compiler built.
 - **A wrong answer, silent: an array of bools handed back overran the caller's
   frame on the board**: the target's C compiler answers 4 for `sizeof(_Bool)`,
   where a bool takes one byte in an array, a struct and a variable, and the
