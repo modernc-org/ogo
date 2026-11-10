@@ -389,6 +389,12 @@ silent fault puts the count back to 0. Each round's account is in
   named result beside a function literal's own; a trigraph in a string), two
   listed (a method of several results on a parenthesised literal's address; a
   value read out of a local table taken to hold the frame) -- 0
+- dom111 (2026-11-10), a solar inverter's web API and its cloud uplink (Go 1.27's
+  net/url ported with its tests and examples, the inverter's HTTP API on a cog
+  parsing request targets, queries and forms, the uplink's batches redirected
+  through ResolveReference by a cloud on another), the first round against master
+  on dom110's fix: silent (a program gc refuses for a //go: directive built, only
+  //go:noescape asked where it stands; d7ba3b0) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1272,7 +1278,11 @@ section. A new finding goes there; the rule it leaves goes here too.
   rounds of October, and no page said so.** (dom110).
 - **A PROGRAM GO REJECTS IS A ROW** (`scripts/rejects.sh`): **What `ogo build` does
   with such a program is the measure** -- **And measure with a struct of MORE THAN
-  ONE WORD, and RUN the binary**.
+  ONE WORD, and RUN the binary**. **A check written for one of gc's directives
+  asks what gc asks of all of them: //go:noescape's place was refused in gc's
+  words, and a stray //go:linkname built.** **A sweep of programs Go refuses keeps
+  its rows under testdata: go test ./... builds every package the module's tree
+  holds.** (dom111, sweeps/directives).
 - **A PROGRAM OF SIZE ASKS WHAT NO SWEEP ASKS**: **a build's TIME is a verdict**;
   **a line's length is a limit of the backend**.
 - **A refusal for what a construct costs asks what Go's compiler pays for it where
