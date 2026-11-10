@@ -56578,6 +56578,68 @@ func main() {
 		want: "2 m true 1\n3 m true 1\n3 false\n5 m 1\n16 m 11\n102 m true 2\n",
 	},
 	{
+		// What a function literal in the body says of a named result is the literal's:
+		// it captures nothing. Counted, a literal's own result list and its naked
+		// return declared the enclosing function's unused named results, which the
+		// host's compiler refuses. Go's net.SplitHostPort binds such a literal;
+		// dom110's port found it.
+		name: "a named result beside a literal's own",
+		src: `import "errors"
+
+var errBad = errors.New("bad")
+
+// A named result beside a function literal's own of the same name, and a
+// literal's naked return: Go's net.SplitHostPort binds such a literal.
+func split(s string) (host, port string, err error) {
+	bad := func(why string) (host, port string, err error) {
+		return "", "", errBad
+	}
+	if len(s) == 0 {
+		return bad("empty")
+	}
+	host = s[:1]
+	port = s[1:]
+	return host, port, nil
+}
+
+func twice(x int) (n int) {
+	g := func(y int) (m int) {
+		m = y * 2
+		return
+	}
+	return g(x) + 1
+}
+
+func main() {
+	h, p, err := split("ab")
+	println(h, p, err == nil)
+	_, _, err = split("")
+	println(err.Error())
+	println(twice(20))
+}
+`,
+		want: "a b true\nbad\n41\n",
+	},
+	{
+		// A string holding a trigraph, "??=": C replaces it by '#' and the host's
+		// compiler, told it is GNU C, leaves it and warns, no build under -Werror; the
+		// second question mark is written `\\?`. Go 1.27's mime tests' "=?UTF-8?Q??=";
+		// dom110's port found it.
+		name: "a string holding a trigraph",
+		src: `// Strings holding what C reads as trigraphs, "??=" among them, Go 1.27's mime
+// tests' "=?UTF-8?Q??=".
+func main() {
+	s := "=?UTF-8?Q??="
+	println(s, len(s))
+	println("a??(b??)c??<d??>e??/f??'g??!h??-i")
+	const k = "x??=y"
+	println(k, len(k))
+	printf("%s %d %s\n", "??=", len("???="), "???")
+}
+`,
+		want: "=?UTF-8?Q??= 12\na??(b??)c??<d??>e??/f??'g??!h??-i\nx??=y 5\n??= 4 ???\n",
+	},
+	{
 		// The way a Go program reads into a buffer of its own and passes on what
 		// went wrong: `if err := fill(buf[:]); err != nil { return 0, err }`. The
 		// error is the address of a package variable or nil, and nothing of the

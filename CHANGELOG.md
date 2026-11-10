@@ -38,6 +38,22 @@ shipped section tells a reader on that version that they have behaviour they do 
   was "multiple-assignment target/result count mismatch", and a return
   forwarding its results was refused too.
 
+### Fixed
+
+- **A named result beside a function literal's own builds on the host**: a
+  literal's result list and its naked return, `addrErr := func(addr, why
+  string) (host, port string, err error)` of Go's net.SplitHostPort, were taken
+  for mentions of the enclosing function's named results, which were declared
+  and, unused, refused by -Werror on the host; the target's builds were not
+  affected. What a literal says is its own, since it captures nothing. In every
+  release checked.
+- **A string holding a trigraph builds on the host**: `"=?UTF-8?Q??="`, a test
+  of Go's mime, was written as a C literal holding `??=`, which C reads as `#`
+  and the host's compiler, told it is GNU C, leaves and warns of, so -Werror
+  refused the build; the target's compiler reads no trigraph and printed Go's
+  text. The second question mark is written `\?` now. In every release
+  checked.
+
 ## v1.0.0-rc.4
 
 The fourth release candidate for v1.0. Of the rounds run since rc.3, twelve found

@@ -868,6 +868,14 @@ func cQuote(s string) string {
 		case c == '"' || c == '\\':
 			b.WriteByte('\\')
 			b.WriteByte(c)
+		case c == '?' && i > 0 && s[i-1] == '?':
+			// A question mark after one is escaped, `\?`, which both languages'
+			// strings read as itself: "??=" written as it stands is a trigraph,
+			// which C replaces by '#' and the host's compiler, told it is GNU C,
+			// leaves and warns of, a -Werror build no build. The target's
+			// compiler reads neither trigraphs nor anything but '?' in `\?`,
+			// measured on a P2-EDGE. Go 1.27's mime tests, "=?UTF-8?Q??=" (dom110).
+			b.WriteString("\\?")
 		case c >= 0x20 && c < 0x7f:
 			b.WriteByte(c)
 		default:
@@ -22461,7 +22469,7 @@ func (e *emitter) declareNamedResults(sig, body []int32) (declared map[string]bo
 			return nil
 		}
 		e.arrays[nm] = a
-		if !e.bodyHasNakedReturn(body) && !e.bodyMentions(body, nm) {
+		if !e.bodyHasNakedReturn(body) && !e.resultMentioned(body, nm) {
 			return nil
 		}
 		// Recorded only where it is declared: a return holds its value in it ahead
@@ -22482,7 +22490,7 @@ func (e *emitter) declareNamedResults(sig, body []int32) (declared map[string]bo
 		// as a lone one is, declared as the array.
 		if a, isArr := e.isArrayResult(types[i]); isArr {
 			e.arrays[nm] = a
-			if !naked && !e.bodyMentions(body, nm) {
+			if !naked && !e.resultMentioned(body, nm) {
 				continue
 			}
 			e.ind()
@@ -22491,7 +22499,7 @@ func (e *emitter) declareNamedResults(sig, body []int32) (declared map[string]bo
 			continue
 		}
 		e.locals[nm] = types[i]
-		if !naked && !e.bodyMentions(body, nm) {
+		if !naked && !e.resultMentioned(body, nm) {
 			continue
 		}
 		e.ind()
@@ -22552,7 +22560,10 @@ func (e *emitter) bodyDefers(ast []int32) bool {
 // elided when one is present.
 func (e *emitter) bodyHasNakedReturn(ast []int32) bool {
 	for n := range it(ast) {
-		if n.sym == 0 {
+		// A function literal's returns are its own (dom110, resultMentioned):
+		// counted, a literal's naked return declared the enclosing function's
+		// named results, unused where every return of its own lists its values.
+		if n.sym == 0 || n.sym == FuncLiteral {
 			continue
 		}
 		hasRet, hasExpr := false, false
@@ -22568,6 +22579,29 @@ func (e *emitter) bodyHasNakedReturn(ast []int32) bool {
 			return true
 		}
 		if e.bodyHasNakedReturn(n.ast) {
+			return true
+		}
+	}
+	return false
+}
+
+// resultMentioned is bodyMentions of a named result: what a function literal
+// in the body says is the literal's own, its signature and its body, since a
+// literal captures nothing here. Counted, the `err` of the result list of a
+// literal net.SplitHostPort binds to addrErr declared SplitHostPort's own
+// unused `err`, which the host's compiler refuses (dom110).
+func (e *emitter) resultMentioned(ast []int32, name string) bool {
+	for n := range it(ast) {
+		if n.sym == 0 {
+			if e.f.ch(n.tok) == IDENT && e.src(n.tok) == name {
+				return true
+			}
+			continue
+		}
+		if n.sym == Selector || n.sym == FuncLiteral {
+			continue
+		}
+		if e.resultMentioned(n.ast, name) {
 			return true
 		}
 	}
