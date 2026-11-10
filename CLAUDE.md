@@ -395,6 +395,18 @@ silent fault puts the count back to 0. Each round's account is in
   through ResolveReference by a cloud on another), the first round against master
   on dom110's fix: silent (a program gc refuses for a //go: directive built, only
   //go:noescape asked where it stands; d7ba3b0) -- 0
+- dom112 (2026-11-10), a laboratory's instruments found on its network by
+  multicast DNS (x/net's dns/dnsmessage ported with its tests, three instruments
+  answering mDNS and DNS-SD on cogs, two of them probing for one name, a browser
+  caching what they say, a resolver for the vendor's cloud on a fourth), the first
+  round against master on dom111's fix: silent (a composite literal's values bound
+  for their order rendered with the literal still the owner of their copies, so
+  an element's struct holding an array went into the outer literal; a value of
+  such a struct left unbound, run before the values written before it; 0a4e7ee;
+  a target through a star of a call's several results asked neither its name nor
+  its pointer, so Go's rejects of it built; 9c8b533), two loud faults fixed (a
+  pointer bound for an interface field, an internal error; a call standing as an
+  interface field, its argument's copy written through the interface) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1364,7 +1376,9 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **A CASE WAS A POSITION NOTHING WALKED**: **when a rule is written, ask which
   positions its walk never reaches**. **A TARGET IS A POSITION**: **a new store rule
   is asked at every site its siblings are**; **A rule asked at some store sites is a
-  row of the others**.
+  row of the others**. **A question asked of a target in one form of assignment is
+  asked in every form: a star's name was asked of one value and of a list of them,
+  and of a call's several results by nothing.** (dom112, checkResultTargetBase).
 - **A RECEIVE HAD NO TYPE**: **A value with no type is a row across the targets**.
   **A value of no name is asked what it is in every shape it comes in -- a receive
   is one of them**. **A variable is a row of every declaration form**. **A value
@@ -1587,7 +1601,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   clause is written: rendered, a range's key was a constant's value** (dom101).
   **A block Go nests that the C folds into another is asked what both declare: a
   range clause's variables and its body's were one C block, and `v := v` declared
-  v twice** (dom104).
+  v twice** (dom104). **A value bound ahead of a statement for its order is
+  rendered as what it is there, the argument of nothing around it: an owner a walk
+  keeps for the literal it stands in is the literal's, not the value's.** (dom112,
+  bindLitValues).
 - **Where a statement renders a part of itself that Go evaluates conditionally,
   later, or repeatedly, that part is rendered inside emitOwnPrologue**; **a
   statement that renders parts of itself asks where each part's hoisted statements
@@ -1627,6 +1644,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   print calls on the board, and a fold into one call is no order there** (dom98).
   **a refactor that reorders two calls that each bind what they read reorders the
   statement's prologue, and the corpus dump is what shows it.** (dom102, castC).
+  **A value a binding leaves unbound still runs, and is asked where: a struct
+  holding an array was bound nowhere and ran ahead of the statement, before what
+  Go runs first.** (dom112, sweeps/litorder).
 - **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED**: **A check asked of a
   position's C type asks first whether the position is an array: an array's ctype
   is its element's** (dom70). **A STRUCT OF MORE THAN
