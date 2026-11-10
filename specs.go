@@ -2425,6 +2425,11 @@
 // — is refused, as Go refuses it; a pointer, a func value and an interface print
 // as an address, the interface as its two words, as in Go.
 //
+// A print writes its output as it goes, a piece at a time, and another cog's
+// output may land between any two of its characters: two cogs printing at once
+// mix their lines, where Go keeps each print's output together. A program whose
+// cogs print does it from one cog, or orders the prints by a channel or a lock.
+//
 // printf writes its arguments under the control of a format, which must be a
 // CONSTANT string: there is no heap to build one in, and a format known here is
 // what lets every verb be checked against its argument at compile time rather than

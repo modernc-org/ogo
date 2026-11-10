@@ -306,6 +306,59 @@ in String
 x=t
 ```
 
+### Two cogs printing at once mix their output
+
+A print writes its output as it goes, a piece at a time, and another cog's output
+may land between any two of its characters, so two cogs printing at once mix their
+lines. Go keeps each print's output together: `println` holds the runtime's print
+lock, and `fmt.Printf` formats the line before it writes it in one call. A program
+whose cogs print does it from one cog, or orders the prints by a channel or a lock.
+Below, the worker's `Error` method waits while main prints, which makes the mixing
+certain; where two cogs' characters meet without it varies from run to run.
+
+```go
+type slow struct{ s string }
+
+var asked = make(chan bool)
+var printed = make(chan bool)
+var done = make(chan bool)
+
+func (e *slow) Error() string {
+	asked <- true
+	<-printed
+	return e.s
+}
+
+var eof = slow{"EOF"}
+
+func worker() {
+	printf("worker: %v\n", &eof)
+	done <- true
+}
+
+func main() {
+	go worker()
+	<-asked
+	println("main")
+	printed <- true
+	<-done
+}
+```
+
+OctoGo prints:
+
+```
+worker: main
+EOF
+```
+
+Go prints:
+
+```
+main
+worker: EOF
+```
+
 ### A panic in a method `printf` calls ends the program
 
 Go's `fmt` recovers a panic in the `String` or `Error` method it calls, writes

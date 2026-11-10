@@ -27,6 +27,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   bits, a NaN 0; a `float32` out of range converts as the C compiler does, on the
   host and the board differently. Its example is a test, run on the host and on
   the board.
+- **[DIFFERENCES.md](DIFFERENCES.md) says that two cogs printing at once mix
+  their output**: a print writes as it goes, and on the board another cog's
+  characters may land between any two of its own, where Go keeps each print's
+  output together. A program whose cogs print does it from one cog or orders
+  the prints. Its example, a cog's line landing in the middle of another's, is
+  a test, run on the host and on the board.
 - **An AND NOT of a constant past 64 bits on the way builds**: `x &^
   (mask&(1<<64-1))` of a 128-bit mask, Go 1.27's net/textproto's header bytes,
   and `x &^= C` alike, were refused, "constant mask overflows every integer
