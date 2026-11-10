@@ -371,6 +371,13 @@ silent fault puts the count back to 0. Each round's account is in
 - **v1.0.0-rc.4** (2026-11-09), tagged after dom108, the third clean round in a
   row, on master as dom105's, dom106's and dom108's fixes left it: rounds against
   it count from 0 of 3, and its two weeks in public from its release
+- dom109 (2026-11-09/10), a pick-and-place arm's controller (gonum's num/quat,
+  num/dual, num/hyperdual, num/dualquat, spatial/r3 and floats/scalar ported with
+  their tests, the kinematics in dual quaternions, the Jacobians in dual numbers,
+  the trajectories in hyperdual ones, the drives, the IMU and a camera on cogs),
+  the first round against rc.4: clean, two listed (printf's explicit argument
+  index; a package's tables of calls outgrowing a cog in its initialization, the
+  advice naming main) -- 1
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1243,6 +1250,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   before it is in any output** (dom101, mutate/prebuild.sh). **A crash a mutant
   finds is asked for the program a user writes that reaches it: a loop that never
   runs is a switch that is off.** (dom102, doc/dead-block-store-crash.c).
+  **A value Go leaves to the implementation is asked of gc's other ports before
+  its DIFF is called a fault: an int of a NaN is -2147483648 on 386 and 0 on
+  arm64.** (dom109).
 - **A PROGRAM GO REJECTS IS A ROW** (`scripts/rejects.sh`): **What `ogo build` does
   with such a program is the measure** -- **And measure with a struct of MORE THAN
   ONE WORD, and RUN the binary**.
