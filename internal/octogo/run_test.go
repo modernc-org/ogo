@@ -17609,6 +17609,119 @@ func main() {
 		want: "10 100\n11 101\n12 102\n1 2 3\n5 6 7 8\n",
 	},
 	{
+		name: "a bare return of results it has no variable for",
+		src: `// A bare return hands back the zero of a result with no variable of its own --
+// a blank one, _ T, or one the body never names -- of every type: an interface,
+// a struct, a string, a float64, a struct holding an array and an array, beside
+// an error and alone, with a defer and without. It wrote 0, which neither C
+// compiler takes for an aggregate; for an array it copied from address 0, and
+// on the board the caller got the Hub RAM's first bytes; and a blank array
+// alone was refused (dom113, sweeps/blankret).
+import "errors"
+
+type I interface{ M() int }
+
+type T struct{ v int }
+
+func (t *T) M() int { return t.v }
+
+type S struct{ a, b int }
+
+type SA struct {
+	a [4]int
+	n int
+}
+
+var gt = T{7}
+
+var errX = errors.New("x")
+
+var defers int
+
+func note() { defers++ }
+
+func fi(fail bool) (_ I, err error) {
+	if fail {
+		err = errX
+		return
+	}
+	return &gt, nil
+}
+
+func fs(fail bool) (_ S, err error) {
+	defer note()
+	if fail {
+		err = errX
+		return
+	}
+	return S{1, 2}, nil
+}
+
+func fstr(fail bool) (r string, err error) {
+	if fail {
+		err = errX
+		return
+	}
+	return "s", nil
+}
+
+func ff(fail bool) (_ float64, err error) {
+	if fail {
+		err = errX
+		return
+	}
+	return 1.5, nil
+}
+
+func fa(fail bool) (_ [4]int, err error) {
+	if fail {
+		err = errX
+		return
+	}
+	return [4]int{1, 2, 3, 4}, nil
+}
+
+func fsa(fail bool) (_ SA) {
+	if fail {
+		return
+	}
+	return SA{[4]int{1, 2, 3, 4}, 5}
+}
+
+func farr(fail bool) (_ [4]int) {
+	defer note()
+	if fail {
+		return
+	}
+	return [4]int{5, 6, 7, 8}
+}
+
+func main() {
+	i, err := fi(true)
+	println(i == nil, err != nil)
+	s, err := fs(true)
+	println(s.a, s.b, err != nil, defers)
+	str, err := fstr(true)
+	println(len(str), err != nil)
+	f, err := ff(true)
+	println(f == 0, err != nil)
+	a, err := fa(true)
+	println(a[0], a[3], err != nil)
+	sa := fsa(true)
+	println(sa.a[0], sa.a[3], sa.n)
+	b := farr(true)
+	println(b[0], b[3], defers)
+	a, err = fa(false)
+	println(a[0], a[3], err == nil)
+	b = farr(false)
+	println(b[0], b[3], defers)
+	i, err = fi(false)
+	println(i.M(), err == nil)
+}
+`,
+		want: "true true\n0 0 true 1\n0 true\ntrue true\n0 0 true\n0 0 0\n0 0 2\n1 4 true\n5 8 3\n7 true\n",
+	},
+	{
 		name: "unsafe.Add and unsafe.Slice",
 		src: `// Go 1.17's unsafe.Add, a pointer moved on by bytes, and unsafe.Slice, a slice over
 // the storage a pointer points at: read and written through, resliced, ranged over,

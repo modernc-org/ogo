@@ -40910,6 +40910,19 @@ func (e *emitter) emitReturn(nodes []Node) {
 			e.emit("return;\n")
 			return
 		}
+		if len(exprs) == 0 {
+			// A bare `return` of a BLANK array result, `(_ [4]int)`: it has no
+			// variable, and what the caller gets is its zero (dom113).
+			e.includes["string.h"] = true
+			if len(e.defers) != 0 {
+				e.emitDeferred()
+			}
+			e.ind()
+			e.emit("memset(" + arrayResultParam + ", 0, " + size + ");\n")
+			e.ind()
+			e.emit("return;\n")
+			return
+		}
 		if len(exprs) != 1 {
 			e.fail("a function with an array result returns exactly one value")
 			return
@@ -41131,14 +41144,14 @@ func (e *emitter) emitReturn(nodes []Node) {
 		case len(e.curResultNames) == 0:
 			e.emit("return;\n")
 		case len(e.curResultNames) == 1:
-			e.emit("return " + e.resultC(e.curResultNames[0]) + ";\n")
+			e.emit("return " + e.bareResultC(0) + ";\n")
 		default:
 			e.emit("return (" + e.retStructName(e.curFunc) + "){")
-			for i, nm := range e.curResultNames {
+			for i := range e.curResultNames {
 				if i != 0 {
 					e.emit(", ")
 				}
-				e.emit(e.resultC(nm))
+				e.emit(e.bareResultC(i))
 			}
 			e.emit("};\n")
 		}
@@ -41217,6 +41230,25 @@ func (e *emitter) returnValueStands(ast []int32, stored []string) bool {
 // or a macro (localIdent), and "0", the zero standing in for a result with no
 // variable, as it is. curResultNames holds the names as written, which is what a
 // question about the source -- returnValueStands -- compares with.
+// bareResultC is what a bare return returns as result i: its variable, or the
+// zero of its type where it has none -- a blank result, or one the body never
+// names. 0 is no zero of an aggregate: `return` in a `(_ Frame, err error)`
+// assigned 0 to an interface, which neither C compiler takes (dom113, the
+// framer's parsers).
+func (e *emitter) bareResultC(i int) string {
+	if nm := e.curResultNames[i]; nm != "0" || i >= len(e.curResultTypes) {
+		return e.resultC(nm)
+	}
+	ct := e.curResultTypes[i]
+	if e.isIfaceCType(e.underlyingCType(ct)) {
+		return "(" + ct + "){0}"
+	}
+	if z := e.zeroInitC(ct); z != "0" {
+		return "(" + ct + ")" + z
+	}
+	return "0"
+}
+
 func (e *emitter) resultC(name string) string {
 	if name == "0" {
 		return name
@@ -41240,12 +41272,17 @@ func (e *emitter) emitStructOutReturn(rt string, exprs []Node) {
 		named = e.resultC(e.curResultNames[0])
 	}
 	if len(exprs) == 0 {
-		// A bare return, which only a named result has.
+		// A bare return, which only a named result has -- a BLANK one, `(_ T)`, has
+		// no variable, and what the caller gets is its zero (dom113).
 		if len(e.defers) != 0 {
 			e.emitDeferred()
 		}
 		e.ind()
-		e.emit("memcpy(" + arrayResultParam + ", &" + named + ", " + size + ");\n")
+		if named == "" {
+			e.emit("memset(" + arrayResultParam + ", 0, " + size + ");\n")
+		} else {
+			e.emit("memcpy(" + arrayResultParam + ", &" + named + ", " + size + ");\n")
+		}
 		e.ind()
 		e.emit("return;\n")
 		return
@@ -41392,9 +41429,16 @@ func (e *emitter) emitTupleOutReturn(rt string, exprs []Node) {
 	field := func(i int) string { return fmt.Sprintf("%s->_%d", arrayResultParam, i) }
 	store := func(ct, dst, text string) {
 		if a, isArr := e.isArrayResult(ct); isArr {
-			// An array, held by a variable or a temporary: copied by its size.
+			// An array, held by a variable or a temporary: copied by its size. A
+			// blank one a bare return returns has none, and is zeroed: copied from
+			// "0", the caller got the bytes at address 0, the Hub RAM's first, on
+			// the board (dom113).
 			e.includes["string.h"] = true
 			e.ind()
+			if text == "0" {
+				e.emit("memset(" + dst + ", 0, " + e.cSizeof(a.elem) + arrayCountC(a) + ");\n")
+				return
+			}
 			e.emit("memcpy(" + dst + ", " + text + ", " + e.cSizeof(a.elem) + arrayCountC(a) + ");\n")
 			return
 		}
@@ -41420,7 +41464,7 @@ func (e *emitter) emitTupleOutReturn(rt string, exprs []Node) {
 			e.emitDeferred()
 		}
 		for i, ct := range types {
-			store(ct, field(i), e.resultC(names[i]))
+			store(ct, field(i), e.bareResultC(i))
 		}
 	case len(exprs) == 1:
 		// `return f()`: one call supplying every result, written where they are held
