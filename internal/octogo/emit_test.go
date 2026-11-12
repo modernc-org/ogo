@@ -6158,6 +6158,31 @@ func main() {
 			want: "printf: %v of *int is not supported yet; %T prints its type",
 		},
 		{
+			// A pointer to a pointer has no methods -- Go gives a **T none -- so
+			// fmt prints it as a pointer, which printf does not yet. String was
+			// called through both, which neither C compiler took (dom113, a test
+			// printing &df of a df *DataFrame).
+			name: "%v of a pointer to a pointer to a Stringer",
+			src: `type H struct{ n int }
+
+func (h H) String() string { return "H" }
+
+type D struct {
+	H
+	x int
+}
+
+var gd = D{H{1}, 2}
+
+func main() {
+	d := &gd
+	pp := &d
+	printf("%v\n", pp)
+}
+`,
+			want: "printf: %v of **D is not supported yet; %T prints its type",
+		},
+		{
 			// %v of an interface prints what it holds since 2026-09-20, by a chain
 			// over the tables the program makes for it -- but a width it cannot pad,
 			// the text being written by that chain rather than by one printf.

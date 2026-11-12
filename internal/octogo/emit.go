@@ -46426,6 +46426,12 @@ func (e *emitter) stringerMethodC(ct, tmp string) (text string, isIface, ptrRecv
 	base := ct
 	if isPtr {
 		base = strings.TrimSuffix(ct, "*")
+		// A pointer to a pointer has no methods -- Go gives a **T none -- and fmt
+		// prints it as the pointer it is: `printf("%v", &df)` of a `df *DataFrame`
+		// called String through both, which neither C compiler takes (dom113).
+		if e.isPointer(base) {
+			return "", false, false, false
+		}
 	}
 	if !e.isMethodBase(methodBaseType(base)) {
 		return "", false, false, false
