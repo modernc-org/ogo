@@ -407,6 +407,20 @@ silent fault puts the count back to 0. Each round's account is in
   its pointer, so Go's rejects of it built; 9c8b533), two loud faults fixed (a
   pointer bound for an interface field, an internal error; a call standing as an
   interface field, its argument's copy written through the interface) -- 0
+- dom113 (2026-11-11/12), a wind turbine's condition monitor reporting to its
+  operator's server over HTTP/2 (x/net's http2 framer and http2/hpack ported
+  with their tests, httpguts and httpsfv's parsers, the monitor on a cog and the
+  server on main's: windows, settings, trailers, priorities, CONTINUATION, a
+  reset, a 431 and a GOAWAY), the first round against master on dom112's
+  fixes: silent (a bare return's blank array result copied from address 0, the
+  Hub RAM's first bytes on the board; aa20908), one false refusal fixed (a value
+  copied out of a struct parameter's slice of bytes taken to keep its contents,
+  the framer's WriteHeaders; 0dce82c), two loud faults fixed (a bare return's
+  aggregate result with no variable written 0; printf's %v of a pointer to a
+  pointer; 1ad002e), two listed (a struct holding a field of no bytes
+  initialized for the target; a call through a function value the backend drops
+  as dead charging its function every taken function's stack, a false stack
+  overflow on the board) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1262,7 +1276,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   run as run.py runs it, at GOMAXPROCS=1, before the mutants are drawn: a race
   of the program's own shows there first** (dom107). **A domain program's twin
   is run under Go's race detector before the mutants are drawn: a race no
-  output shows is the first question a mutant's DIFF asks** (dom108). A sweep's
+  output shows is the first question a mutant's DIFF asks** (dom108). **An arena
+  two cogs allocate from grows a slice in place by how their allocations
+  interleave: its peak is the scheduler's, and no output.** (dom113). A sweep's
   accessors record ORDER, `calls = calls*10 + k`, not a count ("Process rules
   learned the hard way").
 - **A MUTATED PROGRAM IS A PROBE OF THE FRONT END**; **A MUTATION WITH GO AS THE
@@ -1362,7 +1378,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   and nil is** (dom91). **A VARIADIC CALL IS A ROW**: **A variadic call is a
   call: its fixed arguments are asked every question a call's are, and evaluated
   before what it packs** (dom88). **A FUNCTION VALUE'S CALL IS A ROW**. **AN ARRAY
-  RESULT IS A ROW**. **PRINTING A VALUE IS A ROW**: **A value no walk types is
+  RESULT IS A ROW**: **A result with no variable is the zero of its type where a
+  return hands it back: 0 is a scalar's zero, and an array copied from it read
+  the Hub RAM's first bytes.** (dom113, sweeps/blankret). **PRINTING A VALUE IS
+  A ROW**: **A value no walk types is
   printed as an int: println's default is the silent side of what printf
   refuses** (dom98). **A CALL'S RESULTS FORWARDED
   WHOLE ARE A ROW**. **A DEFERRED OR STARTED CALL IS A ROW**: **a new callee shape
@@ -1553,7 +1572,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   receiver holds was followed where a statement read it and nowhere a summary did.**
   **A summary kept one level deep is asked what the level holds: the contents of a
   []byte are bytes, and a callee keeping them keeps nothing of the struct they were
-  copied from** (dom78, sweeps/callee-recv-contents).
+  copied from** (dom78, sweeps/callee-recv-contents). **A struct's contents are a
+  level above a slice's: a value copied out of a struct's slice holds what the
+  slice's elements reach, and where they are bytes, nothing.** (dom113,
+  sweeps/reffree).
 - **A PARENTHESISED HEAD IS A ROW OF EVERY SCAN**: **A new scan reads heads through
   them, and a new shape the emitter reads through parentheses is a row in each
   scan.**
@@ -1734,7 +1756,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   type: a pointer converted, through unsafe.Pointer or not, makes a value of one
   type a value of another** (A VALUE'S TYPE IS A STACK'S SIZE); **A call through an
   interface no type implements reaches nothing: one taken to reach every taken
-  function closes cycles no run makes** (dom89, listed).
+  function closes cycles no run makes** (dom89, listed). **A bound read off the
+  listing against the C asks what the backend dropped: a call in a dead branch is
+  in the C and not in the listing, and an exact count of the two takes the
+  function for one calling everything.** (dom113, listed).
 - **Two programs that should cost the same are compared by their BINARIES**.
 - **What the backend makes of a library call is read in the listing for what it
   holds while the arguments run**; **A goroutine's output is asked with main
@@ -1746,7 +1771,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   WORDS IS A ROW OF EVERY POSITION, ON THE BOARD).
 - **A STATIC INITIALIZER IS LAID OUT BY ANOTHER RULE THAN ITS TYPE**: **A rule about
   the target's layout is measured on the board in C first**; **The host's compiler
-  is no witness for an initializer's layout**. **A ROW OF 64-BIT ELEMENTS INDEXED BY
+  is no witness for an initializer's layout**. **A field of no bytes is asked of
+  every initializer the target's compiler reads: it counts the field in a
+  local's and not in a static's.** (dom113, listed). **A ROW OF 64-BIT ELEMENTS
+  INDEXED BY
   A CALL IS LOST ON THE TARGET**. **A float literal the emitter writes is one the
   target reads exactly**. **A size the emitter asks of the target's compiler by a
   type's name is asked against the type's stride: sizeof(_Bool) is 4 on the board,

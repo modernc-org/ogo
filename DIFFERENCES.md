@@ -313,6 +313,10 @@ may land between any two of its characters, so two cogs printing at once mix the
 lines. Go keeps each print's output together: `println` holds the runtime's print
 lock, and `fmt.Printf` formats the line before it writes it in one call. A program
 whose cogs print does it from one cog, or orders the prints by a channel or a lock.
+A panic's message is such a print: the other cogs run on while it is written and
+stop after it, so another cog may print into it, or panic as well and mix its own
+message in, where Go ends the program at the first panic and writes its message
+alone.
 Below, the worker's `Error` method waits while main prints, which makes the mixing
 certain; where two cogs' characters meet without it varies from run to run.
 
