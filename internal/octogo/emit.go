@@ -8285,6 +8285,7 @@ type emitter struct {
 	tmpShown            map[string]string            // a temporary -> what it binds as the program wrote it, `*hh`, for a diagnostic (displayName)
 	arrayView           viewFunc                     // while the summaries are collected: where an array a chain reaches is (summaryReach)
 	builderOf           builderFunc                  // while the summaries are collected: whether a chain is a Builder, or a pointer to one (summaryReach)
+	summaryCur          curFunc                      // while the summaries are collected: the pass's typing of an expression (summaryElemsRefFree)
 	summaryRecv         string                       // while the summaries are collected: the method's receiver, whose handing back is a value and a depth (deepRecvReturn)
 	loopSeedsIn         loopSeeds                    // the marks the pass before found each loop's body to make, given at its head (applyLoopSeeds)
 	loopSeedsOut        loopSeeds                    // the marks this pass found a loop's body to make that its head did not have (noteLoopSeeds)
@@ -13693,15 +13694,19 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	//
 	// Collected for the whole body rather than per clause: the name is scoped to
 	// its switch anyway, and merging two switches' bindings can only refuse more.
-	holds := e.summaryHolds(body)
-	for name, operand := range e.typeSwitchAliases(body) {
-		holds[name] = append(holds[name], held{operand, heldAlias})
+	buildHolds := func() map[string][]held {
+		holds := e.summaryHolds(body)
+		for name, operand := range e.typeSwitchAliases(body) {
+			holds[name] = append(holds[name], held{operand, heldAlias})
+		}
+		// And what a callee stored through a local's address, which the closed
+		// summaries said (applyIntoCands): `set(&k, buf); return k` hands buf back.
+		for name, hs := range e.intoHolds[cname] {
+			holds[name] = append(holds[name], hs...)
+		}
+		return holds
 	}
-	// And what a callee stored through a local's address, which the closed summaries
-	// said (applyIntoCands): `set(&k, buf); return k` hands buf back.
-	for name, hs := range e.intoHolds[cname] {
-		holds[name] = append(holds[name], hs...)
-	}
+	holds := buildHolds()
 	deferred := e.bodyDefers(body)
 	// resolve walks what a value reaching hs may carry through the holds, calling fn
 	// with each name and whether it is that name's CONTENTS rather than its value
@@ -14334,9 +14339,20 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	// What a slice step of an ARRAY views is the storage the chain before it
 	// reaches (summaryReach): shallow where that is the root's own or what the
 	// root points at, and typed where the walk says what the chain is.
-	prevView, prevRecv, prevBuilder := e.arrayView, e.summaryRecv, e.builderOf
-	defer func() { e.arrayView, e.summaryRecv, e.builderOf = prevView, prevRecv, prevBuilder }()
+	prevView, prevRecv, prevBuilder, prevCur := e.arrayView, e.summaryRecv, e.builderOf, e.summaryCur
+	defer func() {
+		e.arrayView, e.summaryRecv, e.builderOf, e.summaryCur = prevView, prevRecv, prevBuilder, prevCur
+	}()
 	e.summaryRecv = recvName
+	e.summaryCur = func(n Node) (cur accessCur, ok bool) {
+		if !e.inUnminted {
+			e.inUnminted = true
+			defer func() { e.inUnminted = false }()
+			e.unminted(func() { cur, ok = e.summaryCur(n) })
+			return cur, ok
+		}
+		return exprCur(n)
+	}
 	e.builderOf = func(chain Node) (ptr, typed bool) {
 		if !e.inUnminted {
 			e.inUnminted = true
@@ -14631,6 +14647,10 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		}
 		return true
 	}
+	// What the names hold is read again, now that the pass types what a value can
+	// hold (summaryCur, exprCur): read before, `w.buf = append(w.buf, p.frag...)`
+	// had the receiver hold the bytes of p's slice as p's contents (dom113).
+	holds = buildHolds()
 	// storesPast reports whether a store lands past what its root's value points at
 	// (storesPast): deeper than one pointer, or one loaded out of storage.
 	var storesPast func(st storeShape) bool
@@ -15488,7 +15508,25 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		}
 		return e.summaryReach(st.value)
 	}
+	// A store of a value that holds no reference and no string keeps nothing,
+	// whatever it was read out of: `w.buf[0] = p.frag[0]` of a `p P` stored a
+	// byte where the summaries had p's contents, the storage p's slice views, and
+	// every caller handing it a view of a local array was refused (dom113). A
+	// copy's elements are asked where it is read (copyStores).
+	keeps := func(st storeShape) bool {
+		switch {
+		case st.elems:
+			return true
+		case st.target != nil && e.summaryValueRefFree(Node{sym: Expression, ast: st.target}):
+			return false
+		case st.value != nil && e.summaryValueRefFree(Node{sym: Expression, ast: st.value}):
+			return false
+		}
+		return true
+	}
 	storesInto := func(pkg, through []storeShape) {
+		pkg = slices.DeleteFunc(slices.Clone(pkg), func(st storeShape) bool { return !keeps(st) })
+		through = slices.DeleteFunc(slices.Clone(through), func(st storeShape) bool { return !keeps(st) })
 		for _, st := range through {
 			if _, inPkg := landsIn(st.base); !e.outlivesByName(st.base) && inPkg {
 				pkg = append(pkg, st)
@@ -18049,7 +18087,7 @@ func (e *emitter) copyStores(nodes []Node, fi funcInfo) (pkg, through []storeSha
 			}
 			if n.sym == Factor {
 				if recv, suffix, ok := e.factorCall(slices.Collect(it(n.ast))); ok && recv == "copy" && len(suffix) == 1 && suffix[0].sym == CallSuffix {
-					if args := e.callArgExprs(suffix[0].ast); len(args) == 2 && e.copyMayCarry(args[0].ast, fi) {
+					if args := e.callArgExprs(suffix[0].ast); len(args) == 2 && e.copyMayCarry(args[0].ast, fi) && !e.copyRefFree(args) {
 						st := storeShape{held: asElem(e.summaryReach(args[1].ast))}
 						base := e.bindingRoot(args[0].ast)
 						switch {
@@ -18071,7 +18109,7 @@ func (e *emitter) copyStores(nodes []Node, fi funcInfo) (pkg, through []storeSha
 	if len(nodes) == 2 && nodes[0].sym == AssignHead && nodes[1].sym == Postfix && e.soleIdent(nodes[0].ast) == "copy" {
 		// The statement `copy(dst, src)` is an AssignHead beside its call, no Factor.
 		if suffix := slices.Collect(it(nodes[1].ast)); len(suffix) == 1 && suffix[0].sym == CallSuffix {
-			if args := e.callArgExprs(suffix[0].ast); len(args) == 2 && e.copyMayCarry(args[0].ast, fi) {
+			if args := e.callArgExprs(suffix[0].ast); len(args) == 2 && e.copyMayCarry(args[0].ast, fi) && !e.copyRefFree(args) {
 				st := storeShape{held: asElem(e.summaryReach(args[1].ast))}
 				base := e.bindingRoot(args[0].ast)
 				switch {
@@ -18085,6 +18123,13 @@ func (e *emitter) copyStores(nodes []Node, fi funcInfo) (pkg, through []storeSha
 		}
 	}
 	return pkg, through
+}
+
+// copyRefFree reports whether a copy's elements, by the summaries' typing of its
+// destination or its source, hold no reference and no string: `copy(w.buf,
+// p.frag)` of a `p P` copies bytes, and kept p's contents (dom113).
+func (e *emitter) copyRefFree(args []Node) bool {
+	return e.summaryElemsRefFree(args[0]) || e.summaryElemsRefFree(args[1])
 }
 
 // copyMayCarry reports whether what copy puts into dst can carry a reference: its
@@ -18276,10 +18321,20 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 		return e.summaryLitReach(lit)
 	}
 	if args, spread, isAppend := e.appendCallArgs(ast); isAppend {
+		// What an append adds are copies of VALUES: where the slice's elements
+		// hold no reference -- bytes, numbers -- they reach nothing, whatever they
+		// were read out of. Read as what they were read from, `w.b = append(w.b,
+		// p.frag...)` of a `p P` kept p's contents, the storage p's slice views,
+		// and every caller handing it a view of a local array was refused (dom113,
+		// the framer's WriteHeaders).
+		refFree := len(args) != 0 && e.summaryElemsRefFree(args[0])
 		for i, a := range args {
 			switch {
 			case i == 0:
 				out = append(out, e.summaryReach(a.ast)...)
+			case refFree:
+			case spread && i == len(args)-1 && e.summaryElemsRefFree(a):
+			case !(spread && i == len(args)-1) && e.summaryValueRefFree(a):
 			case spread && i == len(args)-1:
 				// `append(s, v...)` copies v's ELEMENTS, as copy does its source's:
 				// what they reach, never v's backing. Read as v itself, `w.b =
@@ -18500,6 +18555,9 @@ type viewFunc func(chain Node) (shallow, typed bool)
 // (emitter.builderOf).
 type builderFunc func(chain Node) (ptr, typed bool)
 
+// curFunc types an expression for the summaries (emitter.summaryCur).
+type curFunc func(n Node) (accessCur, bool)
+
 // factorWithout is the Factor fac with the last n steps of its suffix left out,
 // `r.buf` of `r.buf[:]`.
 func (e *emitter) factorWithout(fac Node, n int) (Node, bool) {
@@ -18710,6 +18768,12 @@ func (e *emitter) summaryHolds(body []int32) map[string][]held {
 	add := func(targets []string, into []bool, values [][]int32) {
 		// pos is the position of a call's several results a target takes, or -1.
 		reach := func(i int, v []int32, pos int) []held {
+			// A value that holds no reference and no string holds nothing of
+			// anything, by the pass's typing (summaryCur): `w.buf[2] = p.frag[2]`
+			// of a `p P` had w hold p's contents (dom113).
+			if e.summaryValueRefFree(Node{sym: Expression, ast: v}) {
+				return nil
+			}
 			hs := e.summaryReach(v)
 			if len(hs) == 0 {
 				// `f := pick()`: a function value nothing names, which is every
@@ -19773,6 +19837,47 @@ func (e *emitter) elemsHoldNothing(ct string) bool {
 		el = e.sliceElemFromCName(u)
 	}
 	return el != "" && !e.carriesReference(el) && !e.holdsString(el, map[string]bool{})
+}
+
+// refFreeCType reports whether a value of the C type ct holds no reference and
+// no string, which may view a Builder's bytes: a number, a bool, a struct or an
+// array of them. A copy of one keeps nothing of where it was read.
+func (e *emitter) refFreeCType(ct string) bool {
+	return ct != "" && !e.carriesReference(ct) && !e.holdsString(ct, map[string]bool{})
+}
+
+// summaryElemsRefFree reports whether, by the summaries' typing (summaryCur), the
+// elements of n -- a slice's, an array's, a string's bytes -- hold no reference
+// and no string, so a copy of them, copy's or an append's, keeps nothing of what n
+// views. false where the pass cannot type n, and outside the pass.
+func (e *emitter) summaryElemsRefFree(n Node) bool {
+	if e.summaryCur == nil {
+		return false
+	}
+	cur, ok := e.summaryCur(n)
+	switch {
+	case !ok:
+		return false
+	case cur.slice || len(cur.dims) != 0:
+		return e.refFreeCType(cur.elem)
+	}
+	return e.underlyingCType(cur.ctype) == cString
+}
+
+// summaryValueRefFree reports whether, by the summaries' typing, the value n is
+// holds no reference and no string: a store of it keeps nothing.
+func (e *emitter) summaryValueRefFree(n Node) bool {
+	if e.summaryCur == nil {
+		return false
+	}
+	cur, ok := e.summaryCur(n)
+	switch {
+	case !ok || cur.slice:
+		return false
+	case len(cur.dims) != 0:
+		return e.refFreeCType(cur.elem)
+	}
+	return e.refFreeCType(cur.ctype)
 }
 
 // refValueCType reports whether a value of the C type ct is itself what it

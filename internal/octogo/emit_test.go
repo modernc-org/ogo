@@ -13783,6 +13783,140 @@ func main() {
 }
 `,
 		},
+		// What a struct parameter's slice field holds, copied out of it -- a
+		// spread, an appended element, copy, an element's store, a range --
+		// keeps nothing where its elements hold no reference: the summaries read
+		// a copy as the parameter's contents, the storage its slice views, and
+		// refused every caller handing one a view of a local array (dom113,
+		// sweeps/reffree). A pointer copied out of it is kept as before.
+		{
+			name: "a struct parameter's bytes spread into the receiver",
+			src: `type B struct{ b []byte }
+
+type P struct {
+	id   int
+	frag []byte
+}
+
+var gb B
+
+var bb [8]byte
+
+func (t *B) add(p P) { t.b = append(t.b, p.frag...) }
+
+func run() {
+	var a [4]byte
+	gb.add(P{1, a[:]})
+}
+
+func main() {
+	gb.b = bb[:0]
+	run()
+	println(len(gb.b))
+}
+`,
+		},
+		{
+			name: "a struct parameter's bytes copied, appended and stored into the receiver",
+			src: `type B struct{ b []byte }
+
+type P struct {
+	id   int
+	frag []byte
+}
+
+var gb B
+
+var bb [8]byte
+
+func (t *B) put(p P) { copy(t.b, p.frag) }
+
+func (t *B) one(p *P) { t.b = append(t.b, p.frag[0]) }
+
+func (t *B) set(p P) {
+	t.b = t.b[:2]
+	t.b[1] = p.frag[1]
+}
+
+func (t *B) each(p P) {
+	for i, c := range p.frag {
+		t.b[i] = c
+	}
+}
+
+func run() {
+	var a [2]byte
+	p := P{1, a[:]}
+	gb.put(p)
+	gb.one(&p)
+	gb.set(p)
+	gb.each(p)
+}
+
+func main() {
+	gb.b = bb[:2]
+	run()
+	println(len(gb.b))
+}
+`,
+		},
+		{
+			name: "a struct parameter's pointers spread into the receiver",
+			src: `type B struct{ b []*int }
+
+type P struct {
+	id   int
+	ptrs []*int
+}
+
+var gb B
+
+func (t *B) add(p P) { t.b = append(t.b, p.ptrs...) }
+
+func run() {
+	var x int
+	var a [1]*int
+	a[0] = &x
+	gb.add(P{1, a[:]})
+}
+
+func main() {
+	run()
+	println(len(gb.b))
+}
+`,
+			want: "it is stored in the receiver gb, which outlives this function",
+		},
+		{
+			name: "a struct parameter's pointer stored into the receiver's element",
+			src: `type B struct{ b []*int }
+
+type P struct {
+	id   int
+	ptrs []*int
+}
+
+var gb B
+
+var bp [2]*int
+
+func (t *B) set(p P) { t.b[0] = p.ptrs[0] }
+
+func run() {
+	var x int
+	var a [1]*int
+	a[0] = &x
+	gb.set(P{1, a[:]})
+}
+
+func main() {
+	gb.b = bp[:]
+	run()
+	println(len(gb.b))
+}
+`,
+			want: "its parameter 1's contents are stored where they outlive every frame",
+		},
 		// A VALUE receiver is a copy: storing into it writes the callee's own frame.
 		{
 			name: "value receiver",

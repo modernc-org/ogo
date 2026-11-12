@@ -17722,6 +17722,79 @@ func main() {
 		want: "true true\n0 0 true 1\n0 true\ntrue true\n0 0 true\n0 0 0\n0 0 2\n1 4 true\n5 8 3\n7 true\n",
 	},
 	{
+		name: "a callee copying the bytes of a struct parameter's slice into its receiver",
+		src: `// What a struct parameter's slice field holds, copied out of it -- a spread,
+// an appended element, copy, an element's store, a range -- keeps nothing of
+// the storage it views where its elements hold no reference: the summaries
+// read the copies as the parameter's contents, and refused every caller
+// handing one a view of a local array (dom113, the framer's WriteHeaders;
+// sweeps/reffree).
+type W struct{ buf []byte }
+
+type P struct {
+	id   int
+	frag []byte
+}
+
+type Q struct {
+	n    int
+	vals []int
+}
+
+func (w *W) add(p P) { w.buf = append(w.buf, p.frag...) }
+
+func (w *W) addOne(p *P) { w.buf = append(w.buf, p.frag[0]) }
+
+func (w *W) put(p P) { copy(w.buf[len(w.buf)-2:], p.frag) }
+
+func (w *W) set(p P) {
+	w.buf = w.buf[:len(w.buf)]
+	w.buf[0] = p.frag[1]
+}
+
+func (w *W) each(p P) {
+	for i, c := range p.frag {
+		w.buf[i+1] = c
+	}
+}
+
+var back [32]byte
+
+var gw W
+
+var sums []int
+
+var sumBack [8]int
+
+func addVals(q Q) { sums = append(sums, q.vals...) }
+
+func run() {
+	var loc [3]byte
+	loc[0], loc[1], loc[2] = 'a', 'b', 'c'
+	gw.add(P{1, loc[:]})
+	p := P{2, []byte("xyz")}
+	gw.addOne(&p)
+	gw.put(P{3, loc[1:]})
+	gw.set(p)
+	gw.each(P{4, loc[:2]})
+	var vs [2]int
+	vs[0], vs[1] = 40, 2
+	addVals(Q{2, vs[:]})
+}
+
+func main() {
+	gw.buf = back[:0]
+	sums = sumBack[:0]
+	run()
+	for _, c := range gw.buf {
+		print(c, " ")
+	}
+	println(len(gw.buf), sums[0]+sums[1])
+}
+`,
+		want: "121 97 98 99 4 42\n",
+	},
+	{
 		name: "unsafe.Add and unsafe.Slice",
 		src: `// Go 1.17's unsafe.Add, a pointer moved on by bytes, and unsafe.Slice, a slice over
 // the storage a pointer points at: read and written through, resliced, ranged over,

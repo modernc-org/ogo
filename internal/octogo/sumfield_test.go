@@ -53,9 +53,20 @@ func main() {
 		{"int field held", `func Parse(doc *Doc) { p := parser{pos: 3, doc: doc}; n := p.pos; keep(n) }`, false},
 		{"int field deeper", `func Parse(doc *Doc) { p := parser{doc: doc}; keep(p.doc.N) }`, false},
 		{"pointer field", `func Parse(doc *Doc) { p := parser{doc: doc}; keepp(p.doc) }`, true},
+		// A name another struct gives a pointer was the control the name
+		// alone refused by; since dom113 keep's summary keeps nothing -- what it
+		// stores, an int, holds no reference (refFreeCType) -- and Go's program
+		// is accepted, as it is safe.
 		{"name another struct points with", `type other struct{ pos *int }
 
-func Parse(doc *Doc) { p := parser{doc: doc}; keep(p.pos) }`, true},
+func Parse(doc *Doc) { p := parser{doc: doc}; keep(p.pos) }`, false},
+		// The field that holds the parameter, kept by a callee as an interface,
+		// which may hold a reference: refused as the pointer field is.
+		{"pointer field kept as an interface", `var lastv interface{}
+
+func keepv(v interface{}) { lastv = v }
+
+func Parse(doc *Doc) { p := parser{doc: doc}; keepv(p.doc) }`, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(head + test.src + "\n" + tail)}}
