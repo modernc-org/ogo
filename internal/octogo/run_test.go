@@ -30606,6 +30606,49 @@ line	tab\n` + "`" + `
 			"97 10 9 92 39 65 65 233 128512\n13\n14 0\n",
 	},
 	{
+		// A rune literal's \x and octal escapes spell a code point, '\x80' 128 and
+		// '\377' 255 (dom114). The emitter unquoted the literal as a string and
+		// decoded the string's UTF-8, and the one byte of an escape past 0x7f is
+		// no UTF-8: every such literal was 65533 where the emitter wrote it, 253
+		// in a byte, silently, on the board as on the host; a constant the
+		// checker folded was right. build/probes/sweeps/runelit's 20 escapes in
+		// 23 positions. The values go where a charset's code reads them: a
+		// table's byte field, a byte compared, a switch case, an argument.
+		name: "a rune literal's escapes past 0x7f",
+		src: `type row struct {
+	b  byte
+	ok bool
+	r  rune
+}
+
+var rows = []row{
+	{'\x80', true, '\u20ac'},
+	{'\xfe', false, '\xff'},
+}
+
+func high(r rune) rune { return r }
+
+func main() {
+	r := '\xff'
+	var b byte = '\x80'
+	x := '\x9f' + 1
+	println(r, b, x, '\xe9', '\200', '\377', '\x7f')
+	println(rows[0].b, rows[0].r, rows[1].b, rows[1].r)
+	var a [2]byte
+	a[1] = '\xc3'
+	println(a[1], a[1] == '\xc3', high('\xa0'))
+	switch v := rune(0xe9); v {
+	case '\xe9':
+		println("case")
+	default:
+		println("default")
+	}
+	printf("%c|%q\n", '\xe9', '\xff')
+}
+`,
+		want: "255 128 160 233 128 255 127\n128 8364 254 255\n195 true 160\ncase\né|'ÿ'\n",
+	},
+	{
 		// The hexadecimal form of a float literal, whose exponent is a power of two
 		// and is required. C has the same syntax, so the text passes through -- but
 		// only after the digit separators come out, which is what "0x_1p4" checks.

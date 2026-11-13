@@ -62,6 +62,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A wrong answer, silent: a rune literal of an escape past 0x7f was U+FFFD**:
+  `'\x80'` to `'\xff'` and `'\200'` to `'\377'` are the code points they
+  spell, `'\x80'` 128, and each was 65533 wherever the compiler wrote it, 253
+  in a byte: a local, a store, a package variable, a literal's field, an
+  argument, a result, arithmetic, a comparison, a switch case, println. The
+  literal was unquoted as a string and its one byte decoded as UTF-8. A
+  constant folded with another, `string(r)` of one and an array length were
+  right. x/text's charmap tests met it, a table of byte values written as
+  rune literals. In every release.
 - **A wrong answer, silent: a bare return handed back nothing for a result with
   no variable of its own**: a blank result, `(_ Frame, err error)`, or one the
   body never names, was 0 to a bare return. An array's copy came from address

@@ -402,18 +402,20 @@ func cFloatLit(src string) string {
 }
 
 // runeLitValue decodes a rune literal's source ('A', '\n', '\x41', 'é', 'é')
-// to its Unicode code point. strconv.Unquote handles every Go rune escape and, for
-// a single-quoted literal, yields the one rune's UTF-8 string.
+// to its Unicode code point, as the checker does (constant.MakeFromLiteral,
+// strconv.UnquoteChar under it). A rune literal's \x and octal escapes are
+// the code point they spell: '\x80' is 128. Until 2026-11-13 (dom114) this
+// unquoted the literal as a string and decoded the string's UTF-8, and the one
+// byte of '\x80' to '\xff' and '\200' to '\377' is no UTF-8: each was 65533,
+// U+FFFD, wherever the emitter wrote it, 253 in a byte -- silently, on the board
+// as on the host.
 func runeLitValue(src string) (rune, bool) {
-	s, err := strconv.Unquote(src)
-	if err != nil {
+	v := constant.MakeFromLiteral(src, token.CHAR, 0)
+	if v.Kind() != constant.Int {
 		return 0, false
 	}
-	r := []rune(s)
-	if len(r) != 1 {
-		return 0, false
-	}
-	return r[0], true
+	r, ok := constant.Int64Val(v)
+	return rune(r), ok
 }
 
 // p2Intrinsic is one exported function of the builtin "p2" package: the flexcc /
