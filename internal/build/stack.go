@@ -72,8 +72,9 @@ import (
 // type may hold, so a program function whose calls through a register are all
 // such calls -- in its own C and in the C of what was inlined into it, the
 // functions its C calls by name and its listing does not -- reaches those, where
-// the listing agrees: its calls through a register number exactly the calls
-// through tables and values the C has there (narrowTargets). Any other function,
+// the listing agrees: its calls through a register number no more than the calls
+// through tables and values the C has there, a call the backend drops as dead
+// being one fewer (narrowTargets). Any other function,
 // and any that does not agree, reaches every taken function of its side, and what
 // the tables and the types may hold says where it recurses.
 //
@@ -321,10 +322,9 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 					// What the tables and the values' types may hold says
 					// where a recursion is; a stack is sized as before, each
 					// call reaching every taken function: a listing making
-					// another number of calls through a register than the C
-					// does is no call the C makes left out -- a copy inlined
-					// into n loses a call its constant argument does not
-					// make, and n is still a caller of what the C calls.
+					// more calls through a register than the C does makes one
+					// the C read does not account for, and n is still a
+					// caller of what the C calls.
 					recursion = t
 				}
 			}
@@ -724,10 +724,19 @@ func stackCName(n string) string {
 // something in each slot called, and the build's table must say what each type of
 // value may hold (octogo.FuncValueClasses). exact says they are all the calls n
 // makes through a register: every call in that C is by name, through a table or
-// through a value spelled with its type (no Other), and n's listing makes as many
-// calls through a register as the C makes through tables and values. The caller
+// through a value spelled with its type (no Other), and n's listing makes no more
+// calls through a register than the C makes through tables and values. The caller
 // reads the targets for a recursion alone unless they are exact; anything else is
 // the caller's every-taken-function.
+//
+// Fewer was not exact until 2026-11-12 (dom113): the backend drops a call in a
+// branch it finds dead, `if u < 0` of a uint32, which the C still makes, and a
+// frame parser read so was every taken function's -- a recursion's margin 4040
+// bytes too large, a false stack overflow on the board. A call through a register
+// in n's listing is n's own, or a copy's of a function inlined into it: one the
+// listing does not call is read here, and one it calls is a callee of n's, its
+// calls through a register reached through its frame, a copy in n reaching what
+// the function does and less deep.
 func narrowTargets(n string, fns map[string]*stackFunc, scan *octogo.CallScan, byCName map[string]string) (targets []string, known, exact bool) {
 	f, cn := fns[n], stackCName(n)
 	if scan.Funcs[cn] == nil {
@@ -794,7 +803,7 @@ func narrowTargets(n string, fns map[string]*stackFunc, scan *octogo.CallScan, b
 		}
 	}
 	sort.Strings(targets)
-	return targets, true, other == 0 && len(sites)+len(values) == f.indirect
+	return targets, true, other == 0 && f.indirect <= len(sites)+len(values)
 }
 
 // goroutineName is the function a trampoline starts, the one of its direct calls

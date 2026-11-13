@@ -136,8 +136,9 @@ func TestStackNeeds(t *testing.T) {
 // is an interface call: it reaches the two functions its table's slot holds and not
 // the deep taken function beside them, which a call through a function value, or a
 // listing making more calls through a register than the C makes through tables,
-// still reaches. A method its slot holds calling the interface again recurses, as a
-// direct call of itself would: the depth is the values', which no listing has.
+// still reaches. A listing making fewer, a call the backend dropped as dead, reaches
+// what the C's do. A method its slot holds calling the interface again recurses, as
+// a direct call of itself would: the depth is the values', which no listing has.
 func TestStackNeedsInterfaceCalls(t *testing.T) {
 	const decls = `#define ogo_iface_vt(v) (v)
 struct I_vt { const char* _ogo_type; int (*ogo_m_M)(void*); };
@@ -154,6 +155,19 @@ static const I_vt I_vt_B = { "*main.B", I_B_M };
 }
 static void ogo_go0(void* p) {
 	use(*(I*)p);
+}
+`
+	// Two calls of which the backend may drop one: m0221 of dom113 lost a call under
+	// `u < 0` of a uint32 and was every taken function's.
+	viaTwo := decls + `int use(I x, unsigned u) {
+	int r = ((const I_vt*)ogo_iface_vt(x.vt))->ogo_m_M(x.data);
+	if (u < 0) {
+		r += ((const I_vt*)ogo_iface_vt(x.vt))->ogo_m_M(x.data);
+	}
+	return r;
+}
+static void ogo_go0(void* p) {
+	use(*(I*)p, 1);
 }
 `
 	viaValue := decls + `int use(I x) {
@@ -209,6 +223,9 @@ member fnT ` + member + `
 		{"a call through a function value reaches what its type may hold, the deepest", viaTyped("big"), 2, wide},
 		{"a listing the C does not account for", viaTable, 2, wide},
 		{"a listing the C does not account for, through a value", viaTyped("small"), 3, wide},
+		{"a call the backend drops is one fewer", viaTwo, 1, narrow},
+		{"both calls kept", viaTwo, 2, narrow},
+		{"a listing the C does not account for, beside a call dropped", viaTwo, 3, wide},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if r := readStackNeeds(listing(tc.calls), []byte(tc.c)); r.goLongs != tc.longs || !r.goKnown {
@@ -227,6 +244,43 @@ member fnT ` + member + `
 			"ptr_a\n\tlong\t@_I_A_M_0002\nptr_b\n\tlong\t@_I_B_M_0003\nptr_c\n\tlong\t@_big_0004")
 		if r := readStackNeeds(l, []byte(c)); r.goKnown || r.goRecurse != "I_B_M" {
 			t.Fatalf("known %v, recursing %q; want unknown, through I_B_M", r.goKnown, r.goRecurse)
+		}
+	})
+	// A function inlined at one of its calls and called at the other: the copy's
+	// call through a register stands in use's listing, where the C read of use
+	// does not have it, beside use's own call the backend dropped. The count does
+	// not tell them apart; the copy reaches what the function does, through the
+	// call of it the listing makes, and so as deep.
+	t.Run("a copy of a function the listing calls", func(t *testing.T) {
+		c := "#define OGO_FV(t, f) (f)\n" + decls + `static int helper(int n) {
+	fnT f = big;
+	return OGO_FV(fnT, f)(n);
+}
+int use(I x, unsigned u) {
+	int r = ((const I_vt*)ogo_iface_vt(x.vt))->ogo_m_M(x.data) + helper(1);
+	if (u < 0) {
+		r += ((const I_vt*)ogo_iface_vt(x.vt))->ogo_m_M(x.data);
+	}
+	return r + helper(2);
+}
+static void ogo_go0(void* p) {
+	use(*(I*)p, 1);
+}
+
+/* ogo:funcvalues
+type fnT
+member fnT big
+*/
+`
+		l := listingOf(fnListing("_ogo_go0_0001", 1, 0, "call	#_use"),
+			fnListing("_use", 2, 0, "call	local01", "call	#_helper_0006", "call	local02"),
+			fnListing("_I_A_M_0002", 1, 40),
+			fnListing("_I_B_M_0003", 1, 80),
+			fnListing("_big_0004", 1, 4000),
+			fnListing("_helper_0006", 1, 0, "call	local01"),
+			"ptr_a\n\tlong\t@_I_A_M_0002\nptr_b\n\tlong\t@_I_B_M_0003\nptr_c\n\tlong\t@_big_0004")
+		if r, want := readStackNeeds(l, []byte(c)), 1+(16+20+16+4016+3)/4; r.goLongs != want || !r.goKnown {
+			t.Fatalf("got %d longs, known %v; want %d, through helper to big", r.goLongs, r.goKnown, want)
 		}
 	})
 }
@@ -632,6 +686,48 @@ func main() {
 			t.Fatalf("recursion through a value inlined into main: %v", err)
 		}
 		checked(t, false, "walk")
+		// A call through a value in a branch the backend drops as dead, `u < 0`
+		// of a uint32, is one fewer in the listing than in the C, and the
+		// recursion was every taken function's: its margin took deep's frame,
+		// 4 KB the recursion never reaches, a false stack overflow on the board
+		// (dom113's m0221). Kept, `u == 0`, the margin was the recursion's own.
+		dropped := `var table = []func() int{deep}
+
+func deep() int {
+	var big [1000]int
+	for i := range big {
+		big[i] = i
+	}
+	return big[999]
+}
+
+func note(s string) {}
+
+func rec(n int, f func(string), u uint32) int {
+	if u < 0 {
+		f("x")
+	}
+	f("y")
+	if n == 0 {
+		return 0
+	}
+	return rec(n-1, f, u) + 1
+}
+
+func main() {
+	println(table[0]())
+	println(rec(10, note, 1))
+}
+`
+		for _, src := range []string{dropped, strings.Replace(dropped, "u < 0", "u == 0", 1)} {
+			if _, err := compile(t, src, false); err != nil {
+				t.Fatalf("a recursion beside a deep taken function: %v", err)
+			}
+			checked(t, false, "rec")
+			if margins, _ := octogo.StackMargins(built); margins["rec"] >= 4000 {
+				t.Errorf("%s: rec's margin %d takes deep's frame of 4000 bytes", src[strings.Index(src, "if u"):strings.Index(src, " {\n\t\tf(")], margins["rec"])
+			}
+		}
 	})
 	t.Run("main", func(t *testing.T) {
 		_, err := compile(t, "func main() {\n\tvar big [140000]int\n\tbig[1] = 2\n\tfor i := range big {\n\t\tbig[i] += i\n\t}\n\tprintln(big[1] + big[139999])\n}\n", false)
