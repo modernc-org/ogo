@@ -48,6 +48,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A byte order mark anywhere but a file's beginning is refused**, as gc
+  refuses it, "invalid BOM in the middle of the file": one in a rune literal,
+  a string, a raw string or a comment built. And one beginning the file is
+  let stand, as Go lets it, where it was "invalid token"; `ogo fmt` drops
+  it, as gofmt does. In every release.
 - **What gc refuses of a `//go:` directive is refused**: only `//go:noescape`
   was asked where it stands, so a program gc refuses for any other directive
   built -- `//go:noinline` inside a body or above a variable, `//go:build` past

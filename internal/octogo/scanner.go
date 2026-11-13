@@ -565,10 +565,20 @@ out:
 		off := s.off
 		switch {
 		case !s.isClosed:
+			if off == 0 && bytes.HasPrefix(s.buf, byteOrderMark) {
+				// A byte order mark beginning the file is let stand, as Go lets it,
+				// the separator of the first token (dom114).
+				s.off = len(byteOrderMark)
+				continue
+			}
 			switch id, length := s.scan(s.buf[off:]); {
 			case id < 0: // no lexeme was recognized
 				length = max(1, length) // Ensure we do not get stuck.
 				switch {
+				case bytes.HasPrefix(s.buf[off:], byteOrderMark):
+					s.addLines(sep, off)
+					s.AddErr(s.Position(off), "invalid BOM in the middle of the file")
+					length = len(byteOrderMark)
 				case off < len(s.buf) && s.buf[off] == '"':
 					s.AddErr(s.Position(off), "string literal not terminated")
 				case off < len(s.buf) && s.buf[off] == '\'':
@@ -586,6 +596,7 @@ out:
 				// it is a diagnostic.
 				continue
 			case id == s.whiteSpace:
+				s.checkBOM(sep, off, length)
 				if s.insertSemi {
 					// Check if this whitespace chunk contains a newline
 					if bytes.IndexByte(s.buf[sep:off+length], '\n') >= 0 {
@@ -611,6 +622,7 @@ out:
 				}
 
 				t = tok{ch: rune(id), sep: int32(sep), src: int32(off)}
+				s.checkBOM(sep, off, length)
 				s.off += length
 				switch Symbol(id) {
 				case int_lit, float_lit:
@@ -661,6 +673,43 @@ out:
 		Ch:     t.ch,
 		index:  x,
 		source: s.source,
+	}
+}
+
+// byteOrderMark is U+FEFF in UTF-8.
+var byteOrderMark = []byte("\uFEFF")
+
+// checkBOM reports each byte order mark in the lexeme of length bytes at off:
+// a literal, a comment or a token. Go takes one at the beginning of a file and
+// refuses it anywhere else, in a string, a rune literal or a comment as well
+// (dom114; gc's scanner, "invalid BOM in the middle of the file"). Before, a
+// literal or a comment holding one built. The lines from sep, where the token
+// being scanned begins its separator, are registered first, as Scan registers
+// them when it returns, so the error is at its line.
+func (s *RecScanner) checkBOM(sep, off, length int) {
+	for b, k := s.buf[off:off+length], 0; ; {
+		i := bytes.Index(b[k:], byteOrderMark)
+		if i < 0 {
+			return
+		}
+		p := off + k + i
+		s.addLines(sep, p)
+		s.AddErr(s.Position(p), "invalid BOM in the middle of the file")
+		k += i + len(byteOrderMark)
+	}
+}
+
+// addLines registers the line breaks from sep to p, as Scan registers them
+// when it returns: an error reported before is at its line.
+func (s *RecScanner) addLines(sep, p int) {
+	for b, o := s.buf[sep:p], sep; ; {
+		x := bytes.IndexByte(b, '\n')
+		if x < 0 {
+			return
+		}
+		s.AddLine(o + x)
+		b = b[x+1:]
+		o += x + 1
 	}
 }
 

@@ -1,0 +1,8 @@
+﻿// COMPILE
+
+// A byte order mark beginning the file is let stand, as Go lets it (dom114):
+// this file begins with one, which was "invalid token" at 1:1 before.
+
+func main() {
+	println("a BOM leads")
+}

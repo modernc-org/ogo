@@ -164,6 +164,12 @@ outer:
 			x += len(generalCommentSuffix)
 			r = append(r, generalComment(b[:x]))
 			b = b[x:]
+		case bytes.HasPrefix(b, byteOrderMark):
+			// A byte order mark beginning the file, the one the scanner lets
+			// stand (dom114), is dropped, as gofmt drops it. Read as white space
+			// it was no byte the loop below steps past, and the loop appended
+			// to r for ever.
+			b = b[len(byteOrderMark):]
 		default:
 			var n whiteSpace
 			for i, v := range b {
@@ -173,6 +179,12 @@ outer:
 				case ' ', '\t', '\r':
 					// ignore
 				default:
+					if i == 0 {
+						// A byte no case above steps past: looping on it appended to
+						// r for ever (a leading BOM's, dom114). The scanner hands a
+						// separator nothing else, so this is the formatter's fault.
+						panic(todo("a separator holds %#x", v))
+					}
 					r = append(r, n)
 					b = b[i:]
 					continue outer

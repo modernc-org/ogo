@@ -1,0 +1,20 @@
+// A byte order mark, U+FEFF, may begin a file and stand nowhere else: Go's
+// scanner refuses one in a rune literal, a string, a raw string and a comment
+// as between tokens, "invalid BOM in the middle of the file" (dom114). One in a
+// literal or a comment built before. Each ERROR line below is followed by a
+// line holding one, written as the character.
+
+func main() {
+	// ERROR invalid BOM in the middle of the file
+	r := '﻿'
+	// ERROR invalid BOM in the middle of the file
+	s := "a﻿b"
+	// ERROR invalid BOM in the middle of the file
+	t := `a﻿b`
+	// ERROR invalid BOM in the middle of the file
+	println(r, s, t) /* x﻿y */
+	// ERROR invalid BOM in the middle of the file
+	println(1) // x﻿y
+	// ERROR invalid BOM in the middle of the file
+	println(2)﻿
+}

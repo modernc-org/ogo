@@ -1676,3 +1676,19 @@ func main() {
 	formatCheck(t, in, want)
 	gofmtCheck(t, want)
 }
+
+// TestFormatLeadingBOM pins a byte order mark beginning a file, which the
+// scanner lets stand as Go does (dom114): fmt drops it, as gofmt does. Read as
+// the first token's white space, it was no byte parseSep stepped past, and the
+// loop appended for ever, the machine's memory and swap gone in minutes; such
+// a byte panics there now.
+func TestFormatLeadingBOM(t *testing.T) {
+	const in = "\uFEFF// a comment\n\nfunc main() {\n\tprintln(1)\n}\n"
+	var buf bytes.Buffer
+	if err := FormatFile("bom.ogo", []byte(in), &buf); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := buf.String(), in[len("\uFEFF"):]; got != want {
+		t.Fatalf("got\n%q\nwant\n%q", got, want)
+	}
+}
