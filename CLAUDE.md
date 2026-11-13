@@ -417,10 +417,11 @@ silent fault puts the count back to 0. Each round's account is in
   copied out of a struct parameter's slice of bytes taken to keep its contents,
   the framer's WriteHeaders; 0dce82c), two loud faults fixed (a bare return's
   aggregate result with no variable written 0; printf's %v of a pointer to a
-  pointer; 1ad002e), two listed (a struct holding a field of no bytes
-  initialized for the target; a call through a function value the backend drops
-  as dead charging its function every taken function's stack, a false stack
-  overflow on the board) -- 0
+  pointer; 1ad002e), one listed (a struct holding a field of no bytes
+  initialized for the target), and one loud fault fixed after the round on the
+  user's call (a call through a function value the backend drops as dead
+  charging its function every taken function's stack, a false stack overflow on
+  the board; d153c3d) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1759,7 +1760,7 @@ section. A new finding goes there; the rule it leaves goes here too.
   function closes cycles no run makes** (dom89, listed). **A bound read off the
   listing against the C asks what the backend dropped: a call in a dead branch is
   in the C and not in the listing, and an exact count of the two takes the
-  function for one calling everything.** (dom113, listed).
+  function for one calling everything.** (dom113, fixed after the round).
 - **Two programs that should cost the same are compared by their BINARIES**.
 - **What the backend makes of a library call is read in the listing for what it
   holds while the arguments run**; **A goroutine's output is asked with main

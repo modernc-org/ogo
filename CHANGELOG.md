@@ -31,8 +31,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   their output**: a print writes as it goes, and on the board another cog's
   characters may land between any two of its own, where Go keeps each print's
   output together. A program whose cogs print does it from one cog or orders
-  the prints. Its example, a cog's line landing in the middle of another's, is
-  a test, run on the host and on the board.
+  the prints. A panic's message is such a print: another cog may print into
+  it, or panic too and mix its own message in, where Go ends the program at the
+  first panic and writes its message alone. Its example, a cog's line landing
+  in the middle of another's, is a test, run on the host and on the board.
 - **An AND NOT of a constant past 64 bits on the way builds**: `x &^
   (mask&(1<<64-1))` of a 128-bit mask, Go 1.27's net/textproto's header bytes,
   and `x &^= C` alike, were refused, "constant mask overflows every integer
@@ -60,6 +62,36 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A wrong answer, silent: a bare return handed back nothing for a result with
+  no variable of its own**: a blank result, `(_ Frame, err error)`, or one the
+  body never names, was 0 to a bare return. An array's copy came from address
+  0, the Hub RAM's first bytes on the board (on the host a crash), and an
+  interface, a struct, a string, a slice or a float64 made C neither compiler
+  takes; a blank array result alone was refused. Each is the zero of its type
+  now. x/net's http2 framer met it, its parsers returning `(_ Frame, err
+  error)` bare. In every release checked.
+- **A callee copying the bytes of a struct parameter's slice into its receiver
+  builds**: `f.wbuf = append(f.wbuf, p.BlockFragment...)`, and copy, an
+  element's store or a range of them alike, was taken to keep what p's slices
+  view, so every caller handing it a view of a local array was refused --
+  x/net's Framer.WriteHeaders. What is copied keeps nothing now where its type
+  holds no reference and no string; a value that points into the caller's
+  frame is refused as before.
+- **printf's `%v` of a pointer to a pointer of a Stringer is refused**: Go gives
+  a `**T` no methods and prints the pointer, and the C called String through
+  both pointers, which neither C compiler took. It is refused as `%v` of a
+  pointer is, `%T` printing its type and println its address.
+- **A recursion's check stops no program early for a call the backend drops
+  as dead**: a call through an interface or a function value in a branch the
+  backend finds dead -- `if u < 0` of a uint32, `%v` of a nil error, a branch
+  an inlined call's constant argument leaves dead -- is still in the C, and the
+  build took the function making it for one calling every function whose
+  address is taken. A recursion's check and a goroutine's slot took the deepest
+  of them: a mutant of x/net's http2 framer stopped with "goroutine stack
+  overflow" on the board, a frame parser's margin 4040 bytes too large, where
+  Go prints all its output, and a function on no recursion but one through such
+  a call was checked at every entry. A listing making fewer such calls than the
+  C reaches what the C's calls do now. In every release since v0.58.0.
 - **A wrong answer, silent: a composite literal's value was put where it does
   not belong, or run out of Go's order**: a literal binds its values that do
   something to temporaries in the order written, and a value bound so -- a call,
