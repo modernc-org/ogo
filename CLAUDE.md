@@ -422,6 +422,17 @@ silent fault puts the count back to 0. Each round's account is in
   user's call (a call through a function value the backend drops as dead
   charging its function every taken function's stack, a false stack overflow on
   the board; d153c3d) -- 0
+- dom114 (2026-11-13/14), a supermarket checkout's text (golang.org/x/text's
+  transform, encoding, charmap and unicode ported with their tests, the till on
+  main and its display, printer, scale and back office on cogs, each another
+  charset), the first round against master on dom113's fixes and m0221's:
+  silent (a rune literal's \x or octal escape past 0x7f was U+FFFD, 253 in a
+  byte; 4152c2f; a byte order mark past a file's beginning, which gc's scanner
+  refuses, built; 565f0f5), three listed (a view of an element of a slice of
+  arrays taken for the slice's own storage; the address of an element of a
+  variable its initializer types, taken for a pointer to the element's kind
+  where it goes into an interface with methods; a function literal of an array
+  result, refused in another's words) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1311,7 +1322,12 @@ section. A new finding goes there; the rule it leaves goes here too.
   asks what gc asks of all of them: //go:noescape's place was refused in gc's
   words, and a stray //go:linkname built.** **A sweep of programs Go refuses keeps
   its rows under testdata: go test ./... builds every package the module's tree
-  holds.** (dom111, sweeps/directives).
+  holds.** (dom111, sweeps/directives). **A character gc's scanner refuses
+  wherever it stands is asked inside every token that holds text: a byte
+  order mark in a string, a rune literal or a comment was text to the
+  grammar, and built.** (dom114, sweeps/bom). **A shape a fix makes valid is
+  asked of every tool that reads the source, and capped: the formatter
+  looped for ever on the BOM the scanner let stand.** (dom114).
 - **A PROGRAM OF SIZE ASKS WHAT NO SWEEP ASKS**: **a build's TIME is a verdict**;
   **a line's length is a limit of the backend**.
 - **A refusal for what a construct costs asks what Go's compiler pays for it where
@@ -1415,6 +1431,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   of it that is not -- a sign on a zero -- is the C compiler's arithmetic, not
   Go's.** **A typed constant takes its value from the exact fold, whatever kind the
   fold answers: a whole float is an integer to an integer type** (dom78).
+  **A literal is decoded once, the checker's way: strconv.Unquote of a rune
+  literal is a string's bytes, and '\x80' was U+FFFD to the emitter's second
+  decoding.** (dom114, sweeps/runelit).
 - **AN INTERFACE WRITTEN OUT IS A TYPE**: **A rule asked by name is a row of every
   type that has none.** **A value no interface may hold is refused by every
   interface, one asking for nothing among them: what it holds is asserted to the
