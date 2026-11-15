@@ -433,6 +433,14 @@ silent fault puts the count back to 0. Each round's account is in
   variable its initializer types, taken for a pointer to the element's kind
   where it goes into an interface with methods; a function literal of an array
   result, refused in another's words) -- 0
+- dom115 (2026-11-15), a building's e-paper door signs (golang.org/x/image's
+  riff, vp8, vp8l and webp ported with their tests, Go 1.27's NYCbCrA, the
+  screens WebP files sent frame by frame over a radio link that spoils frames,
+  a sign's controller on a cog decoding and dithering them for its panel), the
+  first round against master on dom114's fixes: silent (a call statement
+  through a nil function value of no result, reached through an element, a
+  field of one or a call's result, written with no nil check: on the board it
+  called address zero and went on as if made; 68fcfe2) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1394,7 +1402,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   is asked, `== nil` among the questions: an empty slice is no token to a Scanner,
   and nil is** (dom91). **A VARIADIC CALL IS A ROW**: **A variadic call is a
   call: its fixed arguments are asked every question a call's are, and evaluated
-  before what it packs** (dom88). **A FUNCTION VALUE'S CALL IS A ROW**. **AN ARRAY
+  before what it packs** (dom88). **A FUNCTION VALUE'S CALL IS A ROW**: **A check
+  a call through a value is given is asked of every path that writes one: the
+  statement path of a call of no result wrote its callee bare, and a nil element
+  called address zero.** (dom115, sweeps/nilfv). **AN ARRAY
   RESULT IS A ROW**: **A result with no variable is the zero of its type where a
   return hands it back: 0 is a scalar's zero, and an array copied from it read
   the Hub RAM's first bytes.** (dom113, sweeps/blankret). **PRINTING A VALUE IS
