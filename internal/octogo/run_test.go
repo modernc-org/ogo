@@ -8074,6 +8074,67 @@ func main() {
 		panics: true,
 	},
 	{
+		// A call STATEMENT through an element of a function type of no result
+		// (dom115, vp8's `predFunc8[p](d, y, x)`) was written with no nil check:
+		// the host crashed with its output unwritten, and the target went on past
+		// the call as if it had been made. build/probes/sweeps/nilfv.
+		name: "a call statement through a nil element of a table of functions of no result panics",
+		src: `var tab = [...]func(int){show, nil}
+
+func show(x int) { println("show", x) }
+
+func main() {
+	i := 1
+	tab[0](5)
+	println("before")
+	tab[i](6)
+	println("after")
+}
+`,
+		want:   "show 5\nbefore\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a call statement through a nil element of a struct's array of functions panics",
+		src: `type S struct {
+	n  int
+	fs [2]func(string)
+}
+
+var ss [3]S
+
+func main() {
+	j := 2
+	if ss[j].n == 0 {
+		println("before")
+		ss[j].fs[1]("x")
+	}
+	println("after")
+}
+`,
+		want:   "before\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a call statement through a nil function a call hands back panics",
+		src: `func pick(k int) func(int) {
+	if k > 0 {
+		return func(x int) { println("got", x) }
+	}
+	return nil
+}
+
+func main() {
+	pick(1)(3)
+	println("before")
+	pick(0)(4)
+	println("after")
+}
+`,
+		want:   "got 3\nbefore\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
 		// A function named in a static initializer -- a table of functions in a
 		// package variable -- is stored by the target's compiler as its method-table
 		// index shifted up by 20, and `f == 0` there calls a helper that reads the

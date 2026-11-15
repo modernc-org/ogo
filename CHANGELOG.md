@@ -67,6 +67,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A wrong answer, silent: a call statement through a nil function value of
+  no result went on as if made**: `tab[i](x)`, an element of an array or a
+  slice of functions of no result called as a statement, was written with no
+  nil check, where Go panics "invalid memory address or nil pointer
+  dereference": the board called address zero and went on past the call, and
+  the host crashed with its output unwritten. So were an element through a
+  pointer to an array, a struct's array's element, a 2-D table's and a
+  function a call hands back, `pick(k)(x)`; a variable, a field, a call with
+  results, `defer` and `go` were checked. x/image's vp8 met it, its
+  predictors a table of functions called as `predFunc8[p](d, y, x)`. Since
+  v0.49.0, whose nil check of a call through a value missed this one.
 - **A wrong answer, silent: a rune literal of an escape past 0x7f was U+FFFD**:
   `'\x80'` to `'\xff'` and `'\200'` to `'\377'` are the code points they
   spell, `'\x80'` 128, and each was 65533 wherever the compiler wrote it, 253

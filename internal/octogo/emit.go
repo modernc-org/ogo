@@ -42495,7 +42495,12 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 					})
 					return true
 				}
-				e.emit(bound + "(")
+				// Nil-checked and spelled with its type (recFuncCallee), as every other
+				// call through a value is: written bare, a nil element called address
+				// zero -- the host crashed with its output unwritten, and the target
+				// went on past the call as if it had been made, where Go panics
+				// (dom115, vp8's `predFunc8[p](d, y, x)`).
+				e.emit(e.recFuncCallee(ct, bound) + "(")
 				e.callParams, e.callFuncType = e.funcTypeParams[e.underlyingCType(ct)], ct
 				e.emitCallArgs(e.indirectCallee("", ct), callAst)
 				e.callParams, e.callFuncType = nil, ""
