@@ -29,18 +29,21 @@ fi
 [ $# -gt 0 ] || { echo "usage: fmtcmp.sh [-v N] FILE.ogo..." >&2; exit 2; }
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-(cd "$root" && go build -o "$tmp/ogo" .) || exit 1
+# Every run is capped (capped.sh), the build and each file's formatting: a
+# formatter looping on one file took the machine's memory once (2026-11-13).
+cap="$root/scripts/capped.sh"
+(cd "$root" && "$cap" -t 600 -m 8000000 go build -o "$tmp/ogo" .) || exit 1
 n=0 skipped=0 bad=0
 for f in "$@"; do
 	n=$((n + 1))
 	{ echo 'package main'; echo; cat "$f"; } > "$tmp/x.go"
-	if ! gofmt "$tmp/x.go" > "$tmp/want.go" 2> /dev/null; then
+	if ! "$cap" -t 60 -m 2000000 gofmt "$tmp/x.go" > "$tmp/want.go" 2> /dev/null; then
 		skipped=$((skipped + 1))
 		continue
 	fi
 	tail -n +3 "$tmp/want.go" > "$tmp/want.ogo"
 	cp "$f" "$tmp/got.ogo"
-	if ! "$tmp/ogo" fmt -w "$tmp/got.ogo" 2> "$tmp/err"; then
+	if ! "$cap" -t 60 -m 2000000 "$tmp/ogo" fmt -w "$tmp/got.ogo" 2> "$tmp/err"; then
 		echo "FMT FAIL $f"
 		head -3 "$tmp/err"
 		bad=$((bad + 1))

@@ -65,6 +65,23 @@ shipped section tells a reader on that version that they have behaviour they do 
   directive gc knows at each place one stands, 419 built that gc refuses; none
   now. In every release.
 
+### Toolchain
+
+- **`ogo fmt` lays out three more shapes as gofmt does**, each found running
+  dom116's port of freetype and golang.org/x/image through both. A binary
+  expression in a composite literal handed to a call of several arguments,
+  `h(1, C{R: uint16(x/m) + c.R})`, was written `+c.R`, at the call's depth,
+  where go/printer prints a literal's elements at a depth of their own; dom107's
+  image/draw lays out alike. An operand in parentheses in a run of `||`, `&&`
+  and comparisons, `i != 0 && (i&(i-1)) == 0`, was spaced `(i & (i - 1))`, the
+  run's operands taken for one level where go/printer counts each by its place
+  in the tree the precedences make. And a signature continued past its first
+  parameter, `func g(a int,` and `b int) error {` on the next line, lost the
+  next line's indentation, which go/printer gives a parameter list from its
+  first line break on. None of them changes what a program does.
+  `scripts/fmtcmp.sh` caps its build and each file's formatting, as every
+  run of the formatter is capped.
+
 ### Fixed
 
 - **A wrong answer, silent: a call statement through a nil function value of

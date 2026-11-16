@@ -1016,6 +1016,80 @@ func main() {
 	gofmtCheck(t, want)
 }
 
+// TestFormatOperandDepths pins three layouts scripts/fmtcmp.sh met in dom116's
+// port of freetype, each gofmt's and each written otherwise by `ogo fmt` until
+// then: a composite literal's elements are at depth 1 whatever surrounds the
+// literal, a call of several arguments among them (dom107's image/draw); an
+// Expression's RelOp run is go/printer's tree of binary nodes by precedence, a
+// comparison's operands under "&&" a level further down, so a parenthesis there
+// keeps its operators tight; and a parameter list is indented from its first
+// line break on, wherever it falls.
+func TestFormatOperandDepths(t *testing.T) {
+	const in = `type C struct{ R, G uint16 }
+
+func h(x, y int, c C) {}
+
+func f(a, b uint32, d C) {
+	h(1, 2, C{
+		R: uint16((a*b)/7)+d.R,
+		G: uint16(a*b+3),
+	})
+	h(1, 2, C{R: uint16(a)+d.R})
+	h(1+2, 2, C{uint16(a)+d.R, 0})
+	h(1, 2, []C{{R: uint16(a)+d.R}}[0])
+	k([]int{int(a) + 1})
+}
+
+func k(s []int) {}
+
+func powerOf2(i int) bool {
+	return i != 0 && (i & (i - 1)) == 0
+}
+
+func mixed(a, b, c int) bool {
+	return a == b || a < c && (c & (b + 1)) != 0 || (a + 1) == c
+}
+
+func g(recursion uint32, uhm int, i int,
+glyf []byte, useMyMetrics bool) error {
+	return nil
+}
+`
+	const want = `type C struct{ R, G uint16 }
+
+func h(x, y int, c C) {}
+
+func f(a, b uint32, d C) {
+	h(1, 2, C{
+		R: uint16((a*b)/7) + d.R,
+		G: uint16(a*b + 3),
+	})
+	h(1, 2, C{R: uint16(a) + d.R})
+	h(1+2, 2, C{uint16(a) + d.R, 0})
+	h(1, 2, []C{{R: uint16(a) + d.R}}[0])
+	k([]int{int(a) + 1})
+}
+
+func k(s []int) {}
+
+func powerOf2(i int) bool {
+	return i != 0 && (i&(i-1)) == 0
+}
+
+func mixed(a, b, c int) bool {
+	return a == b || a < c && (c&(b+1)) != 0 || (a+1) == c
+}
+
+func g(recursion uint32, uhm int, i int,
+	glyf []byte, useMyMetrics bool) error {
+	return nil
+}
+`
+	formatCheck(t, in, want)
+	formatCheck(t, want, want)
+	gofmtCheck(t, want)
+}
+
 // TestFormatDocComments pins the doc comments gofmt rewrites: an unindented comment
 // abutting the declaration below it is go/printer's doc comment, its text written
 // as go/doc/comment writes it, a directive such as //go:noescape moved to its end

@@ -1284,7 +1284,12 @@ func formatFile(fn string, b []byte, broken map[int32]bool) (out []byte, long []
 					if Symbol(-n) == CallSuffix && f.argumentBeginsLine(ast[2:next]) {
 						c.callClose = lastIndex(ast[:next])
 					}
-					if Symbol(-n) == ParameterList && f.beginsLine(firstIndex(ast[:next])) {
+					// A parameter list is indented from its first line break on,
+					// wherever it falls: go/printer's parameters indents at the
+					// first. Asked of the first parameter alone, a signature
+					// continued past its first, `func g(a int,\n\tb int) error {`,
+					// came back at column zero (dom116, freetype's loadCompound).
+					if Symbol(-n) == ParameterList && f.anyElementBeginsLine(ast[2:next]) {
 						c.indentLevel++
 					}
 				case ResultList:
@@ -1776,6 +1781,10 @@ func (f *formatter) computeTightOps(ast []int32, depth int) {
 		switch n.sym {
 		case Block:
 			f.computeTightOps(n.ast, 1)
+		case CompositeLit:
+			// A literal standing as an element or a key's value: its elements
+			// are at depth 1 too (tightFactor).
+			f.computeTightOps(n.ast, 1)
 		case Index:
 			// The slice-colon rule is depth-gated exactly as operators are: a
 			// binary bound spaces the ':' at depth 1 and not deeper, so the pass
@@ -1867,15 +1876,77 @@ func (f *formatter) tightExpr(n Node, depth int) {
 			}
 		}
 	}
-	for _, c := range operands {
+	depths := f.operandDepths(n, ops, len(operands), childDepth, depth)
+	for k, c := range operands {
 		switch c.sym {
 		case UnaryExpr, HeaderUnaryExpr:
 			// A unary operator's operand keeps the unary's own depth.
-			f.computeTightOps(c.ast, childDepth)
+			f.computeTightOps(c.ast, depths[k])
 		default:
-			f.tightExpr(c, childDepth)
+			f.tightExpr(c, depths[k])
 		}
 	}
+}
+
+// operandDepths is the depth go/printer prints each operand of a binary run at.
+// An add-level or a mul-level run is of one precedence, a left-associative chain
+// whose every operand is one level down. An Expression's run is not: RelOp holds
+// "||" (1), "&&" (2) and the comparisons (3), which go/printer reads as a tree of
+// binary nodes by precedence, and in it a node's left operand is a level down
+// unless it is a node of the same precedence, its right operand always is -- so
+// in `i != 0 && (i&(i-1)) == 0` the parenthesis is two levels down, and one
+// back inside it leaves its `&` tight. Read as one run at one level, the
+// parenthesis took the depth back to 1 and spaced it (dom116, freetype's
+// powerOf2).
+func (f *formatter) operandDepths(n Node, ops []Node, nOperands, childDepth, depth int) []int {
+	depths := make([]int, nOperands)
+	for k := range depths {
+		depths[k] = childDepth
+	}
+	if len(ops) < 2 || (n.sym != Expression && n.sym != HeaderExpression) || len(ops) != nOperands-1 {
+		return depths
+	}
+	precs := make([]int, len(ops))
+	for k, op := range ops {
+		switch Symbol(f.p.Token(opTokenIndex(op)).Ch) {
+		case LOR:
+			precs[k] = 1
+		case LAND:
+			precs[k] = 2
+		default:
+			precs[k] = 3
+		}
+	}
+	type node struct {
+		leaf, prec int
+		l, r       *node
+	}
+	next := 0 // the next operator; the operand before it is next too
+	var climb func(minPrec int) *node
+	climb = func(minPrec int) *node {
+		left := &node{leaf: next}
+		for next < len(precs) && precs[next] >= minPrec {
+			p := precs[next]
+			next++
+			left = &node{leaf: -1, prec: p, l: left, r: climb(p + 1)}
+		}
+		return left
+	}
+	var walk func(t *node, d int)
+	walk = func(t *node, d int) {
+		if t.leaf >= 0 {
+			depths[t.leaf] = d
+			return
+		}
+		ld := d + 1
+		if t.l.leaf < 0 && t.l.prec == t.prec {
+			ld = d
+		}
+		walk(t.l, ld)
+		walk(t.r, d+1)
+	}
+	walk(climb(1), depth)
+	return depths
 }
 
 // tightFactor descends into a Factor: a parenthesized expression gives one depth
@@ -1897,6 +1968,12 @@ func (f *formatter) tightFactor(n Node, depth int) {
 			// at depth 1 whatever surrounds it. Written at a subscript's depth,
 			// p2-11's `[Rows + 1]string{...}` printed tight.
 			f.tightExpr(c, 1)
+		case CompositeLit:
+			// A literal's elements are at depth 1 whatever surrounds the literal:
+			// go/printer prints them as an expression list of depth 1. Carried
+			// down from a call of several arguments, `h(1, 2, C{R: a/m + b})`
+			// printed `a/m+b` (dom116, dom107's image/draw).
+			f.computeTightOps(c.ast, 1)
 		default:
 			f.computeTightOps(c.ast, depth)
 		}
