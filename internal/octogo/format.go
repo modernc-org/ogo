@@ -88,6 +88,10 @@ type formatter struct {
 	kept        []*keptLine
 	keptFirst   map[int32][]*keptLine
 	keptLast    map[int32][]*keptLine
+	// A list printed on its opening bracket's line (oneLineList): its
+	// terminating comma, and the closing bracket, whose separator is dropped.
+	joinComma map[int32]bool
+	joinClose map[int32]bool
 
 	// What the walk records for alignCells: where the cells ended, and the output
 	// lines a section begins at.
@@ -116,6 +120,8 @@ func newFormatter(fn string, b []byte, out io.Writer) (r *formatter, err error) 
 		keptBody:      map[*int32]bool{},
 		keptFirst:     map[int32][]*keptLine{},
 		keptLast:      map[int32][]*keptLine{},
+		joinComma:     map[int32]bool{},
+		joinClose:     map[int32]bool{},
 	}
 	if r.ast, err = p.Parse(fn, b); err != nil {
 		return nil, err
@@ -225,6 +231,11 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 	for i, v := range sep {
 		switch x := v.(type) {
 		case whiteSpace:
+			if x > 0 && f.outLine == 0 && f.lineByte == 0 {
+				// Nothing written yet: the file's leading blank lines, which
+				// go/printer does not print (dom81's main.ogo began with one).
+				continue
+			}
 			switch x {
 			case 0:
 				// A comment later in this separator emits its own leading space, and
@@ -235,6 +246,29 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 				// it, so this would be spacing "1" against whatever follows "// c".
 				if commentFollows(sep[i+1:]) {
 					continue
+				}
+				// A /*-style comment with the line's next token after it is set off
+				// from the token by a blank, go/printer's intersperseComments, but
+				// for a comma, a ")" or "]" closing what opened before the comment,
+				// and a non-empty literal's "}" (noExtraBlank). Asked of the token
+				// before the comment instead, `{\n\t/* 257 */ 0,` was written
+				// `/* 257 */0` (dom104's flate) and `g(/* c */ x)` `g( /* c */x)`.
+				if i > 0 {
+					if _, ok := sep[i-1].(generalComment); ok {
+						switch {
+						case currTok == COMMA,
+							currTok == RPAREN && f.prevTok != LPAREN,
+							currTok == RBRACK && f.prevTok != LBRACK,
+							currTok == RBRACE && c.inLiteralBraces && f.prevTok != LBRACE:
+						case currTok == RBRACE && !c.inLiteralBraces:
+							if !f.nl && f.prevTok != 0 && f.needsSpace(f.prevTok, currTok, c) {
+								f.b(sp)
+							}
+						default:
+							f.b(sp)
+						}
+						continue
+					}
 				}
 				// The Magic: Ask the rules engine!
 				if !f.nl && f.prevTok != 0 && f.needsSpace(f.prevTok, currTok, c) {
@@ -537,7 +571,11 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	// Unambiguous unary operators never need a space after them
 	case prev == NOT || prev == TILDE:
 		return false
-	case prev == ADD || prev == SUB || prev == MUL || prev == AND || prev == XOR:
+	// An operator before a unary one. A binary-only operator -- "|", "/", "%", the
+	// shifts, "&^" -- has an operand before it always, and its spacing is its own:
+	// left to the add-level rule below, `a|^b` was written `a| ^b` (dom116, dom95's
+	// md5).
+	case isAddOp(prev) || isMulOp(prev):
 		// In a type or a parameter list, "*" is always a pointer and binds tight to
 		// the element type ("[]*int", "[3]*int", "func() *int", "var a *int"). Type
 		// syntax has no multiplication to confuse it with -- an array length is an
@@ -1077,12 +1115,61 @@ func (f *formatter) indentList(body []int32) bool {
 		if line < xb {
 			return true
 		}
-		if xb < xe {
+		if xb < xe && !f.compositeLitLike(x) {
 			n++
 		}
 		line = xe
 	}
 	return n > 1
+}
+
+// compositeLitLike is go/printer's isCompositeLitLike: a composite literal, or
+// the address of one, in any parentheses. indentList does not count one as an
+// element written across lines, its elements having a level of their own
+// (go.dev/issue/7195): counted, `return T{...}, T{...}` of two literals written
+// across lines was given a level as a whole, every line of it one too deep
+// (dom88's maptile).
+func (f *formatter) compositeLitLike(k kid) bool {
+	amp := false
+	for {
+		kids := kidsOf(k.ast[2:])
+		switch k.sym {
+		case Expression, SimpleExpr, Term:
+			if len(kids) != 1 {
+				return false
+			}
+			k = kids[0]
+		case UnaryExpr:
+			n := len(kids)
+			if n == 0 || kids[n-1].sym != Factor || n > 2 {
+				return false
+			}
+			if n == 2 {
+				if amp || kids[0].sym != UnaryOp {
+					return false
+				}
+				var ops []Symbol
+				for u := range itRaw(kids[0].ast) {
+					if u.sym == 0 {
+						ops = append(ops, Symbol(f.p.Token(u.tok).Ch))
+					}
+				}
+				if len(ops) != 1 || ops[0] != AND {
+					return false
+				}
+				amp = true
+			}
+			k = kids[n-1]
+		case Factor:
+			if len(kids) == 3 && kids[0].sym == 0 && Symbol(f.p.Token(kids[0].ast[0]).Ch) == LPAREN && kids[1].sym == Expression {
+				k = kids[1] // "(" Expression ")" with no suffix
+				continue
+			}
+			return len(kids) > 1 && kids[len(kids)-1].sym == CompositeLit
+		default:
+			return false
+		}
+	}
 }
 
 // indentAssigned gives a level to the value of an operator assignment that
@@ -1376,7 +1463,7 @@ func formatFile(fn string, b []byte, broken map[int32]bool) (out []byte, long []
 					// token is not emitted and its separator travels to the delimiter,
 					// the way a synthetic semicolon's does; the token history is left
 					// alone, so the delimiter is spaced against the element before it.
-					if nx := f.p.Token(tokIdx + 1); (Symbol(nx.Ch) == RBRACE || Symbol(nx.Ch) == RPAREN) &&
+					if nx := f.p.Token(tokIdx + 1); f.joinComma[tokIdx] || (Symbol(nx.Ch) == RBRACE || Symbol(nx.Ch) == RPAREN) &&
 						nx.Position().Line == tok.Position().Line {
 						syntheticSep = append(syntheticSep[:0], sep...)
 						break outer
@@ -1403,6 +1490,9 @@ func formatFile(fn string, b []byte, broken map[int32]bool) (out []byte, long []
 					}
 				}
 
+				if f.joinClose[tokIdx] {
+					sep = nil // after a list put on one line (oneLineList)
+				}
 				if len(syntheticSep) != 0 {
 					sep = append(syntheticSep, sep...)
 					syntheticSep = syntheticSep[:0]
@@ -1984,7 +2074,8 @@ func (f *formatter) tightFactor(n Node, depth int) {
 // the binary tree under n (parentheses and calls excluded -- a Factor bounds it)
 // holds add-level (has4) and mul-level (has5) operators, and the "maxProblem"
 // forced by an operator directly followed by a unary that would read badly tight:
-// a division against a leading "*", a sign against the same sign.
+// a division against a leading "*", a sign against the same sign, an AND against a
+// leading "&" or "^".
 func (f *formatter) binFlags(n Node) (has4, has5 bool, maxProblem int) {
 	kids := slices.Collect(itRaw(n.ast))
 	var opSyms []Node
@@ -2031,6 +2122,11 @@ func (f *formatter) binFlags(n Node) (has4, has5 bool, maxProblem int) {
 				if maxProblem < 4 {
 					maxProblem = 4
 				}
+			case op == "&" && (lead == AND || lead == XOR):
+				// Tight, "x&^y" is AND NOT and "x&&y" a logical AND: go/printer's
+				// "&&" and "&^" pairs. Left out, `a & ^b` was written `a&^b`,
+				// another operator, in a call of several arguments (dom116).
+				maxProblem = 5
 			}
 		}
 	}

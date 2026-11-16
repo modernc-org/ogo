@@ -109,6 +109,8 @@ func (f *formatter) markBreaks(ast []int32) {
 					f.keep(firstIndex(k.ast), 30, first, last) // an embedded interface
 				}
 			}
+		case CallSuffix, CompositeLit:
+			f.oneLineList(k.ast)
 		case PostfixOp:
 			// A label stands on a line of its own, ahead of what it labels.
 			kids := kidsOf(body)
@@ -120,6 +122,37 @@ func (f *formatter) markBreaks(ast []int32) {
 		}
 		f.markBreaks(body)
 	}
+}
+
+// oneLineList is go/printer's exprList's first case for a call's arguments and a
+// composite literal's elements: a list whose elements all stand on its opening
+// bracket's line is printed on that line, whatever line the source puts its
+// closing bracket on, and its terminating comma goes with the line break --
+// `{"a", "b",` with `},` on the next line is `{"a", "b"},` to gofmt (dom84's
+// physic tests). A parameter list keeps the break (go/printer's parameters),
+// and so does a list with a comment after its comma: the separators are left
+// as written where they hold one.
+func (f *formatter) oneLineList(ast []int32) {
+	open, closer := firstIndex(ast), lastIndex(ast)
+	comma := closer - 1
+	if open < 0 || comma <= open+1 || Symbol(f.p.Token(comma).Ch) != COMMA {
+		return
+	}
+	line := func(i int32) int { return f.p.Token(i).Position().Line }
+	if line(closer) == line(comma) {
+		return // the trailing comma's own rule
+	}
+	last := f.p.Token(comma - 1)
+	if line(open) != line(open+1) || line(open+1) != line(comma-1) || bytes.IndexByte(last.SrcBytes(), '\n') >= 0 {
+		return
+	}
+	for _, i := range []int32{comma, closer} {
+		if len(bytes.TrimSpace(f.p.Token(i).SepBytes())) != 0 {
+			return
+		}
+	}
+	f.joinComma[comma] = true
+	f.joinClose[closer] = true
 }
 
 // declParens is declGroupParens without the question it answers: the

@@ -81,6 +81,27 @@ shipped section tells a reader on that version that they have behaviour they do 
   first line break on. None of them changes what a program does.
   `scripts/fmtcmp.sh` caps its build and each file's formatting, as every
   run of the formatter is capped.
+- **`ogo fmt` no longer changes the tokens of `a & ^b`**: an AND before a unary
+  `^` or `&` was written tight where gofmt keeps it spaced, so `a & ^b` became
+  `a&^b`, AND NOT, and `a & &b` became `a&&b`, a logical AND -- in a call of
+  several arguments, or beside a tighter operator, `a & ^b + c*d`. AND NOT
+  gives the same value, so no program that builds changed what it does; but
+  `a & &b`, which no program builds, could become one that does. go/printer's
+  `&^` and `&&` pairs keep the blanks now, as its `/ *` pair did here already.
+  In every release checked (v0.57.0, v0.58.0, rc.4's).
+- **`ogo fmt` lays out five more shapes as gofmt does**, each found running
+  every earlier round's program through `scripts/fmtcmp.sh`. A unary operator
+  after `|`, `/`, `%`, a shift or `&^` binds as the operator's spacing says,
+  `a|^b` (dom95's md5), where it took a blank. A list whose elements all stand
+  on its opening bracket's line is put on that line, its terminating comma
+  dropped, however the source broke the line before the closing bracket:
+  `{"a", "b",` with `},` on the next line is `{"a", "b"},` (dom84). A blank
+  follows a `/* */` comment the line's next token follows, `{` and `/* 257 */
+  0,` on the next line (dom104), `g( /* c */ x)`. A return of composite
+  literals written across lines is not indented as a whole (go.dev/issue/7195;
+  dom88). And a file's leading blank lines are dropped (dom81). Of the 68
+  sources, 8 were laid out otherwise than by gofmt after the entry above and 4
+  are now; 35 lines are newly gofmt's, none is lost.
 
 ### Fixed
 

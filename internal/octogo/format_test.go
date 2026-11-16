@@ -1090,6 +1090,252 @@ func g(recursion uint32, uhm int, i int,
 	gofmtCheck(t, want)
 }
 
+// TestFormatUnaryAfterBinary pins a unary operator after a binary one as gofmt
+// spaces it. An AND before a unary "^" or "&" keeps its blanks, go/printer's
+// "&^" and "&&" problem pairs: written tight, `a & ^b` was `a&^b` and `a & &b`
+// `a&&b`, other operators, so the formatter changed the tokens it was given.
+// And a unary after a binary-only operator, "|", "/", "%", the shifts, "&^",
+// binds as the operator's spacing says, `a|^b` (dom95's md5), where it took a
+// blank (`a| ^b`). Found by scripts/fmtcmp.sh over the domain programs (dom116).
+func TestFormatUnaryAfterBinary(t *testing.T) {
+	const in = `func f(a, b, c, d uint32, p *uint32, ch chan uint32) {
+	g(1, a&^b, a & ^b, a & &b, a&^^b, a|^b, a/^b, a%^b, a<<^b, a>>*p, a|*p, a+^b, a-^b)
+	x := a & ^b + c*d
+	y := a | ^b + c*d
+	z := a % ^b + c*d
+	w := a&^^b + c*d
+	v := b + bitsRotateLeft32((c^(b | ^d))+a+0xf4292244, 6)
+	u := a < -b || a < <-ch
+	_, _, _, _, _, _ = x, y, z, w, v, u
+}
+`
+	const want = `func f(a, b, c, d uint32, p *uint32, ch chan uint32) {
+	g(1, a&^b, a & ^b, a & &b, a&^^b, a|^b, a/^b, a%^b, a<<^b, a>>*p, a|*p, a+^b, a-^b)
+	x := a & ^b + c*d
+	y := a | ^b + c*d
+	z := a%^b + c*d
+	w := a&^^b + c*d
+	v := b + bitsRotateLeft32((c^(b|^d))+a+0xf4292244, 6)
+	u := a < -b || a < <-ch
+	_, _, _, _, _, _ = x, y, z, w, v, u
+}
+`
+	formatCheck(t, in, want)
+	formatCheck(t, want, want)
+	gofmtCheck(t, want)
+}
+
+// TestFormatOneLineLists pins go/printer's exprList's first case: a call's
+// arguments or a literal's elements that all stand on the opening bracket's line
+// are printed on that line, the terminating comma and the line break before the
+// closing bracket dropped, wherever the source put the bracket (dom84's physic
+// tests, `{"a", "b",` with `},` on the next line). A list another line holds an
+// element of keeps its lines, and so does a parameter list, whose break
+// go/printer's parameters keeps.
+func TestFormatOneLineLists(t *testing.T) {
+	const in = `var a = []S{
+	{"9", "max",
+	},
+	{"9",
+		"max",
+	},
+}
+
+var b = []int{1, 2,
+}
+
+func f() {
+	g(1, 2,
+	)
+	g(1, []int{3, 4,
+	})
+	h := []S{{"a", "b",
+	}}
+	_ = h
+}
+
+func p(a int, b int,
+) {
+}
+`
+	const want = `var a = []S{
+	{"9", "max"},
+	{"9",
+		"max",
+	},
+}
+
+var b = []int{1, 2}
+
+func f() {
+	g(1, 2)
+	g(1, []int{3, 4})
+	h := []S{{"a", "b"}}
+	_ = h
+}
+
+func p(a int, b int,
+) {
+}
+`
+	formatCheck(t, in, want)
+	formatCheck(t, want, want)
+	gofmtCheck(t, want)
+}
+
+// TestFormatCommentBlank pins the blank go/printer writes after a /*-style
+// comment the line's next token follows (intersperseComments): always, but before
+// a comma, before a ")" or "]" closing what did not open just before the comment,
+// and before a non-empty literal's "}". It was asked of the token before the
+// comment, so `{\n\t/* 257 */ 0,` (dom104's flate) and `g(/* c */ x)` lost it.
+func TestFormatCommentBlank(t *testing.T) {
+	const in = `var t = []int{
+	/* 257 */ 0, 0, 0,
+	/* 260 */ 1,
+	/*x*/2,
+}
+
+func f(x int) {
+	g(/* c */ x)
+	g(/* c */x, 1)
+	y := /* c */ 1
+	z := x /* c */ + 1
+	w := x/* c */+1
+	_, _, _ = y, z, w
+	/* a */ h()
+	/* b */h()
+}
+func f2(x int, a []int) {
+	g(x /* c */)
+	g(/* c */)
+	g(x /* c */, 1)
+	_ = a[/* c */ 1]
+	_ = a[1 /* c */]
+	_ = T{x /* c */}
+	_ = T{/* c */}
+	_ = []int{1 /* c */, 2}
+	x = /* c */ -x
+	x = -/* c */x
+	if /* c */ x > 0 {
+	}
+	for i := 0; i < 1; /* c */ i++ {
+	}
+}
+`
+	const want = `var t = []int{
+	/* 257 */ 0, 0, 0,
+	/* 260 */ 1,
+	/*x*/ 2,
+}
+
+func f(x int) {
+	g( /* c */ x)
+	g( /* c */ x, 1)
+	y := /* c */ 1
+	z := x /* c */ + 1
+	w := x /* c */ + 1
+	_, _, _ = y, z, w
+	/* a */ h()
+	/* b */ h()
+}
+func f2(x int, a []int) {
+	g(x /* c */)
+	g( /* c */ )
+	g(x /* c */, 1)
+	_ = a[ /* c */ 1]
+	_ = a[1 /* c */]
+	_ = T{x /* c */}
+	_ = T{ /* c */ }
+	_ = []int{1 /* c */, 2}
+	x = /* c */ -x
+	x = - /* c */ x
+	if /* c */ x > 0 {
+	}
+	for i := 0; i < 1; /* c */ i++ {
+	}
+}
+`
+	formatCheck(t, in, want)
+	formatCheck(t, want, want)
+	gofmtCheck(t, want)
+}
+
+// TestFormatReturnLiterals pins go/printer's indentList, which a return's list is
+// indented by as a whole: an element written across lines counts toward it only
+// when it is no composite literal, the address of one or either in parentheses
+// (go.dev/issue/7195). Counted, a return of two literals each across lines was
+// given a level, every line of it one too deep (dom88's maptile).
+func TestFormatReturnLiterals(t *testing.T) {
+	const in = `func f() (T, T) {
+	return T{
+		X: 1,
+	}, T{
+		X: 2,
+	}
+}
+
+func g() (*T, T, int) {
+	return &T{
+		X: 1,
+	}, (T{
+		X: 2,
+	}), 3
+}
+
+func h() (int, int) {
+	return f(1,
+		2), f(3,
+		4)
+}
+
+func k() (int, int) {
+	return 1,
+		2
+}
+`
+	const want = `func f() (T, T) {
+	return T{
+		X: 1,
+	}, T{
+		X: 2,
+	}
+}
+
+func g() (*T, T, int) {
+	return &T{
+		X: 1,
+	}, (T{
+		X: 2,
+	}), 3
+}
+
+func h() (int, int) {
+	return f(1,
+			2), f(3,
+			4)
+}
+
+func k() (int, int) {
+	return 1,
+		2
+}
+`
+	formatCheck(t, in, want)
+	formatCheck(t, want, want)
+	gofmtCheck(t, want)
+}
+
+// TestFormatLeadingBlankLines pins a file's beginning: go/printer prints no blank
+// line ahead of the first comment or declaration, and dom81's main.ogo began
+// with one, which ogo fmt kept.
+func TestFormatLeadingBlankLines(t *testing.T) {
+	for _, in := range []string{"\nvar x = 1\n", "\n\n// c\nvar x = 1\n", "\n\n\n// c\n\nvar x = 1\n"} {
+		want := in[strings.IndexFunc(in, func(r rune) bool { return r != '\n' }):]
+		formatCheck(t, in, want)
+		gofmtCheck(t, want)
+	}
+}
+
 // TestFormatDocComments pins the doc comments gofmt rewrites: an unindented comment
 // abutting the declaration below it is go/printer's doc comment, its text written
 // as go/doc/comment writes it, a directive such as //go:noescape moved to its end
