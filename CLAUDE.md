@@ -441,6 +441,12 @@ silent fault puts the count back to 0. Each round's account is in
   through a nil function value of no result, reached through an element, a
   field of one or a call's result, written with no nil check: on the board it
   called address zero and went on as if made; 68fcfe2) -- 0
+- dom116 (2026-11-16), a ferry terminal's departure boards
+  (github.com/golang/freetype's raster, truetype and freetype and x/image's
+  math/fixed and font ported with truetype's tests, the boards rendered in
+  TrueType by a controller on a cog), the first round against master on
+  dom115's fix: clean, a formatter fault fixed (`a & ^b` written `a&^b`;
+  1203cd8), eight formatter shapes fixed (32c2653, 1203cd8), three listed -- 1
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1874,6 +1880,12 @@ section. A new finding goes there; the rule it leaves goes here too.
   through both formatters is the formatter's probe**.
 - **A variable the oracle's source asks is read where it is set, not by its name**
   (go/printer's lastTok, format_doc.go).
+- **A probe a round takes up is run over the programs the rounds before left
+  behind: fmtcmp ran on dom115 first, and 18 of the 58 domain programs were laid
+  out otherwise than by gofmt, one of them by a formatter changing its tokens.**
+  **The problem pairs of go/printer are read off its source, all of them: the
+  formatter had three of five, and `a & ^b` came back `a&^b`, another
+  operator.** (dom116, scripts/fmtcmp.sh).
 
 ## Notes
 
