@@ -447,6 +447,13 @@ silent fault puts the count back to 0. Each round's account is in
   TrueType by a controller on a cog), the first round against master on
   dom115's fix: clean, a formatter fault fixed (`a & ^b` written `a&^b`;
   1203cd8), eight formatter shapes fixed (32c2653, 1203cd8), three listed -- 1
+- dom117 (2026-11-17), a theatre's lighting console (go-colorful, Go 1.27's
+  math/rand and sort ported with their tests, the cues faded in perceptual
+  colour spaces, a DMX cog), the first round against master on dom116's
+  records: silent, on the host (a constant an int holds by way of a value it
+  does not written unsigned, `1<<31-1-1` as `(2147483648U - 1 - 1)`, so a
+  comparison, a division and a remainder beside a signed operand were
+  unsigned; 294d151) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1450,7 +1457,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   fold answers: a whole float is an integer to an integer type** (dom78).
   **A literal is decoded once, the checker's way: strconv.Unquote of a rune
   literal is a string's bytes, and '\x80' was U+FFFD to the emitter's second
-  decoding.** (dom114, sweeps/runelit).
+  decoding.** (dom114, sweeps/runelit). **A model of the type C computes a
+  constant in is asked its sign as well as its range: every value of
+  `1<<31-1-1` fits an unsigned int, and the level stood as written, unsigned
+  beside Go's int.** (dom117, sweeps/uconst).
 - **AN INTERFACE WRITTEN OUT IS A TYPE**: **A rule asked by name is a row of every
   type that has none.** **A value no interface may hold is refused by every
   interface, one asking for nothing among them: what it holds is asserted to the
