@@ -31336,6 +31336,15 @@ func (e *emitter) constLevelWrapsInC(ast []int32, ut string) (int64, bool) {
 			wraps = true
 		}
 	}
+	// A level C computes right may still be of another sign than Go's: `1<<31 - 1
+	// - 1` is the int 2147483646 to Go and, by way of 2147483648U, an unsigned int
+	// to C, so beside a signed operand a comparison, a division and a remainder
+	// were unsigned -- `i > 1<<31-1-1` true for an i of -1 on the host, where gcc
+	// computes as C says and the target's compiler folds the level wider (dom117,
+	// math/rand's Shuffle). Folded, the level is its value's own literal.
+	if rank == rUint && !isUnsignedCType(ut) && fits(acc, rInt) {
+		wraps = true
+	}
 	v, exact := constant.Int64Val(acc)
 	return v, wraps && exact
 }

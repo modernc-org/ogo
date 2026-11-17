@@ -105,6 +105,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A wrong answer, silent, on the host: a constant an int holds by way of a
+  value it does not was unsigned**: `1<<31 - 1 - 1`, `1<<31 - 1`, `2147483648 -
+  2` and `(1 << 31) / 2`, ints to Go, were written as computed, through
+  `2147483648U`, and C computes them in unsigned int: beside a signed
+  operand, `i > 1<<31-1-1` was true for an `i` of -1, `k / (1<<31 - 2)` 1 for
+  -2147483646, a remainder, a case and a loop's condition alike, an int's or
+  an int32's, and under a unary minus or `^`, `-(1<<31 - 2)`, an int64's
+  too. The board was right, its compiler folding the constant wider
+  than C says; the host's C was wrong, and under `-Wextra` a sign-compare
+  warning. Go 1.27's math/rand met it: Shuffle of no elements entered the loop
+  it keeps for counts past 2^31, `i > 1<<31-1-1` for an i of -1, and panicked
+  in `Int63n(0)`. Such a constant is its value's literal now. In
+  every release checked (v0.50.0, v0.58.0, rc.4).
 - **A wrong answer, silent: a call statement through a nil function value of
   no result went on as if made**: `tab[i](x)`, an element of an array or a
   slice of functions of no result called as a statement, was written with no

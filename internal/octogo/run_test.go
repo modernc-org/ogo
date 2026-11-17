@@ -35042,6 +35042,63 @@ func main() {
 		want: "case ok\n2560 1431655765 1280000 true 4294967 -1431655765 160000000 5 3 6 2560 6 11111 6 9 1431655765\n2147483647 1073741824 1000000000\n",
 	},
 	{
+		// A constant level whose every value fits the C type it is computed in may
+		// still be of another sign than Go's: `1<<31 - 1 - 1` is the int 2147483646
+		// to Go and, by way of 2147483648U, an unsigned int to C, so beside a signed
+		// operand a comparison, a division, a remainder, a case and a loop's
+		// condition were unsigned on the host -- every answer here but the third
+		// line's call -- and shuffle(0), math/rand's Shuffle loop, entered the loop
+		// it keeps for counts past 2^31 (dom117). The board was right: its
+		// compiler folds the level wider than C says.
+		name: "a constant of a value an int holds by way of one it does not",
+		src: `var sink int
+
+func f(v int) int {
+	sink++
+	return v
+}
+
+func swap(i, j int) {
+	sink += 10
+}
+
+// shuffle is math/rand's Shuffle loop, of an n that never reaches 2^31.
+func shuffle(n int) int {
+	i := n - 1
+	steps := 0
+	for ; i > 1<<31-1-1; i-- {
+		steps += 100
+	}
+	for ; i > 0; i-- {
+		swap(i, 0)
+		steps++
+	}
+	return steps
+}
+
+func main() {
+	i := -1
+	println(i > 1<<31-1-1, i < 1<<31-1, 1<<31-1 > i, f(i) <= 2147483648-2, i >= 0x80000000-1)
+	var j int32 = -7
+	println(j > (1<<31 - 2), j < (1<<31)/2, j > (1<<31-2)*1, j < 4294967295-4294967290)
+	k := -2147483646
+	println(k/(1<<31-2), k%(1<<31-1), (1<<31-2)/f(-2), k/((1<<31)/2), j/(1<<31-1), j%((1<<31-2)*1))
+	switch {
+	case i > 1<<31-2:
+		println("case wrong")
+	default:
+		println("case right")
+	}
+	n := 0
+	for w := -3; w < 1<<31-1 && n < 3; w++ {
+		n++
+	}
+	println(n, shuffle(0), shuffle(1), shuffle(3), sink)
+}
+`,
+		want: "false true true true false\nfalse true false true\n-1 -2147483646 -1073741823 -1 0 -7\ncase right\n3 0 0 2 22\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a
