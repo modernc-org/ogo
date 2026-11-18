@@ -37764,6 +37764,18 @@ func (e *emitter) typeSwitchOperand(ast []int32) (base string, prefix []Node, ok
 // caseIfaceC recognises a type-switch case naming an INTERFACE, `case T:`, and
 // answers with its C name.
 func (e *emitter) caseIfaceC(ex Node) (string, bool) {
+	// `case error:` and `case any:` -- the universe's interfaces, declared in no
+	// file, answered as every other place answers them (errorIfaceCType, the
+	// empty interface's anonInterfaceOf): typeCName had no table for them, and the
+	// case was refused as naming no type, with no position (dom118).
+	if tok, ok := e.soleToken(ex.ast); ok && e.f.ch(tok) == IDENT {
+		switch name := e.src(tok); {
+		case name == "error" && !e.typeNames[e.typeMangle(e.curPkgPrefix, "error")]:
+			return e.errorIfaceCType(), true
+		case name == "any" && !e.typeNames[e.typeMangle(e.curPkgPrefix, "any")]:
+			return e.anonInterfaceOf(nil), true
+		}
+	}
 	if name, ok := e.exprIdent(ex.ast); ok {
 		mn := e.unaliased(e.typeCName(name))
 		return mn, e.isIfaceCType(mn)

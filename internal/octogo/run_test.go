@@ -35099,6 +35099,62 @@ func main() {
 		want: "false true true true false\nfalse true false true\n-1 -2147483646 -1073741823 -1 0 -7\ncase right\n3 0 0 2 22\n",
 	},
 	{
+		// A type switch case naming one of the universe's interfaces, `case
+		// error:` or `case any:`, was refused by the emitter, "a type switch case
+		// names a pointer type, an interface type, or nil", with no position, where
+		// the checker took it: caseIfaceC knew a declared, a written-out and a
+		// qualified interface, and the universe's resolve to no declaration (dom118,
+		// fmt's handleMethods; sweeps/typeswitch-universe).
+		name: "a type switch case naming error or any",
+		src: `type E struct{ n int }
+
+func (e *E) Error() string { return "E" }
+
+type S struct{ s string }
+
+func (s *S) String() string { return s.s }
+
+type stringer interface {
+	String() string
+}
+
+func kind(a any) string {
+	switch v := a.(type) {
+	case nil:
+		return "nil"
+	case stringer:
+		return v.String()
+	case error:
+		return v.Error()
+	case any:
+		return "any"
+	}
+	return "unreached"
+}
+
+func either(a any) bool {
+	switch a.(type) {
+	case error, stringer:
+		return true
+	}
+	return false
+}
+
+func main() {
+	e := E{1}
+	s := S{"s"}
+	var i int
+	println(kind(&e), kind(&s), kind(&i), kind(nil))
+	var err error = &e
+	switch err.(type) {
+	case error:
+		println("error", either(&e), either(&s), either(&i))
+	}
+}
+`,
+		want: "E s any nil\nerror true true false\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a

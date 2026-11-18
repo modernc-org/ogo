@@ -105,6 +105,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A type switch case naming `error` or `any` builds**: `switch v :=
+  x.(type) { case error: ... }`, and `case any:`, were refused by the
+  emitter, "a type switch case names a pointer type, an interface type, or
+  nil", with no position, where the checker took them: the universe's
+  interfaces resolve to no declaration, and the case asked for one. Found
+  porting Go's fmt, whose handleMethods asks error before Stringer.
 - **A wrong answer, silent, on the host: a constant an int holds by way of a
   value it does not was unsigned**: `1<<31 - 1 - 1`, `1<<31 - 1`, `2147483648 -
   2` and `(1 << 31) / 2`, ints to Go, were written as computed, through
