@@ -62313,6 +62313,18 @@ func (e *emitter) noteSliceElemRefs(name string, value []int32) {
 // per-variable marks can say, what its root is marked with. Any other shape, a
 // call's result above all, is undecided.
 func (e *emitter) sliceElemOrigin(value []int32) (origin string, has, decided bool) {
+	// Elements that can hold neither a reference nor a string reach nothing,
+	// whatever a holder mark says of the variable: the mark a slice copied out of
+	// a struct field takes, `text := p.buf`, is its BACKING's, and a []byte's
+	// bytes hold nothing -- read as its elements', `b = append(b, text...)` was
+	// refused as b holding the local array p.buf views (dom118,
+	// found/f1-spread-field). A string may be a view of the frame's bytes, a
+	// Builder's over a local array, and carriesReference does not count one.
+	if ct, typed := e.inferCType(value); typed {
+		if el, isSlice := e.sliceElemByName[e.underlyingCType(ct)]; isSlice && !e.carriesReference(el) && !e.holdsString(el, map[string]bool{}) {
+			return "", false, true
+		}
+	}
 	ast := e.unparenExpr(value)
 	if _, _, isLit := e.soleArrayLit(ast); isLit {
 		r, ok := e.frameRefInLit(ast)

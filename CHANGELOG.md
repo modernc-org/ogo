@@ -111,6 +111,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   nil", with no position, where the checker took them: the universe's
   interfaces resolve to no declaration, and the case asked for one. Found
   porting Go's fmt, whose handleMethods asks error before Stringer.
+- **A slice read out of a struct that views a local array, its elements
+  appended to a slice handed back, builds**: `b = append(b, p.buf...)`, and
+  the same through `t := p.buf`, a reslice or a pointer to the struct, were
+  refused, "cannot return local b, which holds a pointer into local back",
+  and `copy(b[n:], p.buf)` "cannot copy p.buf into b[n:]: its elements hold
+  a pointer into local back": the mark a slice takes from a struct's field
+  was read as what its elements reach. A slice whose elements hold neither a
+  reference nor a string reaches nothing through them; a string, which may
+  be a Builder's view of a local array, is still asked. Found porting Go's
+  fmt, whose Appendf appends its printer's text.
 - **A wrong answer, silent, on the host: a constant an int holds by way of a
   value it does not was unsigned**: `1<<31 - 1 - 1`, `1<<31 - 1`, `2147483648 -
   2` and `(1 << 31) / 2`, ints to Go, were written as computed, through

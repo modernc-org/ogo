@@ -35155,6 +35155,62 @@ func main() {
 		want: "E s any nil\nerror true true false\n",
 	},
 	{
+		// A slice read out of a struct that views a local array, its elements
+		// appended to a slice handed back, `b = append(b, p.buf...)`, was refused as
+		// b holding the local array: the holder mark a slice copied out of a field
+		// takes is its backing's, and sliceElemOrigin read it as what its elements
+		// reach. Elements that hold neither a reference nor a string reach nothing
+		// (dom118, fmt's Appendf; sweeps/spread-holder, whose Builder rows a string
+		// let through without holdsString).
+		name: "a spread of a slice read out of a struct viewing a local array",
+		src: `type printer struct {
+	buf []byte
+	n   int
+}
+
+func (p *printer) init(back []byte) {
+	p.buf = back[:0]
+}
+
+func (p *printer) put(s string) {
+	p.buf = append(p.buf, s...)
+	p.n++
+}
+
+// appendf is fmt's Appendf: the printer's text, made in the frame, appended
+// to the caller's slice.
+func appendf(b []byte, s string) []byte {
+	var p printer
+	var back [16]byte
+	p.init(back[:])
+	p.put(s)
+	p.put("!")
+	b = append(b, p.buf...)
+	text := p.buf[1:]
+	b = append(b, text...)
+	return b
+}
+
+func sum(b []int) []int {
+	var p struct{ v []int }
+	var back [4]int
+	p.v = back[:0]
+	p.v = append(p.v, 3, 4)
+	return append(b, p.v...)
+}
+
+func main() {
+	var out [32]byte
+	r := appendf(out[:0], "hey")
+	println(len(r), string(r) == "hey!ey!")
+	var ints [8]int
+	q := sum(ints[:0])
+	println(len(q), q[0]+q[1])
+}
+`,
+		want: "7 true\n2 7\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a
