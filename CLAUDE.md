@@ -454,6 +454,15 @@ silent fault puts the count back to 0. Each round's account is in
   does not written unsigned, `1<<31-1-1` as `(2147483648U - 1 - 1)`, so a
   comparison, a division and a remainder beside a signed operand were
   unsigned; 294d151) -- 0
+- dom118 (2026-11-18), an APRS weather station, its own digipeater and igate
+  (Go 1.27's fmt ported with fmt_test.go's rows, github.com/ebarkie/aprs with
+  its tests, a TNC's Bell 202 modem, the air and an APRS-IS server on cogs),
+  the first round against master on dom117's records: clean, two false
+  refusals fixed (a type switch case naming error or any, the emitter's, with
+  no position; 5faaf4c; a slice read out of a struct viewing a local array, its
+  bytes taken to keep the array; d7c0627), two listed (a string field kept out
+  of a receiver holding a literal's address in another, dom75's; a trailing
+  comment's column after a long row, the formatter's) -- 1
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
