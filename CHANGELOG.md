@@ -117,6 +117,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   klauspost/compress's fse, whose normalizeCount2 declares `vStepLog` and
   `mid` so. In every release checked (v0.50.0, rc.4), on the board as on the
   host.
+- **A constant of a defined type going into an interface is refused where it
+  stands**: `return ErrX`, `f(ErrX)`, `var e error = ErrX`, `e = ErrX` and
+  `W{err: ErrX}` of a `const ErrX = E("x failed")` whose E has an Error method
+  are refused, "cannot use ErrX (constant of type E) as error value in return
+  statement: an interface holds a pointer here", as a variable of the type is:
+  a return and an argument wrote the constant where the interface's two words
+  go, which the C compiler refused, and a declaration and a literal's field
+  were refused by the emitter with no position. Its address goes in, a
+  variable's. Found porting x448/float16, whose FromNaN32ps returns its
+  ErrInvalidNaNValue. In every release checked (v0.50.0, rc.4).
 - **A type switch case naming `error` or `any` builds**: `switch v :=
   x.(type) { case error: ... }`, and `case any:`, were refused by the
   emitter, "a type switch case names a pointer type, an interface type, or

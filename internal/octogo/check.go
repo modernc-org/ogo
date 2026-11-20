@@ -16611,6 +16611,25 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 		}
 		return
 	}
+	// A CONSTANT of a defined type, `const ErrX = E("x failed")` of a `type E
+	// string` with an Error method: a value, as `E("x failed")` written out is
+	// (madeDefinedValue, above), which Go copies in and an interface here cannot
+	// hold. Asked as a variable only, it passed: a return and an argument wrote the
+	// constant where the interface's two words go, which the C compiler refused, and
+	// a declaration and a literal's field were the emitter's to refuse, with no
+	// position (dom119, x448/float16's ErrInvalidNaNValue, `return SNAN,
+	// ErrInvalidNaNValue`).
+	if _, isConst := s.find(id.Src()).(*ConstDeclaration); isConst && !valueIsPtr {
+		if name, qual, _, named := f.exprNamedType(s, value); named {
+			from := name.Src()
+			if qual.IsValid() {
+				from = qual.Src() + "." + from
+			}
+			f.err(f.tok(value.Pos()).Position(), "cannot use %s (constant of type %s) as %s value in %s: an interface holds a pointer here",
+				id.Src(), from, ifaceName, what)
+			return
+		}
+	}
 	d, ok := s.find(id.Src()).(*VarDeclaration)
 	// A variable of an interface written out, `var v interface{ M() }`, has no type
 	// name, and is asked under the one ifaceLitName gives it what a variable of a

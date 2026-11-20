@@ -1,0 +1,47 @@
+// A constant of a defined type goes into no interface: it is a value, which Go
+// copies in, and an interface here holds a pointer. Asked as a variable only, it
+// passed (dom119, x448/float16's `const ErrInvalidNaNValue = float16Error(...)`):
+// a return and an argument wrote the constant where the interface's two words go,
+// which the C compiler refused, and a declaration and a literal's field were the
+// emitter's to refuse, with no position. Its address goes in, a variable's.
+
+type E string
+
+func (e E) Error() string { return string(e) }
+
+const ErrX = E("x failed")
+
+const ErrY E = "y failed"
+
+var errV = ErrX
+
+type W struct{ err error }
+
+func h(e error) string { return e.Error() }
+
+func ret() error {
+	// ERROR "cannot use ErrX \(constant of type E\) as error value in return statement: an interface holds a pointer here"
+	return ErrX
+}
+
+func two(n int) (int, error) {
+	if n > 0 {
+		// ERROR "cannot use ErrY \(constant of type E\) as error value in return statement"
+		return n, ErrY
+	}
+	return 0, &errV
+}
+
+func main() {
+	// ERROR "cannot use ErrX \(constant of type E\) as error value in argument to h"
+	println(h(ErrX))
+	// ERROR "cannot use ErrX \(constant of type E\) as error value in variable declaration"
+	var e error = ErrX
+	// ERROR "cannot use ErrY \(constant of type E\) as error value in assignment"
+	e = ErrY
+	// ERROR "cannot use ErrX \(constant of type E\) as error value in struct literal"
+	w := W{err: ErrX}
+	println(h(&errV), e != nil, w.err != nil, ret() != nil)
+	_, err := two(1)
+	println(err != nil)
+}
