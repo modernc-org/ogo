@@ -25450,11 +25450,39 @@ func (e *emitter) emitStatementInner(nodes []Node, ast []int32) {
 // emitVarDecl handles `var name Type` (zero-initialized; P2 stack locals are not
 // auto-zeroed, so the initializer is required), `var name Type = expr`, and fixed
 // arrays `var a [N]T`.
+//
+// The specs of a group, `var ( a = x; b = f(a) )`, are declared one after another,
+// and a spec's value may read the specs above it: each spec of a group is a
+// statement of its own for its prologue, the lines its value hoists written right
+// before it. Sharing the statement's one prologue, they all went before the first
+// spec, so a temporary of b's value read an a not yet declared -- the outer a, a
+// package variable's, in silence, or one undeclared, which the C refused (dom119,
+// fse's normalizeCount2, `mid = uint64((1 << (vStepLog - 1)) - 1)`).
 func (e *emitter) emitVarDecl(ast []int32) {
+	specs := 0
+	for n := range it(ast) {
+		if n.sym == VarSpec {
+			specs++
+		}
+	}
 	for n := range it(ast) {
 		if n.sym != VarSpec {
 			continue
 		}
+		if specs > 1 {
+			e.emitOwnPrologue(func() { e.emitVarDeclSpec(n) })
+			if e.err != nil {
+				return
+			}
+			continue
+		}
+		e.emitVarDeclSpec(n)
+	}
+}
+
+// emitVarDeclSpec emits one VarSpec node of a var declaration.
+func (e *emitter) emitVarDeclSpec(n Node) {
+	{
 		var names []string
 		var typeAST []int32
 		var initExprs [][]int32

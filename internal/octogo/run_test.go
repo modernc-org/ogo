@@ -35211,6 +35211,52 @@ func main() {
 		want: "7 true\n2 7\n",
 	},
 	{
+		// A var group whose later spec reads an earlier one through a value the
+		// emitter binds ahead of the statement, `var ( a = 62 - uint64(t); b =
+		// uint64((1 << (a - 1)) - 1) )`: every spec shared the statement's one
+		// prologue, so the bound value read the name before the group declared
+		// it -- the package variable a, in silence, or one undeclared, which the
+		// host's C refused. Each spec of a group has its prologue written right
+		// before it (dom119, fse's normalizeCount2; sweeps/vargroup-hoist).
+		name: "a var group's later spec reading an earlier one through a bound value",
+		src: `var a uint64 = 5
+
+type pt struct{ x, y uint64 }
+
+func mk(v uint64) pt { return pt{v, v + 7} }
+
+func arr3(v uint64) [3]uint64 { return [3]uint64{v, v * 2, v * 3} }
+
+func f(t uint8) uint64 {
+	var (
+		a = 62 - uint64(t)
+		b = uint64((1 << (a - 1)) - 1)
+		c = arr3(a)[1]
+		d = mk(c).y
+	)
+	return b + a + c + d
+}
+
+func g(t uint8) uint64 {
+	var s uint64
+	for i := uint8(0); i < 3; i++ {
+		var (
+			a = uint64(t + i)
+			b = [3]uint64{a, a + 1, a + 2}[a%3]
+		)
+		s += b * a
+	}
+	return s
+}
+
+func main() {
+	println(f(2), a)
+	println(g(4))
+}
+`,
+		want: "576460752303423794 5\n91\n",
+	},
+	{
 		// Go computes a constant expression in arbitrary precision and then converts;
 		// C computes it in the type of its operands. Written out as C source, "1 <<
 		// 40" is a shift of an int by 40 -- undefined, and 0 in practice -- so a

@@ -105,6 +105,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A wrong answer, silent: a var group's later spec read an earlier one's
+  name before the group declared it**: `var ( a = 62 - uint64(t); b =
+  uint64((1 << (a - 1)) - 1) )` in a function computed b from whatever a stood
+  outside the group, a package variable's or an outer block's, wherever b's
+  value was bound ahead of the statement -- a shift of an untyped constant in a
+  conversion, an element of a call's array result, a field of a call's struct
+  result, an element of a literal -- in a loop's body and a case clause alike;
+  with no other a, the C did not compile. Each spec of a group is declared
+  with what its value binds written right before it now. Found porting
+  klauspost/compress's fse, whose normalizeCount2 declares `vStepLog` and
+  `mid` so. In every release checked (v0.50.0, rc.4), on the board as on the
+  host.
 - **A type switch case naming `error` or `any` builds**: `switch v :=
   x.(type) { case error: ... }`, and `case any:`, were refused by the
   emitter, "a type switch case names a pointer type, an interface type, or
