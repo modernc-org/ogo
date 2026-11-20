@@ -463,6 +463,16 @@ silent fault puts the count back to 0. Each round's account is in
   bytes taken to keep the array; d7c0627), two listed (a string field kept out
   of a receiver holding a literal's address in another, dom75's; a trailing
   comment's column after a long row, the formatter's) -- 1
+- dom119 (2026-11-20), a Holter monitor's recorder (klauspost/compress's fse
+  and huff0 and x448/float16 ported with their tests, Go 1.27's fmt carried, an
+  ECG front end and a NOR flash on cogs), the first round against master on
+  dom118's records: silent (a var group's later spec read an earlier one's name
+  before the group declared it, through a value bound ahead of the statement;
+  faad282), two loud faults fixed (a constant of a defined type with methods
+  going into an interface; 82589ce; a call through an interface no type is put
+  into taken to call every taken function, a false stack overflow on the board,
+  dom89's listed gap; a46a566), one listed (a method's result through a pointer
+  to a local array's element taken for the local's, dom83's) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1473,7 +1483,10 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **AN INTERFACE WRITTEN OUT IS A TYPE**: **A rule asked by name is a row of every
   type that has none.** **A value no interface may hold is refused by every
   interface, one asking for nothing among them: what it holds is asserted to the
-  others, and the assertions test only the types that have a table** (dom105). **AN ALIAS OF A TYPE WRITTEN OUT IS THAT TYPE**: **a type
+  others, and the assertions test only the types that have a table** (dom105).
+  **A check that finds a name's declaration asks each kind it may find: the
+  interface's question was asked of a variable, and a constant of a defined type
+  went in unasked.** (dom119, checkImplements). **AN ALIAS OF A TYPE WRITTEN OUT IS THAT TYPE**: **a type
   that names no defined type is stored under the literal's table, and every place
   naming a table asks the same name**. **A name in a type position is a row of every
   declaration that resolves to no package**.
@@ -1689,7 +1702,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   land**; **a lowering with two branches asks the ordering discipline of both**; **A
   head the emitter writes as text is asked where its effects land against the
   arguments'**. **A call is asked of every head a call can follow: a name, a
-  parenthesis, a dereference, a conversion, a call** (nodeHasEffect).
+  parenthesis, a dereference, a conversion, a call** (nodeHasEffect). **A
+  statement that declares as it goes is given a prologue per declaration: a var
+  group's later spec reads what the earlier ones declare, and a value bound ahead
+  of the group read the name before it was there.** (dom119, emitVarDecl).
 - **A RUN OF PREFIX OPERATORS IS ONE NODE**: **A rule written for an operator and
   its operand asks what the grammar's repetition hands it: a run of prefix
   operators is one node, and the operand of the first is the rest of the run.**
@@ -1812,10 +1828,14 @@ section. A new finding goes there; the rule it leaves goes here too.
   type: a pointer converted, through unsafe.Pointer or not, makes a value of one
   type a value of another** (A VALUE'S TYPE IS A STACK'S SIZE); **A call through an
   interface no type implements reaches nothing: one taken to reach every taken
-  function closes cycles no run makes** (dom89, listed). **A bound read off the
-  listing against the C asks what the backend dropped: a call in a dead branch is
-  in the C and not in the listing, and an exact count of the two takes the
-  function for one calling everything.** (dom113, fixed after the round).
+  function closes cycles no run makes** (dom89, listed; fixed in dom119). **A
+  bound read off the listing against the C asks what the backend dropped: a call
+  in a dead branch is in the C and not in the listing, and an exact count of the
+  two takes the function for one calling everything.** (dom113, fixed after the
+  round). **A gap listed for one consequence is asked what else reads its answer:
+  an interface no type implements was listed for the cycles it closed, and a
+  stack check's margin read the same unknown and stopped a program with room to
+  spare.** (dom119, CallScan.Targets).
 - **Two programs that should cost the same are compared by their BINARIES**.
 - **What the backend makes of a library call is read in the listing for what it
   holds while the arguments run**; **A goroutine's output is asked with main
