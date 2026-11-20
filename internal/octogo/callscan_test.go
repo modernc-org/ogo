@@ -75,15 +75,86 @@ func main() {
 	}
 }
 
+// TestScanCallsNoTable pins the call through an interface no type is put into,
+// fmt's handleMethods asking for a Formatter in a program implementing none
+// (dom119's m0069): it reaches nothing, where a member no table type declares is
+// unknown, and a call through a table type the C has a table of reaches what the
+// table holds. Checked, the call names its table's type; unchecked, it does not.
+func TestScanCallsNoTable(t *testing.T) {
+	src := `type Formatter interface {
+	Format() int
+}
+
+type Shape interface {
+	Area() int
+}
+
+type Sq struct{ s int }
+
+func (q *Sq) Area() int { return q.s * q.s }
+
+func show(x any) int {
+	if f, ok := x.(Formatter); ok {
+		return f.Format()
+	}
+	if s, ok := x.(Shape); ok {
+		return s.Area()
+	}
+	return 0
+}
+
+func main() {
+	println(show(&Sq{2}))
+}
+`
+	for _, checked := range []bool{true, false} {
+		t.Run(map[bool]string{true: "checked", false: "unchecked"}[checked], func(t *testing.T) {
+			c := emitForScanWith(t, src, checked)
+			scan := ScanCalls(c)
+			fc := scan.Funcs["show"]
+			if fc == nil || len(fc.Iface) != 2 || fc.Other != 0 {
+				t.Fatalf("show: %+v\n%s", fc, c)
+			}
+			for _, site := range fc.Iface {
+				fns, ok := scan.Targets(site)
+				switch site.Member {
+				case "ogo_m_Format":
+					if !ok || len(fns) != 0 {
+						t.Errorf("targets of %+v: %v, %v; want nothing, known", site, fns, ok)
+					}
+				case "ogo_m_Area":
+					if !ok || len(fns) != 1 {
+						t.Errorf("targets of %+v: %v, %v; want the Sq table's", site, fns, ok)
+					}
+				default:
+					t.Errorf("site %+v", site)
+				}
+			}
+			if _, ok := scan.Targets(IfaceSite{Member: "ogo_m_Missing"}); ok {
+				t.Error("a member no table type declares answered targets")
+			}
+		})
+	}
+}
+
 func emitForScan(t *testing.T, src string) []byte {
+	t.Helper()
+	return emitForScanWith(t, src, true)
+}
+
+func emitForScanWith(t *testing.T, src string, checked bool) []byte {
 	t.Helper()
 	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
 	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
+	opts := []EmitOption{Inline()}
+	if checked {
+		opts = append(opts, Checked())
+	}
 	var buf bytes.Buffer
-	if err := EmitC(pkg, &buf, Checked(), Inline()); err != nil {
+	if err := EmitC(pkg, &buf, opts...); err != nil {
 		t.Fatalf("EmitC: %v", err)
 	}
 	return buf.Bytes()

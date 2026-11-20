@@ -127,6 +127,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   were refused by the emitter with no position. Its address goes in, a
   variable's. Found porting x448/float16, whose FromNaN32ps returns its
   ErrInvalidNaNValue. In every release checked (v0.50.0, rc.4).
+- **A false "goroutine stack overflow" on the board: a function calling
+  through an interface no type is put into was taken to call every function
+  whose address is taken**. Go's fmt asks a value for a Formatter, and a
+  program with no Formatter has no table of one, which the stack bound read as
+  "unknown": fmt's handleMethods was given a stack check's margin of 9243
+  bytes where it needs 2799, and an error printed 7 KB into main's stack
+  stopped the program, with Hub RAM to spare. Such a call reaches nothing now,
+  an interface holding only tables of its own type. Found by dom119's mutants,
+  two of whose decoding errors stopped so where Go prints them. The same since
+  the stack bound read interface calls (v0.58.0 and rc.4 alike).
 - **A type switch case naming `error` or `any` builds**: `switch v :=
   x.(type) { case error: ... }`, and `case any:`, were refused by the
   emitter, "a type switch case names a pointer type, an interface type, or

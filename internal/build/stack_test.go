@@ -170,6 +170,24 @@ static void ogo_go0(void* p) {
 	use(*(I*)p, 1);
 }
 `
+	// A call through an interface no type is put into, beside one that has a
+	// table: the C has no table of J's type, so a J holds none, and the call
+	// reaches nothing (dom119's m0069, fmt's handleMethods asking for a
+	// Formatter where nothing implements one).
+	viaNoTable := decls + `struct J_vt { const char* _ogo_type; int (*ogo_m_N)(void*); };
+typedef struct J { void* data; const J_vt* vt; } J;
+int use(I x, J y) {
+	int r = ((const I_vt*)ogo_iface_vt(x.vt))->ogo_m_M(x.data);
+	if (y.vt) {
+		r += ((const J_vt*)ogo_iface_vt(y.vt))->ogo_m_N(y.data);
+	}
+	return r;
+}
+static void ogo_go0(void* p) {
+	J y = {0, 0};
+	use(*(I*)p, y);
+}
+`
 	viaValue := decls + `int use(I x) {
 	fnT f = big;
 	return ((const I_vt*)ogo_iface_vt(x.vt))->ogo_m_M(x.data) + f(1);
@@ -226,6 +244,9 @@ member fnT ` + member + `
 		{"a call the backend drops is one fewer", viaTwo, 1, narrow},
 		{"both calls kept", viaTwo, 2, narrow},
 		{"a listing the C does not account for, beside a call dropped", viaTwo, 3, wide},
+		{"a call through an interface no table is of reaches nothing", viaNoTable, 2, narrow},
+		{"a call through an interface no table is of, dropped", viaNoTable, 1, narrow},
+		{"a listing the C does not account for, beside an interface no table is of", viaNoTable, 3, wide},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if r := readStackNeeds(listing(tc.calls), []byte(tc.c)); r.goLongs != tc.longs || !r.goKnown {

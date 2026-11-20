@@ -721,8 +721,9 @@ func stackCName(n string) string {
 // function values of the program function n may reach, and known false where that
 // is not known. The C read is n's own and that of every function it calls by name
 // that n's listing does not call -- inlined into it, or gone -- the tables must hold
-// something in each slot called, and the build's table must say what each type of
-// value may hold (octogo.FuncValueClasses). exact says they are all the calls n
+// something in each slot called, or the C have no table that could, which reaches
+// nothing (octogo.CallScan.Targets), and the build's table must say what each type
+// of value may hold (octogo.FuncValueClasses). exact says they are all the calls n
 // makes through a register: every call in that C is by name, through a table or
 // through a value spelled with its type (no Other), and n's listing makes no more
 // calls through a register than the C makes through tables and values. The caller

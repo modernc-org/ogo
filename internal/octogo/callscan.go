@@ -40,6 +40,11 @@ type CallScan struct {
 	// members, by member alone, the union over every table type.
 	slots   map[string]map[string][]string
 	members map[string][]string
+	// vtMembers holds, by table type, the members its struct declares, and
+	// tabled the table types the C declares an object of: a table, or anything
+	// else of the type that is no pointer to it.
+	vtMembers map[string]map[string]bool
+	tabled    map[string]bool
 	// fvMembers is, by the C type of a function value, the functions a value of
 	// it may hold (ReadFuncValueClasses).
 	fvMembers map[string][]string
@@ -68,14 +73,46 @@ type IfaceSite struct{ VT, Member string }
 // Targets answers the functions an interface call may reach: those the tables of
 // its type hold in its member, or, where the call names no type, those any table
 // holds there. ok is false where no table holds anything there, which a caller
-// takes as "unknown" and not as "nothing".
+// takes as "unknown" and not as "nothing" -- but where the C has no table of any
+// type declaring the member, the one the call names or, where it names none, any:
+// then the call reaches nothing, and ok is true. An interface holds a table of its
+// own type, one for each type put into it (the emitter's needVTable), and one
+// viewed as another takes the other's (ifaceRebindC), so where the C has no table
+// of the type, the interface holds none: a value of it is nil, and the call is
+// never made. Until 2026-11-20 it was unknown, and its function every taken
+// function's: fmt's handleMethods calls through a Formatter, which nothing of
+// dom119 implements, and its stack check's margin was the deepest test's, 9243
+// bytes for 80 of its own, so an error printed 7 KB into main's stack of 16 KB
+// panicked "goroutine stack overflow" on the board (m0069).
 func (s *CallScan) Targets(site IfaceSite) (fns []string, ok bool) {
 	if site.VT != "" {
 		fns = s.slots[site.VT][site.Member]
 	} else {
 		fns = s.members[site.Member]
 	}
-	return fns, len(fns) != 0
+	if len(fns) != 0 {
+		return fns, true
+	}
+	return nil, s.untabled(site)
+}
+
+// untabled reports whether the C declares no table that could hold what site
+// calls: of the type it names, or, where it names none, of any type declaring its
+// member, one type at least declaring it.
+func (s *CallScan) untabled(site IfaceSite) bool {
+	if site.VT != "" {
+		return s.vtMembers[site.VT][site.Member] && !s.tabled[site.VT]
+	}
+	declared := false
+	for vt, members := range s.vtMembers {
+		if members[site.Member] {
+			if s.tabled[vt] {
+				return false
+			}
+			declared = true
+		}
+	}
+	return declared
 }
 
 // InTable reports whether a table holds the function the C names name: an
@@ -257,9 +294,11 @@ func matchClose(toks []scanTok, i int) int {
 func ScanCalls(c []byte) *CallScan {
 	toks, macros := scanTokens(c)
 	scan := &CallScan{
-		Funcs:   map[string]*FuncCalls{},
-		slots:   map[string]map[string][]string{},
-		members: map[string][]string{},
+		Funcs:     map[string]*FuncCalls{},
+		slots:     map[string]map[string][]string{},
+		members:   map[string][]string{},
+		vtMembers: map[string]map[string]bool{},
+		tabled:    map[string]bool{},
 	}
 	scan.fvMembers, _ = ReadFuncValueClasses(c)
 	known := map[string]bool{} // a function or a macro: a call of it is by name
@@ -397,6 +436,20 @@ func ScanCalls(c []byte) *CallScan {
 			}
 		}
 		i++
+	}
+	// What the C declares of each table type: a name after the type is an object
+	// of it -- `static const X_vt V = {...}`, the tables, but any other too -- and
+	// a pointer to one, the struct's own declaration and its typedef are not.
+	for vt, members := range vtMembers {
+		scan.vtMembers[vt] = map[string]bool{}
+		for _, m := range members {
+			scan.vtMembers[vt][m] = true
+		}
+	}
+	for j := 0; j+1 < len(toks); j++ {
+		if _, isVT := vtMembers[toks[j].s]; isVT && toks[j+1].ident && toks[j+1].s != toks[j].s {
+			scan.tabled[toks[j].s] = true
+		}
 	}
 	defined := map[string]bool{}
 	for _, b := range bodies {
