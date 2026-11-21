@@ -27313,6 +27313,19 @@ func (e *emitter) emitArrayLitVarNamed(name string, typeAST []int32, lit Node, s
 			e.emit(a.elem + " " + declName + a.declSuffix() + ";\n")
 			return
 		}
+		// An empty literal at file scope is the zero a static has from the start,
+		// and is written with no initializer, as `var t [2][3]byte` is: "{0}" there
+		// leaves the rows of an array of rank 2, and the elements of an array of
+		// structs leading with an aggregate, short of their braces, which the
+		// target's compiler refuses for a static, "Internal compiler error,
+		// expected initializer list", and gcc takes (dom120's F1, infectious's
+		// `gf_mul_table = [256][256]byte{}`). In a function "{0}" is code, and
+		// both compilers take it.
+		if static && len(values) == 0 && (a.dims() > 1 || e.zeroElidesBraces(a.elem)) {
+			lead()
+			e.emit(a.elem + " " + declName + a.declSuffix() + ";\n")
+			return
+		}
 		// An element that is an array VALUE cannot go in the initializer -- C copies
 		// no array there -- so it is zeroed and copied in afterwards. At file scope
 		// there is no "afterwards" in C, and the copy becomes a step of the package

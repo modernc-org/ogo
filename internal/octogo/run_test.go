@@ -35211,6 +35211,45 @@ func main() {
 		want: "7 true\n2 7\n",
 	},
 	{
+		// A package variable given an empty literal of an array of rank 2 or
+		// more, or of structs leading with an aggregate, was written `static T
+		// t[2][3] = {0};`, which the target's compiler refuses for a static,
+		// "Internal compiler error, expected initializer list", and gcc takes.
+		// It is written with no initializer, as the declaration without a value
+		// is (dom120, infectious's `gf_mul_table = [256][256]byte{}`).
+		name: "an empty literal of a package array of arrays or of structs leading with one",
+		src: `type q struct {
+	a [2]byte
+	n int
+}
+
+type m [2][3]byte
+
+var t = [2][3]byte{}
+
+var u = [2][3][4]uint16{}
+
+var v = [3]q{}
+
+var w = m{}
+
+var x, y = [2][2]int{}, 5
+
+var z = [2]byte{}
+
+func main() {
+	t[1][2] = 7
+	u[1][2][3] = 300
+	v[2].a[1], v[2].n = 9, 11
+	w[0][1] = 3
+	x[1][1] = y
+	z[1] = 4
+	println(t[1][2], t[0][0], u[1][2][3], u[0][0][0], v[2].a[1], v[2].n, v[0].n, w[0][1], x[1][1], x[0][0], z[1], z[0])
+}
+`,
+		want: "7 0 300 0 9 11 0 3 5 0 4 0\n",
+	},
+	{
 		// A var group whose later spec reads an earlier one through a value the
 		// emitter binds ahead of the statement, `var ( a = 62 - uint64(t); b =
 		// uint64((1 << (a - 1)) - 1) )`: every spec shared the statement's one

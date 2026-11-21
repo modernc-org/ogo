@@ -137,6 +137,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   an interface holding only tables of its own type. Found by dom119's mutants,
   two of whose decoding errors stopped so where Go prints them. The same since
   the stack bound read interface calls (v0.58.0 and rc.4 alike).
+- **A package array given an empty literal of arrays or of structs leading
+  with one builds for the board**: `var t = [256][256]byte{}`, as
+  vivint/infectious writes its multiplication table, and `[3]q{}` of a struct
+  whose first field is an array, were written `static ... = {0};`, which the
+  target's compiler refuses for a static, "Internal compiler error, expected
+  initializer list", while the host's takes it. Such a variable is written
+  with no initializer, as one declared without a value is. Found porting
+  infectious. In every release checked (v0.50.0, rc.4).
 - **A type switch case naming `error` or `any` builds**: `switch v :=
   x.(type) { case error: ... }`, and `case any:`, were refused by the
   emitter, "a type switch case names a pointer type, an interface type, or
