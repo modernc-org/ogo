@@ -145,6 +145,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   initializer list", while the host's takes it. Such a variable is written
   with no initializer, as one declared without a value is. Found porting
   infectious. In every release checked (v0.50.0, rc.4).
+- **The address of a parenthesised array operand declares a pointer**: `s :=
+  &(precomputed[k])`, as x/crypto's blake2s writes its rounds, `var q =
+  &(av)` and `r := &(pa)[k]`, of an array, were refused with no position,
+  "cannot infer a type for the declaration of "s"": the type was read off a
+  name or a chain, and not through the parentheses. A typed declaration, an
+  assignment, an argument and a return took them, and so did a struct or a
+  number in the parentheses. Found porting blake2s; rc.4 refused it too.
 - **A type switch case naming `error` or `any` builds**: `switch v :=
   x.(type) { case error: ... }`, and `case any:`, were refused by the
   emitter, "a type switch case names a pointer type, an interface type, or

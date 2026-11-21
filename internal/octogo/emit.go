@@ -27054,7 +27054,11 @@ func (e *emitter) arrayChainOperand(ast []int32) (string, arrDim, bool) {
 // is spelled `Row*` rather than by a minted name; a route through an index has no
 // name to keep.
 func (e *emitter) arrayOperandOf(n Node) (arrDim, bool) {
-	kids := slices.Collect(it(n.ast))
+	return e.arrayOperandOfKids(slices.Collect(it(n.ast)))
+}
+
+// arrayOperandOfKids is arrayOperandOf of a factor's kids.
+func (e *emitter) arrayOperandOfKids(kids []Node) (arrDim, bool) {
 	base, fields, isField := e.factorFieldAccess(kids)
 	if !isField {
 		base, fields, isField = e.derefFieldsAsName(kids)
@@ -56358,12 +56362,23 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			if tok, ok := e.unaryOpTok(kids[0].ast); ok {
 				switch e.f.ch(tok) {
 				case AND:
+					// The parentheses round an operand add nothing to it, `p :=
+					// &(precomputed[k])` of x/crypto's blake2s, and the lookups
+					// below read a name and a chain: through them, an array's
+					// address was "cannot infer a type" (dom120).
+					operand := kids[len(kids)-1]
+					if inner := e.unparenExpr(operand.ast); len(inner) != len(operand.ast) {
+						operand = Node{sym: Expression, ast: inner}
+						for sub := slices.Collect(it(operand.ast)); len(sub) == 1 && sub[0].sym != 0; sub = slices.Collect(it(operand.ast)) {
+							operand = sub[0]
+						}
+					}
 					// `&a` for an ARRAY variable is a pointer to that array. An
 					// array has no C value type, so inferNode cannot answer for it
 					// and the pointee's typedef is minted from the extents instead
 					// -- the same name a written `*[3]int` resolves to, so the two
 					// spellings meet.
-					if nm, isName := e.exprIdent(kids[len(kids)-1].ast); isName {
+					if nm, isName := e.exprIdent(operand.ast); isName {
 						if a, isArr := e.arrayVar(nm); isArr {
 							return e.arrayTypedef(a) + "*", true
 						}
@@ -56373,7 +56388,8 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 					// PARAMETER already worked -- the parameter's type says what it
 					// is -- but a DECLARATION has only this to go on, and reported
 					// "cannot infer a type" of an address the program had written.
-					if a, isArr := e.arrayOperandOf(kids[len(kids)-1]); isArr {
+					// A parenthesised head, `&(pa)[k]`, is read through as well.
+					if a, isArr := e.arrayOperandOfKids(e.unparenKids(e.factorKids(operand.ast))); isArr {
 						return e.arrayTypedef(a) + "*", true
 					}
 					// `&[3]int{...}`, `&[...]T{...}` and `&Row{...}`: a pointer to the

@@ -35211,6 +35211,49 @@ func main() {
 		want: "7 true\n2 7\n",
 	},
 	{
+		// The address of a parenthesised array operand in a declaration that
+		// infers its type, `s := &(precomputed[k])` of x/crypto's blake2s, and
+		// of an array element under a parenthesised head, `&(pa)[k]`, were
+		// "cannot infer a type", with no position: the lookups read a name and
+		// a chain and not through the parentheses (dom120, sweeps/addr-paren).
+		name: "the address of a parenthesised array operand, declared",
+		src: `var pa = [2][4]byte{{0, 2, 1, 3}, {3, 1, 2, 0}}
+
+var av = [4]byte{5, 6, 7, 8}
+
+type sa struct{ a [4]byte }
+
+var psa = sa{[4]byte{1, 1, 1, 1}}
+
+func sum(m []uint32) uint32 {
+	var v uint32
+	for k := range pa {
+		s := &(pa[k])
+		v += m[s[0]] + m[s[3]]
+	}
+	return v
+}
+
+func main() {
+	println(sum([]uint32{10, 20, 30, 40}))
+	k := 1
+	p := &(pa[k])
+	p[1] = 9
+	var q = &(av)
+	q[0] = 50
+	r := &(pa)[k]
+	r[2] = 70
+	t := &((psa.a))
+	t[3] = 4
+	la := [2][3]int{{1, 2, 3}, {4, 5, 6}}
+	u := &(la[k])
+	u[0] = 40
+	println(pa[1][1], pa[1][2], av[0], psa.a[3], la[1][0])
+}
+`,
+		want: "100\n9 70 50 4 40\n",
+	},
+	{
 		// A package variable given an empty literal of an array of rank 2 or
 		// more, or of structs leading with an aggregate, was written `static T
 		// t[2][3] = {0};`, which the target's compiler refuses for a static,
