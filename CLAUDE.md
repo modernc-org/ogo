@@ -473,6 +473,15 @@ silent fault puts the count back to 0. Each round's account is in
   into taken to call every taken function, a false stack overflow on the board,
   dom89's listed gap; a46a566), one listed (a method's result through a pointer
   to a local array's element taken for the local's, dom83's) -- 0
+- dom120 (2026-11-21), a CubeSat's housekeeping downlink (vivint/infectious's
+  Reed-Solomon code and Berlekamp-Welch, dgryski/go-tsz's Gorilla series and
+  x/crypto's blake2s ported with their tests, a housekeeping board and a radio
+  link on cogs), the first round against master on dom119's records: clean,
+  one loud fault fixed (an empty literal of a package array of arrays written
+  `{0}`, which the target's compiler refuses for a static; 92d525c), one false
+  refusal fixed (the address of a parenthesised array operand declared, with no
+  position; 32ef165), one listed (a field read through a pointer to a literal
+  or a local, dom94's) -- 1
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1499,8 +1508,11 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **One question, one helper**. **Two answers to one question are a false refusal or
   a hole, and the second answer hides what the first lacks**. **A rule that refuses
   an operand asks it through parentheses: the operand in them is the operand**
-  (dom84). **A rule comparing types by name asks what each name is: byte is uint8,
-  rune is int32, and an alias of a predeclared type is that type** (dom87). **A
+  (dom84). **A lookup that types an operand reads it through its parentheses:
+  `&(precomputed[k])` was a name and a chain to no lookup, and a declaration had
+  nothing else to go on.** (dom120, inferCType; sweeps/addr-paren). **A rule
+  comparing types by name asks what each name is: byte is uint8, rune is int32,
+  and an alias of a predeclared type is that type** (dom87). **A
   builtin that prints is asked of its arguments what each of its siblings asks:
   printf's took what println's refused** (dom88).
 - **A question a walk answers is answered by the walk wherever it is asked: a field
@@ -1854,7 +1866,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   A CALL IS LOST ON THE TARGET**. **A float literal the emitter writes is one the
   target reads exactly**. **A size the emitter asks of the target's compiler by a
   type's name is asked against the type's stride: sizeof(_Bool) is 4 on the board,
-  and a bool takes one byte** (dom110, doc/bool-sizeof.c).
+  and a bool takes one byte** (dom110, doc/bool-sizeof.c). **A zero a static
+  has from the start is written as nothing: "{0}" stood for an empty literal at
+  file scope as in a function, and the target's compiler reads a static's
+  braces row by row.** (dom120, emitArrayLitVarNamed).
 - **A fault measured in one statement form is measured in the others: a plain store
   right says nothing of its compound form** (doc/row-call-compound.c). **A
   workaround's gate is asked of every shape its fault takes: the fault was an
