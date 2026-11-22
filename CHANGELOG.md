@@ -173,6 +173,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   interface and in a method expression, defined one level deep or two, while
   its promoted fields were read. Found porting murmur3. In every release
   checked (v0.50.0, rc.4).
+- **A method of several results called on a conversion to a pointer type
+  builds**: `return (*digest128)(d).Write(p)`, `a, b := (*T)(p).Two()`, `var
+  u, v = ((*T)(p)).Two()` and `show((*T)(p).Two())` were refused with no
+  position, "a return supplying every result needs a call whose results are
+  exactly int, error" and "multiple assignment requires a single function call
+  on the right-hand side", and the argument list by the checker, "not enough
+  arguments in call to show", the call counted one value. The converted
+  pointer is bound once, and the call's results are counted and typed as the
+  method's. Found porting murmur3, whose digest64's Sum64 writes `h1, _ :=
+  (*digest128)(d).Sum128()`. In every release checked (v0.50.0, rc.4).
 - **A type switch case naming `error` or `any` builds**: `switch v :=
   x.(type) { case error: ... }`, and `case any:`, were refused by the
   emitter, "a type switch case names a pointer type, an interface type, or

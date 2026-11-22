@@ -35350,6 +35350,65 @@ func main() {
 		want: "7 23 7 7 23\n7 23\n3 19 107\n5 21\n",
 	},
 	{
+		// A method of several results called on a conversion to a pointer type,
+		// `return (*digest128)(d).Write(p)`, `x, y := (*pair)(t).Swap()`, an
+		// argument list it is and `var u, v = ((*pair)(t)).Swap()`, was refused
+		// with no position, "a return supplying every result needs a call whose
+		// results are exactly int, error", "multiple assignment requires a single
+		// function call on the right-hand side", and "not enough arguments in
+		// call to show" by the checker. The converted pointer is bound once
+		// (dom121, sweeps/conv-multi).
+		name: "a method of several results called on a conversion to a pointer type",
+		src: `type pair struct {
+	a, b int
+}
+
+func (p *pair) Two() (int, error) { return p.a + p.b, nil }
+
+func (p *pair) Swap() (int, int) { return p.b, p.a }
+
+type twin pair
+
+type holder struct {
+	p *twin
+}
+
+var calls int
+
+func next(t *twin) *twin {
+	calls++
+	return t
+}
+
+func (t *twin) Two() (int, error) { return (*pair)(t).Two() }
+
+func (t *twin) Swap() (int, int) { return (*pair)(next(t)).Swap() }
+
+func show(x, y int) {
+	println(x, y)
+}
+
+func main() {
+	t := &twin{3, 4}
+	n, err := t.Two()
+	println(n, err == nil)
+	x, y := (*pair)(next(t)).Swap()
+	println(x, y, calls)
+	show((*pair)(next(t)).Swap())
+	var u, v = ((*pair)(t)).Swap()
+	println(u, v, calls)
+	t.a = 10
+	h := holder{t}
+	u, v = (*pair)(h.p).Swap()
+	println(u, v)
+	m, _ := (*pair)(t).Two()
+	x, y = t.Swap()
+	println(m, x, y, calls)
+}
+`,
+		want: "7 true\n4 3 1\n4 3\n4 3 2\n4 10\n14 4 10 3\n",
+	},
+	{
 		// A var group whose later spec reads an earlier one through a value the
 		// emitter binds ahead of the statement, `var ( a = 62 - uint64(t); b =
 		// uint64((1 << (a - 1)) - 1) )`: every spec shared the statement's one

@@ -40849,7 +40849,55 @@ func (e *emitter) resultCallOf(ast []int32) (callee string, suffix []Node, ok bo
 			return tmp, steps, true
 		}
 	}
+	// A method of several results on a conversion to a pointer type, `return
+	// (*T)(p).Two()`: the converted pointer bound once (ptrConvMethodHead).
+	if !ok {
+		if tmp, steps, isConv := e.ptrConvMethodHead(ast); isConv {
+			return tmp, steps, true
+		}
+	}
 	return callee, suffix, ok
+}
+
+// ptrConvMethodHead binds a conversion to a pointer type at the head of a call of
+// a method of SEVERAL results, `(*T)(p).Two()`, to a temporary, as the call of a
+// method of one result binds it (bindPtrConv), and answers it and the method's
+// steps. The method is asked first, binding nothing, so no temporary is declared
+// for a shape another path takes, and the binding is made once for the
+// occurrence: a return renders its call in more than one form. Before it, a
+// return forwarding such a call, an argument list it was and a multiple
+// assignment were refused with no position (dom121: the port's `return
+// (*digest128)(d).Write(p)` for twmb/murmur3's digest64).
+func (e *emitter) ptrConvMethodHead(ast []int32) (string, []Node, bool) {
+	kids := e.factorKids(ast)
+	pc, ok := e.ptrConvAt(kids)
+	if !ok && len(kids) == 4 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression && kids[3].sym == FactorSuffix {
+		// `((*T)(p)).Two()`: the conversion in parentheses, the steps after them.
+		if ipc, iok := e.ptrConvAt(e.factorKids(kids[1].ast)); iok && len(ipc.rest) == 0 {
+			ipc.rest = slices.Collect(it(kids[3].ast))
+			pc, ok = ipc, true
+		}
+	}
+	if !ok || len(pc.rest) != 2 || pc.rest[0].sym != Selector || pc.rest[1].sym != CallSuffix {
+		return "", nil, false
+	}
+	member := e.soleIdent(pc.rest[0].ast)
+	if member == "" {
+		return "", nil, false
+	}
+	cname, _, _, isMethod := e.promotedMethod(strings.TrimSuffix(pc.ct, "*"), member)
+	if !isMethod || len(e.funcRet[cname]) < 2 {
+		return "", nil, false
+	}
+	key := -(1 << 30) - pc.arg.Pos()
+	if tmp, done := e.hoistedArrayCalls[key]; done {
+		return tmp, pc.rest, true
+	}
+	tmp := e.bindPtrConv(pc)
+	if e.hoistedArrayCalls != nil {
+		e.hoistedArrayCalls[key] = tmp
+	}
+	return tmp, pc.rest, true
 }
 
 // forwardedCallInto is forwardedCallCAs, of this function's results, for a call
@@ -53493,6 +53541,11 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 		// several results on a LITERAL, bound to a temporary as a chain of one
 		// result's is, the call made on that.
 		tmp, steps, isLit := e.litMethodHead(rhs)
+		if !isLit {
+			// `a, b := (*T)(p).Two()`: the converted pointer bound
+			// (ptrConvMethodHead).
+			tmp, steps, isLit = e.ptrConvMethodHead(rhs)
+		}
 		if !isLit {
 			e.fail("multiple assignment requires a single function call on the right-hand side")
 			return

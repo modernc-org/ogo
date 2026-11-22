@@ -29090,6 +29090,26 @@ func (f *File) exprCallResults(s *Scope, n Node) ([]retResult, bool) {
 			}
 		}
 	}
+	// A method called on a conversion to a pointer type, `(*T)(p).Two()`, and
+	// on one in parentheses, `((*T)(p)).Two()`: T's method's results, own or
+	// promoted, as a method expression's (dom121: unanswered, a call of several
+	// was one argument to the count, "not enough arguments in call to show").
+	pc, isConv := f.ptrConvOf(s, fac)
+	if !isConv && len(kids) == 4 && kids[0].sym == 0 && f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression {
+		if inner, ok := f.soleFactor(kids[1]); ok {
+			if ipc, iok := f.ptrConvOf(s, inner); iok && len(ipc.rest) == 0 {
+				ipc.rest = steps
+				pc, isConv = ipc, true
+			}
+		}
+	}
+	if isConv && !pc.qual.IsValid() && !pc.predecl && pc.unnamed == "" && len(pc.rest) == 2 && pc.rest[0].sym == Selector && pc.rest[1].sym == CallSuffix {
+		if m, has := f.selectorMember(pc.rest[0]); has {
+			if r, ok := f.callResults(s, pc.typ, m); ok {
+				return r, true
+			}
+		}
+	}
 	t, ok := f.valueTypeAt(s, factorWithoutLastStep(kids, steps))
 	if !ok || t.f != f || t.tn == nil {
 		return nil, false

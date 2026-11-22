@@ -1,0 +1,64 @@
+// A method of several results called on a conversion to a pointer type,
+// `(*T)(p).Two()`, plain or in parentheses, is a call of several results:
+// forwarded whole into a call, a return or an assignment it is counted and
+// typed as T's method's results are, and refused where Go refuses it (dom121:
+// before, the checker counted it one value).
+
+type T struct {
+	n int
+}
+
+type U T
+
+func (t *T) Two() (int, error) { return t.n, nil }
+
+func (t *T) Three() (int, int, int) { return t.n, t.n + 1, t.n + 2 }
+
+func (t *T) One() int { return t.n }
+
+func two(a int, b error) { println(a, b == nil) }
+
+func three(a, b, c int) { println(a, b, c) }
+
+func twoInts(a, b int) { println(a, b) }
+
+func fwd(p *U) (int, error) {
+	return (*T)(p).Two()
+}
+
+func ret3(p *U) (int, int) {
+	// ERROR "cannot use 3 values as 2 results in return statement"
+	return (*T)(p).Three()
+}
+
+func ret2(p *U) (int, int, int) {
+	// ERROR "cannot use 2 values as 3 results in return statement"
+	return ((*T)(p)).Two()
+}
+
+func main() {
+	u := U{n: 1}
+	p := &u
+	two((*T)(p).Two())
+	two(((*T)(p)).Two())
+	three((*T)(p).Three())
+	// ERROR "not enough arguments in call to two"
+	two((*T)(p).One())
+	// ERROR "not enough arguments in call to three"
+	three((*T)(p).Two())
+	// ERROR "not enough arguments in call to three"
+	three(((*T)(p)).Two())
+	// ERROR "too many arguments in call to twoInts"
+	twoInts((*T)(p).Three())
+	// ERROR "cannot use result 2 of .*Two\(\) \(type error\) as type int in argument to twoInts"
+	twoInts((*T)(p).Two())
+	// ERROR "cannot use result 2 of .*Two\(\) \(type error\) as type int in argument to twoInts"
+	twoInts(((*T)(p)).Two())
+	var x, y, z int
+	// ERROR "assignment mismatch: 3 variables but 2 values"
+	x, y, z = (*T)(p).Two()
+	// ERROR "assignment mismatch: 2 variables but 3 values"
+	x, y = ((*T)(p)).Three()
+	println(x, y, z)
+	fwd(p)
+}
