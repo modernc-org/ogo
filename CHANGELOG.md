@@ -105,6 +105,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A program Go refuses, built: a call's several results forwarded whole were
+  held to the places they go to by their Kinds alone**: `var a, b int8 =
+  readings()` of a `func readings() (uint8, uint8)` declared a and b as the
+  results' uint8s, the written type dropped, and `takeInts(bytes2())` of
+  []byte results for []int parameters, `p, q = ptrs()` of *int results into
+  *uint variables, `return send()` of a `chan<- int` for a `chan int`, an
+  interface result for a pointer and a value of a Kind for an interface built,
+  the C compiler converting them in silence where it did not refuse the C.
+  Each result is held to Go's assignability where it goes -- an argument list,
+  a method's, a function value's, a variadic one's, an assignment, a typed var
+  declaration and a return -- in one package and across two. Found writing a
+  test of the refusals near a conversion's call (below). In every release
+  checked (v0.50.0, rc.4).
 - **A wrong answer, silent: a var group's later spec read an earlier one's
   name before the group declared it**: `var ( a = 62 - uint64(t); b =
   uint64((1 << (a - 1)) - 1) )` in a function computed b from whatever a stood

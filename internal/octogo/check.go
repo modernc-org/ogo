@@ -3055,6 +3055,18 @@ func (f *File) checkReturn(s *Scope, results []retResult, stmt Node) {
 		}
 		f.checkNames(s, exprs[0])
 		f.checkEscapeReturn(s, exprs[0])
+		// Each result held to the function's in its position, by Go's
+		// assignability (resultAssignable): the emitter compares the C types,
+		// and a channel's direction is none of them, so `return g()` of a
+		// chan<- int for a chan int built (dom121).
+		if res, ok := f.forwardedResults(s, exprs[0]); ok && len(res) == len(results) {
+			for i, r := range res {
+				if !f.resultAssignable(s, r, s, results[i].typeNode) {
+					f.err(f.tok(exprs[0].Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in return statement",
+						i+1, f.exprSource(exprs[0]), f.resultName(r), f.resultTypeName(s, results[i]))
+				}
+			}
+		}
 		return
 	case len(exprs) < len(results):
 		f.err(retTok.Position(), "not enough arguments to return")
@@ -9310,6 +9322,9 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			// No written type: the variable infers one from the initializer,
 			// which still bounds a constant value.
 			f.checkInferredOverflow(s, e)
+		}
+		if len(names) > 1 && len(initExprs) == 1 {
+			f.checkResultsInto(s, initExprs[0], len(names), declType, "variable declaration")
 		}
 		ts := declaredAt(s, names)
 		// One value of several names, `var sum, diff = sums(10, 3)`, `var v, ok =
@@ -28824,6 +28839,169 @@ func (f *File) forwardedMismatch(paramScope *Scope, r, p retResult) bool {
 	return ri != "" && pi != "" && ri != pi && (defined(ri) || defined(pi))
 }
 
+// resultAssignable answers Go's assignability of a call's result r, forwarded
+// whole -- `h(g())`, `a, b = g()`, `var a, b T = g()`, `return g()` -- to a place
+// of type want, resolved in ws, as far as the written types tell: the same type;
+// the same underlying type, one of the two not named; a bidirectional channel
+// where a channel of its element is wanted, one of the two not named; and where an
+// interface is wanted, what resultImplements says. Each position asked its own
+// questions of Kinds and of defined types, and a type no Kind says went to the C
+// compiler, which converted most of them in silence: []byte for []int, *int for
+// *uint, chan<- int for chan int, [3]int for [2]int, an interface for a pointer,
+// and in a typed var declaration anything at all (dom121, sweeps/fwd-types: 72 of
+// 350 programs Go refuses built). A type this cannot spell answers true.
+func (f *File) resultAssignable(s *Scope, r retResult, ws *Scope, want TypeNode) bool {
+	if r.typeNode == nil || want == nil {
+		return true
+	}
+	hi, wi := f.typeNodeIdentity(r.typeNode), f.typeNodeIdentity(want)
+	if hi != "" && hi == wi {
+		return true
+	}
+	rs := f.Scope
+	if rf := f.fileOfToken(tokOfTypeNode(r.typeNode)); rf != nil {
+		rs = rf.Scope
+	}
+	haveIface := f.ifaceResult(rs, r)
+	switch {
+	case f.ifaceResult(ws, retResult{typeNode: want}):
+		return f.resultImplements(s, r, rs, haveIface, ws, want)
+	case haveIface:
+		// An interface goes into no type but an interface.
+		return wi == ""
+	case hi == "" || wi == "":
+		return true
+	}
+	hu, wu := f.underIdentity(rs, r.typeNode), f.underIdentity(ws, want)
+	if hu == "" || wu == "" {
+		return true
+	}
+	_, hNamed := r.typeNode.(*TypeNodeIdent)
+	_, wNamed := want.(*TypeNodeIdent)
+	if hu == wu {
+		return !hNamed || !wNamed
+	}
+	if hc, _ := f.chanTypeUnder(rs, r.typeNode); hc != nil && hc.Dir == bothDir && (!hNamed || !wNamed) {
+		if wc, _ := f.chanTypeUnder(ws, want); wc != nil {
+			he, we := f.typeNodeIdentity(hc.TypeNode), f.typeNodeIdentity(wc.TypeNode)
+			return he == "" || we == "" || he == we
+		}
+	}
+	return false
+}
+
+// resultImplements is resultAssignable's question where an interface is wanted:
+// an interface result whose methods include the wanted one's, a pointer to a type
+// implementing it, and only a pointer -- an interface holds a pointer here, so a
+// value of any other category goes into none, as a single value does not
+// (unsafe.Pointer into one asking for nothing). An interface this cannot name
+// answers true.
+func (f *File) resultImplements(s *Scope, r retResult, rs *Scope, haveIface bool, ws *Scope, want TypeNode) bool {
+	iface := f.qualifiedTypeName(ws, f.ifaceTypeName(ws, want))
+	if iface == "" {
+		return true
+	}
+	wantSet, isIface := f.interfaceMethodsNamed(s, iface)
+	if !isIface {
+		return true
+	}
+	if haveIface {
+		have := f.qualifiedTypeName(rs, f.ifaceTypeName(rs, r.typeNode))
+		haveSet, ok := f.interfaceMethodsNamed(s, have)
+		if have == "" || !ok {
+			return true
+		}
+		for name := range wantSet {
+			if haveSet[name] == nil {
+				return false
+			}
+		}
+		return true
+	}
+	if r.known && r.kind == PredeclaredUnsafePointer {
+		return len(wantSet) == 0
+	}
+	if !f.isPointerType(rs, r.typeNode) {
+		return false
+	}
+	if len(wantSet) == 0 {
+		return true
+	}
+	p, isPtr := r.typeNode.(*TypeNodePointer)
+	if !isPtr {
+		return true // a defined pointer type: its own question
+	}
+	id, isIdent := p.TypeNode.(*TypeNodeIdent)
+	if !isIdent {
+		return false // a pointer to a type written out has no methods
+	}
+	if f.typeIdentityOf(id) == "" {
+		return true
+	}
+	concrete := f.qualifiedTypeName(rs, f.typeNodeString(id, false))
+	if concrete == "" {
+		return true
+	}
+	_, _, _, _, _, ok := f.implements(s, concrete, true, iface)
+	return ok
+}
+
+// underIdentity is the identity typeNodeIdentity spells of the type a type node
+// stands for beneath its definitions: a defined type's underlying type, a
+// predeclared type's own, and "" for one this cannot follow.
+func (f *File) underIdentity(s *Scope, tn TypeNode) string {
+	for range 16 { // bounded; a type cycle is reported by its own pass
+		x, isIdent := tn.(*TypeNodeIdent)
+		if !isIdent {
+			return f.typeNodeIdentity(tn)
+		}
+		id := f.typeIdentityOf(x)
+		if id == "" || !strings.Contains(id, ".") {
+			return id // a predeclared type is its own underlying type
+		}
+		td, home, ok := f.typeIdentDecl(s, x)
+		if !ok {
+			return ""
+		}
+		tn, s = td.TypeSpec.TypeNode, home
+	}
+	return ""
+}
+
+// checkResultsInto holds each result of a call of several results to the type
+// all its targets have, a typed var declaration's `var a, b T = g()`, by its Kind
+// and by Go's assignability (resultAssignable). A spec of several names from one
+// call was asked nothing, and a string went into an int (dom121).
+func (f *File) checkResultsInto(s *Scope, call Node, n int, want TypeNode, what string) {
+	if want == nil {
+		return
+	}
+	res, _, ok := f.qualifiedCallResults(s, call)
+	if !ok {
+		if res, ok = f.exprCallResults(s, call); !ok {
+			return
+		}
+	}
+	if len(res) != n {
+		return // the count is checkVarSpecArity's to report
+	}
+	wr := f.resultType(s, want)
+	for i, r := range res {
+		if wr.known && r.known && !assignableKind(wr.kind, r.kind) || !f.resultAssignable(s, r, s, want) {
+			f.err(f.tok(call.Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in %s",
+				i+1, f.exprSource(call), f.resultName(r), f.resultTypeName(s, wr), what)
+		}
+	}
+}
+
+// resultTypeName is how a message spells the type of a place a result goes to.
+func (f *File) resultTypeName(ws *Scope, p retResult) string {
+	if p.name != "" {
+		return f.qualifiedTypeName(ws, p.name)
+	}
+	return f.qualifiedTypeName(ws, f.ifaceTypeName(ws, p.typeNode))
+}
+
 // exprCallResults is the result list of the call an expression is, and whether the
 // callee was RESOLVED at all -- which forwardedResults cannot say, answering false
 // alike for a call of one result and for a call nothing here can see.
@@ -29023,18 +29201,18 @@ func (f *File) checkCallArgs(s, paramScope *Scope, at Token, callee string, sig 
 					return
 				}
 				for i := 0; i < fixed; i++ {
-					if p := params[i]; p.known && results[i].known && !assignableKind(p.kind, results[i].kind) || f.forwardedMismatch(paramScope, results[i], p) {
+					if p := params[i]; p.known && results[i].known && !assignableKind(p.kind, results[i].kind) || f.forwardedMismatch(paramScope, results[i], p) || !f.resultAssignable(s, results[i], paramScope, p.typeNode) {
 						f.err(f.tok(args[0].Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in argument to %s",
-							i+1, f.exprSource(args[0]), f.resultName(results[i]), p.name, callee)
+							i+1, f.exprSource(args[0]), f.resultName(results[i]), f.resultTypeName(paramScope, p), callee)
 					}
 				}
 				last := sig.Params.List[len(sig.Params.List)-1]
 				if sl, isSlice := last.TypeNode.(*TypeNodeSlice); isSlice {
 					if elem := f.resultType(paramScope, sl.TypeNode); elem.known || elem.typeNode != nil {
 						for i := fixed; i < len(results); i++ {
-							if elem.known && results[i].known && !assignableKind(elem.kind, results[i].kind) || f.forwardedMismatch(paramScope, results[i], elem) {
+							if elem.known && results[i].known && !assignableKind(elem.kind, results[i].kind) || f.forwardedMismatch(paramScope, results[i], elem) || !f.resultAssignable(s, results[i], paramScope, elem.typeNode) {
 								f.err(f.tok(args[0].Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in argument to %s",
-									i+1, f.exprSource(args[0]), f.resultName(results[i]), elem.name, callee)
+									i+1, f.exprSource(args[0]), f.resultName(results[i]), f.resultTypeName(paramScope, elem), callee)
 							}
 						}
 					}
@@ -29057,9 +29235,9 @@ func (f *File) checkCallArgs(s, paramScope *Scope, at Token, callee string, sig 
 					case p.known && what != "":
 						f.err(f.tok(args[0].Pos()).Position(), "cannot use result %d of %s (%s of type %s) as type %s in argument to %s",
 							i+1, f.exprSource(args[0]), what, f.resultName(r), p.name, callee)
-					case f.forwardedMismatch(paramScope, r, p):
+					case f.forwardedMismatch(paramScope, r, p) || !f.resultAssignable(s, r, paramScope, p.typeNode):
 						f.err(f.tok(args[0].Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in argument to %s",
-							i+1, f.exprSource(args[0]), f.resultName(r), p.name, callee)
+							i+1, f.exprSource(args[0]), f.resultName(r), f.resultTypeName(paramScope, p), callee)
 					}
 				}
 			}
@@ -29323,78 +29501,100 @@ func (f *File) checkResultsAssign(s *Scope, lhs []Token, suffixed []bool, call N
 		return // the count is the mismatch check's to report
 	}
 	for i, tok := range lhs {
-		if suffixed[i] {
-			// A field, an element or a pointee, `v.n, v.err = rs.Correct(c)`, asked
-			// what its type takes: nothing was, in one package or across two.
-			if i < len(walked) && walked[i].tn != nil {
-				f.checkResultInto(s, call, i, res[i], walked[i])
-			}
-			continue
-		}
-		if tok.Src() == "_" {
-			continue
-		}
-		if res[i].known {
-			// A result of a Kind into a variable of none, `v.pos, v, v.err =
-			// rs.Correct(c)` for a struct v: the Kind check below has nothing to
-			// ask of v.
-			if _, lok := f.identKind(s, tok); !lok {
-				if tg := f.kindlessTargetOf(s, tok); tg.have != "" {
-					f.err(f.tok(call.Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in assignment",
-						i+1, f.exprSource(call), res[i].name, tg.want)
-					continue
+		n0 := len(f.errList)
+		func() {
+			if suffixed[i] {
+				// A field, an element or a pointee, `v.n, v.err = rs.Correct(c)`, asked
+				// what its type takes: nothing was, in one package or across two.
+				if i < len(walked) && walked[i].tn != nil {
+					f.checkResultInto(s, call, i, res[i], walked[i])
 				}
-				// Or into a variable of an interface, `e, n = get()` for an error e
-				// and an int first result.
-				if d, isVar := s.find(tok.Src()).(*VarDeclaration); isVar {
-					if t, ok := f.varTypeAt(d); ok && t.s != nil {
-						n0 := len(f.errList)
-						f.checkResultIntoIface(s, call, i, res[i], t.s, f.ifaceTypeName(t.s, t.tn))
-						if len(f.errList) != n0 {
-							continue
+				return
+			}
+			if tok.Src() == "_" {
+				return
+			}
+			if res[i].known {
+				// A result of a Kind into a variable of none, `v.pos, v, v.err =
+				// rs.Correct(c)` for a struct v: the Kind check below has nothing to
+				// ask of v.
+				if _, lok := f.identKind(s, tok); !lok {
+					if tg := f.kindlessTargetOf(s, tok); tg.have != "" {
+						f.err(f.tok(call.Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in assignment",
+							i+1, f.exprSource(call), res[i].name, tg.want)
+						return
+					}
+					// Or into a variable of an interface, `e, n = get()` for an error e
+					// and an int first result.
+					if d, isVar := s.find(tok.Src()).(*VarDeclaration); isVar {
+						if t, ok := f.varTypeAt(d); ok && t.s != nil {
+							n0 := len(f.errList)
+							f.checkResultIntoIface(s, call, i, res[i], t.s, f.ifaceTypeName(t.s, t.tn))
+							if len(f.errList) != n0 {
+								return
+							}
 						}
 					}
 				}
 			}
-		}
-		if !res[i].known {
-			if what := f.kindlessResult(s, res[i]); what != "" {
-				if lk, lok := f.identKind(s, tok); lok {
-					want := kindName(lk)
-					if d, isVar := s.find(tok.Src()).(*VarDeclaration); isVar && d.typeName.IsValid() {
-						want = d.declaredTypeName()
+			if !res[i].known {
+				if what := f.kindlessResult(s, res[i]); what != "" {
+					if lk, lok := f.identKind(s, tok); lok {
+						want := kindName(lk)
+						if d, isVar := s.find(tok.Src()).(*VarDeclaration); isVar && d.typeName.IsValid() {
+							want = d.declaredTypeName()
+						}
+						f.err(f.tok(call.Pos()).Position(), "cannot use result %d of %s (%s of type %s) as type %s in assignment",
+							i+1, f.exprSource(call), what, f.resultName(res[i]), want)
+					} else if tg := f.kindlessTargetOf(s, tok); tg.have != "" && (tg.have != what || f.otherKindless(s, tg, res[i])) {
+						// A result of no Kind into a target of ANOTHER category of
+						// none, or an array of another length or element: `p, n =
+						// two()` for a *U p and a U result was asked nothing, the Kind
+						// check above having nothing to ask.
+						f.err(f.tok(call.Pos()).Position(), "cannot use result %d of %s (%s of type %s) as type %s in assignment",
+							i+1, f.exprSource(call), what, f.resultName(res[i]), tg.want)
 					}
-					f.err(f.tok(call.Pos()).Position(), "cannot use result %d of %s (%s of type %s) as type %s in assignment",
-						i+1, f.exprSource(call), what, f.resultName(res[i]), want)
-				} else if tg := f.kindlessTargetOf(s, tok); tg.have != "" && (tg.have != what || f.otherKindless(s, tg, res[i])) {
-					// A result of no Kind into a target of ANOTHER category of
-					// none, or an array of another length or element: `p, n =
-					// two()` for a *U p and a U result was asked nothing, the Kind
-					// check above having nothing to ask.
-					f.err(f.tok(call.Pos()).Position(), "cannot use result %d of %s (%s of type %s) as type %s in assignment",
-						i+1, f.exprSource(call), what, f.resultName(res[i]), tg.want)
+				}
+				return
+			}
+			d, isVar := s.find(tok.Src()).(*VarDeclaration)
+			if !isVar {
+				return
+			}
+			want := ""
+			if t, ok := f.varTypeAt(d); ok {
+				if u, _ := t.f.refTypeUnder(t.s, t.tn); u != nil {
+					if _, isSlice := u.(*TypeNodeSlice); isSlice && kindCategory(res[i].kind) != catUnknown {
+						want = t.f.typeNodeString(t.tn, false)
+					}
 				}
 			}
+			if lk, lok := f.identKind(s, tok); want == "" && lok && !assignableKind(lk, res[i].kind) {
+				want = kindName(lk)
+			}
+			if want != "" {
+				f.err(f.tok(call.Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in assignment",
+					i+1, f.exprSource(call), res[i].name, want)
+			}
+		}()
+		// Go's assignability of the result to the variable's type, asked where
+		// the checks above, of a Kind and a category, said nothing
+		// (resultAssignable): `p, q = two()` for *uint targets and *int results
+		// went through.
+		if len(f.errList) != n0 || suffixed[i] || tok.Src() == "_" {
 			continue
 		}
-		d, isVar := s.find(tok.Src()).(*VarDeclaration)
-		if !isVar {
-			continue
-		}
-		want := ""
-		if t, ok := f.varTypeAt(d); ok {
-			if u, _ := t.f.refTypeUnder(t.s, t.tn); u != nil {
-				if _, isSlice := u.(*TypeNodeSlice); isSlice && kindCategory(res[i].kind) != catUnknown {
-					want = t.f.typeNodeString(t.tn, false)
+		if d, isVar := s.find(tok.Src()).(*VarDeclaration); isVar {
+			if t, ok := f.varTypeAt(d); ok && t.tn != nil {
+				ts := t.s
+				if ts == nil {
+					ts = s
+				}
+				if !f.resultAssignable(s, res[i], ts, t.tn) {
+					f.err(f.tok(call.Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in assignment",
+						i+1, f.exprSource(call), f.resultName(res[i]), f.qualifiedTypeName(ts, f.ifaceTypeName(ts, t.tn)))
 				}
 			}
-		}
-		if lk, lok := f.identKind(s, tok); want == "" && lok && !assignableKind(lk, res[i].kind) {
-			want = kindName(lk)
-		}
-		if want != "" {
-			f.err(f.tok(call.Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in assignment",
-				i+1, f.exprSource(call), res[i].name, want)
 		}
 	}
 }
@@ -29413,6 +29613,14 @@ func (f *File) checkResultInto(s *Scope, call Node, i int, r retResult, t typeAt
 		f.err(f.tok(call.Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in assignment",
 			i+1, f.exprSource(call), f.resultName(r), wantName)
 	}
+	n0 := len(f.errList)
+	defer func() {
+		// Go's assignability, which the cases below ask in part, asked where
+		// they said nothing (resultAssignable).
+		if ts := t.s; len(f.errList) == n0 && ts != nil && !f.resultAssignable(s, r, ts, t.tn) {
+			report()
+		}
+	}()
 	tg := f.kindlessTargetAt(t)
 	switch {
 	case r.known && want.known:
@@ -31444,6 +31652,9 @@ func (f *File) varSpec(s *Scope, n Node) {
 					continue
 				}
 				f.checkInferredOverflow(s, e)
+			}
+			if len(names) > 1 && len(exprs) == 1 {
+				f.checkResultsInto(s, exprs[0], len(names), typ, "variable declaration")
 			}
 		case 0:
 			switch f.ch(n.tok) {

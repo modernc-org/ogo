@@ -1,0 +1,128 @@
+// A call of several results forwarded whole -- into an argument list, an
+// assignment, a typed var declaration and a return -- is held to Go's
+// assignability, each result to the type of the place it goes to: the same
+// type, the same underlying type where one of the two is not named, a
+// bidirectional channel where a directional one of its element is wanted, and
+// where an interface is wanted a pointer to a type implementing it. Each place
+// asked a Kind alone, and []byte went for []int, *int for *uint, an interface
+// for a pointer, and in a typed var declaration anything at all (dom121).
+
+type I interface {
+	M()
+}
+
+type T struct {
+	n int
+}
+
+func (t *T) M() {}
+
+type S struct {
+	n int
+}
+
+type D int
+
+type B []byte
+
+type R struct {
+	n int
+}
+
+func (r *R) take(a, b []int) {}
+
+func bytes2() ([]byte, []byte) { return nil, nil }
+
+func ptrs2() (*int, *int) { return nil, nil }
+
+func ifaces2() (I, I) { return nil, nil }
+
+func send2() (chan<- int, chan<- int) { return nil, nil }
+
+func chans2() (chan int, chan int) { return nil, nil }
+
+func defs2() (D, D) { return 1, 2 }
+
+func ints2() (int, int) { return 1, 2 }
+
+func mixed2() ([]int, []byte) { return nil, nil }
+
+func strs2() (string, string) { return "a", "b" }
+
+func ss2() (*S, *S) { return nil, nil }
+
+func ts2() (*T, *T) { return nil, nil }
+
+func takeInts(a, b []int) {}
+
+func takeBytes(a, b B) {}
+
+func takePtrs(a, b *uint) {}
+
+func takeT(a, b *T) {}
+
+func takeIface(a, b I) {}
+
+func takeRecv(a, b <-chan int) {}
+
+func takeRest(a []int, b ...[]int) {}
+
+func retSend() (chan int, chan int) {
+	// ERROR "cannot use result 1 of send2\(\) \(type chan<- int\) as type chan int in return statement"
+	return send2()
+}
+
+func retChans() (<-chan int, <-chan int) {
+	return chans2()
+}
+
+// ERROR "cannot use result 1 of strs2\(\) \(type string\) as type int in variable declaration"
+var pa, pb int = strs2()
+
+var pc, pd B = bytes2()
+
+func main() {
+	// ERROR "cannot use result 1 of bytes2\(\) \(type \[\]byte\) as type \[\]int in argument to takeInts"
+	takeInts(bytes2())
+	takeBytes(bytes2())
+	// ERROR "cannot use result 1 of ptrs2\(\) \(type \*int\) as type \*uint in argument to takePtrs"
+	takePtrs(ptrs2())
+	// ERROR "cannot use result 1 of ifaces2\(\) \(type I\) as type \*T in argument to takeT"
+	takeT(ifaces2())
+	// ERROR "cannot use result 1 of ss2\(\) \(type \*S\) as type I in argument to takeIface"
+	takeIface(ss2())
+	takeIface(ts2())
+	takeRecv(chans2())
+	// ERROR "cannot use result 1 of send2\(\) \(type chan<- int\) as type <-chan int in argument to takeRecv"
+	takeRecv(send2())
+	r := &R{}
+	// ERROR "cannot use result 1 of bytes2\(\) \(type \[\]byte\) as type \[\]int in argument to take"
+	r.take(bytes2())
+	fv := takeInts
+	// ERROR "cannot use result 1 of bytes2\(\) \(type \[\]byte\) as type \[\]int in argument to fv"
+	fv(bytes2())
+	// ERROR "cannot use result 2 of mixed2\(\) \(type \[\]byte\) as type \[\]int in argument to takeRest"
+	takeRest(mixed2())
+	var u, v *uint
+	// ERROR "cannot use result 1 of ptrs2\(\) \(type \*int\) as type \*uint in assignment"
+	u, v = ptrs2()
+	var x, y int
+	// ERROR "cannot use result 1 of defs2\(\) \(type D\) as type int in assignment"
+	x, y = defs2()
+	x, y = ints2()
+	var h struct{ p, q *uint }
+	// ERROR "cannot use result 1 of ptrs2\(\) \(type \*int\) as type \*uint in assignment"
+	h.p, h.q = ptrs2()
+	// ERROR "cannot use result 1 of strs2\(\) \(type string\) as type int in variable declaration"
+	var a, b int = strs2()
+	// ERROR "cannot use result 1 of ifaces2\(\) \(type I\) as type \*T in variable declaration"
+	var c, d *T = ifaces2()
+	var e, g B = bytes2()
+	// Go takes a value into any; here an interface holds a pointer, by design,
+	// and a single value is refused so too.
+	// ERROR "cannot use result 1 of ints2\(\) \(type int\) as type any in variable declaration"
+	var k, l any = ints2()
+	println(u == nil, v == nil, x, y, h.p == nil, a, b, c == nil, d == nil, len(e), len(g), pa, pb, len(pc), len(pd), k == nil, l == nil)
+	retSend()
+	retChans()
+}
