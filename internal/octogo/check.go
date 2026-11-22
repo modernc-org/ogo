@@ -14821,14 +14821,47 @@ type embRef struct {
 	ptr   bool // embedded as a pointer, `*Leaf`, here or anywhere on the way to it
 }
 
+// definedStruct is the struct a type's declaration stands for: the one it writes
+// out, or, for `type D T` defined over another struct type, T's, through any
+// number of such definitions, with the scope that struct is declared in. A type
+// defined over a struct has its fields and its embeddings, and so the methods
+// they promote, though not T's own methods (dom121: twmb/murmur3's `type
+// digest64 digest128`, digest128 embedding digest, was refused as lacking
+// digest's methods).
+func (f *File) definedStruct(td *TypeDeclaration, home *Scope) (*TypeNodeStruct, *Scope, bool) {
+	for range 16 {
+		if td == nil || td.TypeSpec == nil {
+			return nil, nil, false
+		}
+		switch tn := td.TypeSpec.TypeNode.(type) {
+		case *TypeNodeStruct:
+			return tn, home, true
+		case *TypeNodeIdent:
+			written := tn.Name.Src()
+			if tn.Qualifier.IsValid() {
+				written = tn.Qualifier.Src() + "." + written
+			}
+			next, nhome, ok := f.identFile(tn).typeDeclNamed(home, written)
+			if !ok {
+				return nil, nil, false
+			}
+			td, home = next, nhome
+		default:
+			return nil, nil, false
+		}
+	}
+	return nil, nil, false
+}
+
 // embeddedFields names the types a struct embeds, in declaration order, each with
-// the scope to resolve it in.
+// the scope to resolve it in: a type defined over a struct type embeds what that
+// struct does (definedStruct).
 func (f *File) embeddedFields(s *Scope, typeName string) []embRef {
 	td, home, ok := f.typeDeclNamed(s, typeName)
 	if !ok || td.TypeSpec == nil {
 		return nil
 	}
-	st, ok := td.TypeSpec.TypeNode.(*TypeNodeStruct)
+	st, home, ok := f.definedStruct(td, home)
 	if !ok {
 		return nil
 	}
@@ -14858,7 +14891,7 @@ func (f *File) selectorDepth(s *Scope, typeName Token, name string) (count int) 
 			if td.methods[name] != nil {
 				count++
 			}
-			st, isStruct := td.TypeSpec.TypeNode.(*TypeNodeStruct)
+			st, home, isStruct := f.definedStruct(td, home)
 			if !isStruct {
 				continue
 			}

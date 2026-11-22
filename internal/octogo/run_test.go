@@ -35293,6 +35293,63 @@ func main() {
 		want: "7 0 300 0 9 11 0 3 5 0 4 0\n",
 	},
 	{
+		// A type defined over a struct type that embeds a field, `type digest64
+		// digest128` of twmb/murmur3, digest128 embedding digest, has the methods
+		// the embedded field promotes: it was refused as lacking them, "digest64
+		// does not implement Hash (missing method BlockSize)", "type digest64 has
+		// no method Size", the checker's embeddings read off a struct written out
+		// alone (dom121, sweeps/defined-promoted).
+		name: "a type defined over a struct type has the methods its embedded field promotes",
+		src: `type sizer interface {
+	Size() int
+	BlockSize() int
+}
+
+type digest struct {
+	n int
+}
+
+func (d *digest) Size() int { return d.n }
+
+func (d digest) BlockSize() int { return 16 + d.n }
+
+type digest128 struct {
+	digest
+	h1 uint64
+}
+
+func (d *digest128) Sum() uint64 { return d.h1 + uint64(d.n) }
+
+type digest64 digest128
+
+type digest32 digest64
+
+type viaPtr struct {
+	*digest
+}
+
+type viaPtr2 viaPtr
+
+func main() {
+	var d digest64
+	d.n = 7
+	d.h1 = 100
+	var s sizer = &d
+	p := &d
+	println(d.Size(), d.BlockSize(), p.Size(), s.Size(), s.BlockSize())
+	f := (*digest64).Size
+	g := digest64.BlockSize
+	println(f(&d), g(d))
+	var e digest32
+	e.n = 3
+	println(e.Size(), e.BlockSize(), (*digest128)(&d).Sum())
+	w := viaPtr2{&digest{n: 5}}
+	println(w.Size(), w.BlockSize())
+}
+`,
+		want: "7 23 7 7 23\n7 23\n3 19 107\n5 21\n",
+	},
+	{
 		// A var group whose later spec reads an earlier one through a value the
 		// emitter binds ahead of the statement, `var ( a = 62 - uint64(t); b =
 		// uint64((1 << (a - 1)) - 1) )`: every spec shared the statement's one

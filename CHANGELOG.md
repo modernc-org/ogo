@@ -152,6 +152,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   name or a chain, and not through the parentheses. A typed declaration, an
   assignment, an argument and a return took them, and so did a struct or a
   number in the parentheses. Found porting blake2s; rc.4 refused it too.
+- **A type defined over a struct type has the methods its embedded fields
+  promote**: `type digest64 digest128`, as twmb/murmur3 defines it over a
+  digest128 that embeds a digest, was refused as lacking digest's methods,
+  "digest64 does not implement Hash (missing method BlockSize)" and "type
+  digest64 has no method Size", in a call, through its address, in an
+  interface and in a method expression, defined one level deep or two, while
+  its promoted fields were read. Found porting murmur3. In every release
+  checked (v0.50.0, rc.4).
 - **A type switch case naming `error` or `any` builds**: `switch v :=
   x.(type) { case error: ... }`, and `case any:`, were refused by the
   emitter, "a type switch case names a pointer type, an interface type, or
