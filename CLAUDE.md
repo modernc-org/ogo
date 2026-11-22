@@ -482,6 +482,19 @@ silent fault puts the count back to 0. Each round's account is in
   refusal fixed (the address of a parenthesised array operand declared, with no
   position; 32ef165), one listed (a field read through a pointer to a literal
   or a local, dom94's) -- 1
+- dom121 (2026-11-22), a PRP redundancy box's duplicate discard on a
+  substation's process bus (bits-and-blooms' bitset and bloom, cespare/xxhash
+  and twmb/murmur3 ported with their tests, the two LANs on a cog), the first
+  round against master on dom120's records: silent (a call's several results
+  forwarded whole held to where they go by their Kinds alone, so Go's rejects
+  of it built and a typed var declaration from a call dropped its type;
+  5454ba6; a method's result called on a conversion to a pointer type typed by
+  nothing, printed by %d on the host and the board; 54e324b), two false
+  refusals fixed (a type defined over a struct type lacking what its embedded
+  fields promote; af9b8d5; a method of several results on a conversion to a
+  pointer type, with no position; eca89bb), one listed (a return forwarding
+  results Go assigns but of other C types, and a typed var declaration of an
+  aggregate from a call, with no position) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1339,7 +1352,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   is run under Go's race detector before the mutants are drawn: a race no
   output shows is the first question a mutant's DIFF asks** (dom108). **An arena
   two cogs allocate from grows a slice in place by how their allocations
-  interleave: its peak is the scheduler's, and no output.** (dom113). A sweep's
+  interleave: its peak is the scheduler's, and no output.** (dom113). **A
+  runner's list is counted against the tests it is listed from: a pattern blind
+  to gofmt's alignment of one-line functions left three unrun, in the twin as in
+  the program.** (dom121, testlist.py). A sweep's
   accessors record ORDER, `calls = calls*10 + k`, not a count ("Process rules
   learned the hard way").
 - **A MUTATED PROGRAM IS A PROBE OF THE FRONT END**; **A MUTATION WITH GO AS THE
@@ -1409,7 +1425,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   false to gcc, and under -Werror no build** (dom103). **Text the emitter writes
   in several lines is indented line by line at the depth it lands at: the host's
   compiler reads the columns, and an if they mislead is no build under -Werror**
-  (dom106).
+  (dom106). **A run case's values fill its type's width: 107 printed by %d read
+  right on the host and wrong on the board, and 7000000049 would have failed
+  both.** (dom121).
 - **When a new refusal fails an old test, ask Go about the test's program before
   doubting the refusal.** **A false refusal fixed in the checker is a program the
   emitter is handed next**. **A new summary rule is run over every program the
@@ -1431,7 +1449,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   array asks its type as well as its extents: an embedded defined array carries
   them in its typedef's name** (dom78, fieldDim). **A walk that reads a type's
   levels off its brackets asks what each name it stops at stands for: a defined
-  slice type is a slice level** (dom91). **A PACKAGE BOUNDARY IS A ROW**: **A
+  slice type is a slice level** (dom91). **A struct's questions are asked of a
+  type defined over it: `type D T` embeds what T embeds, and what its embedded
+  fields promote was asked of nothing.** (dom121, definedStruct;
+  sweeps/defined-promoted). **A PACKAGE BOUNDARY IS A ROW**: **A
   boundary sweep crosses two packages and three**; **Every row swept in one package
   is swept across the boundary too, with the qualified spelling in every
   position**; **A row swept in one package is swept with the qualified spelling**.
@@ -1452,8 +1473,16 @@ section. A new finding goes there; the rule it leaves goes here too.
   the Hub RAM's first bytes.** (dom113, sweeps/blankret). **PRINTING A VALUE IS
   A ROW**: **A value no walk types is
   printed as an int: println's default is the silent side of what printf
-  refuses** (dom98). **A CALL'S RESULTS FORWARDED
-  WHOLE ARE A ROW**. **A DEFERRED OR STARTED CALL IS A ROW**: **a new callee shape
+  refuses** (dom98). **A head a walk types is asked what a call on it returns: a
+  conversion to a pointer type typed its fields and not its methods' results,
+  and println wrote a uint64 by %d.** (dom121, ptrConvCType;
+  sweeps/ptrconv-type). **A CALL'S RESULTS FORWARDED WHOLE ARE A ROW**. **A
+  question asked of a value where it goes is asked of each result a call
+  forwards whole: a Kind was asked, and []byte went for []int, and a typed var
+  declaration from a call was asked nothing at all.** **A check added beside
+  older ones asks after them: asked first, its plain words took the place of
+  theirs.** (dom121, resultAssignable; sweeps/fwd-types). **A DEFERRED OR
+  STARTED CALL IS A ROW**: **a new callee shape
   is swept under plain, `defer` and `go`, with a store into the callee after the
   statement**.
 - **WHAT HAS NO KIND IS ASKED NOTHING**: **when a rule is written against a Kind, ask
