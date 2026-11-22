@@ -35409,6 +35409,45 @@ func main() {
 		want: "7 true\n4 3 1\n4 3\n4 3 2\n4 10\n14 4 10 3\n",
 	},
 	{
+		// A method's result called on a conversion to a pointer type,
+		// `(*A)(&b).Big()`, was typed by nothing: println and printf wrote a
+		// uint64, a string, a float64 and a bool result by %d, a word of it on the
+		// host and a misread line on the board, and `x := (*A)(&b).Big()` was
+		// "cannot infer a type" (dom121, sweeps/ptrconv-type).
+		name: "a method's result called on a conversion to a pointer type is typed",
+		src: `type A struct {
+	n int
+	s string
+}
+
+type B A
+
+type holder struct {
+	p *B
+}
+
+func (a *A) Big() uint64 { return uint64(a.n) * 1000000007 }
+
+func (a *A) Name() string { return a.s }
+
+func (a *A) Third() float64 { return float64(a.n) / 3 }
+
+func (a *A) Odd() bool { return a.n%2 == 1 }
+
+func main() {
+	b := B{n: 7, s: "seven"}
+	h := holder{&b}
+	println(1, (*A)(&b).Big(), (*A)(&b).Name(), 2)
+	print((*A)(h.p).Third(), " ", (*A)(h.p).Odd(), "\n")
+	x := (*A)(&b).Big()
+	var s = (*A)(h.p).Name()
+	println(x+1, s, (*A)(&b).Big() == x)
+	printf("%v %v\n", (*A)(&b).Third(), (*A)(h.p).Name())
+}
+`,
+		want: "1 7000000049 seven 2\n2.3333333333333335 true\n7000000050 seven true\n2.3333333333333335 seven\n",
+	},
+	{
 		// A var group whose later spec reads an earlier one through a value the
 		// emitter binds ahead of the statement, `var ( a = 62 - uint64(t); b =
 		// uint64((1 << (a - 1)) - 1) )`: every spec shared the statement's one

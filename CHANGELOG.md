@@ -105,6 +105,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A wrong answer, silent: a method's result called on a conversion to a
+  pointer type was printed as an int**: `println(1, (*A)(&b).Big(), 2)` of a
+  uint64 result printed "1 -1589934543 2" on the host, where Go prints "1
+  7000000049 2", and "1 -1589934543, 1 2" on the board; a string, a float64,
+  a float32, an int64 and a bool result went wrong alike, under print and
+  printf's %v too, through `(*A)(h.p)` as through `(*A)(&b)`. The result was
+  typed by nothing, and a value typed by nothing is printed by %d. `x :=
+  (*A)(&b).Big()` was refused, "cannot infer a type for the declaration of
+  "x"", with no position. The result has its method's type now. Found by the
+  run case of the type defined over a struct type (below), on the board. In
+  every release checked (v0.50.0, rc.4).
 - **A program Go refuses, built: a call's several results forwarded whole were
   held to the places they go to by their Kinds alone**: `var a, b int8 =
   readings()` of a `func readings() (uint8, uint8)` declared a and b as the

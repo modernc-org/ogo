@@ -22131,6 +22131,33 @@ func (e *emitter) ptrConvCType(pc emPtrConv) (string, bool) {
 	if len(pc.rest) == 0 {
 		return pc.ct, true
 	}
+	// A method called on the conversion, `(*T)(p).Get()`, own or promoted: its
+	// result's type, and what steps reach past it. Typed by nothing, println
+	// wrote a uint64, a string or a float64 result by %d, which read one word
+	// of it on the host and misread the line on the board, and `x :=` was
+	// "cannot infer a type" (dom121, sweeps/ptrconv-type). An array result,
+	// whose C type is its element's, stays untyped.
+	if len(pc.rest) >= 2 && pc.rest[0].sym == Selector && pc.rest[1].sym == CallSuffix {
+		member := e.soleIdent(pc.rest[0].ast)
+		if member == "" {
+			return "", false
+		}
+		cname, _, _, isMethod := e.promotedMethod(strings.TrimSuffix(pc.ct, "*"), member)
+		if _, arrRet := e.funcArrayRet[cname]; !isMethod || arrRet || len(e.funcRet[cname]) != 1 {
+			return "", false
+		}
+		rt := e.funcRet[cname][0]
+		if len(pc.rest) == 2 {
+			return rt, rt != ""
+		}
+		if slices.ContainsFunc(pc.rest[2:], func(st Node) bool { return st.sym == CallSuffix }) {
+			return "", false
+		}
+		if cur, ok := e.accessChainTypeAt(e.plainOrSlice(rt), pc.rest[2:], true); ok {
+			return e.chainValueCType(cur)
+		}
+		return "", false
+	}
 	if slices.ContainsFunc(pc.rest, func(st Node) bool { return st.sym == CallSuffix }) {
 		return "", false
 	}
