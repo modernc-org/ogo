@@ -228,6 +228,17 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 		}
 		return indentLevel
 	}
+	// An empty composite literal whose braces stand on two lines, `[]int{` and
+	// `}`: go/printer prints a literal's elements through exprList, which
+	// writes no line break for none, so the braces meet, `[]int{}`. A comment
+	// between them keeps its lines. Kept, dom122's runner's empty table of
+	// examples was laid out otherwise than by gofmt.
+	if currTok == RBRACE && f.prevTok == LBRACE && c.inLiteralBraces && !slices.ContainsFunc(sep, func(v any) bool {
+		_, isSpace := v.(whiteSpace)
+		return !isSpace
+	}) {
+		return
+	}
 	for i, v := range sep {
 		switch x := v.(type) {
 		case whiteSpace:

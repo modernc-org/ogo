@@ -2012,3 +2012,56 @@ func TestFormatLeadingBOM(t *testing.T) {
 		t.Fatalf("got\n%q\nwant\n%q", got, want)
 	}
 }
+
+// TestFormatEmptyLiteralLines pins an empty composite literal whose braces stand
+// on two lines: go/printer prints a literal's elements through exprList, which
+// writes no line break for none, so the braces meet, `[]int{}`; a comment
+// between them keeps its lines. dom122's runner's empty table of examples,
+// `[...]struct{ ... }{` and `}`, was kept on two lines.
+func TestFormatEmptyLiteralLines(t *testing.T) {
+	in := `var a = []int{
+}
+
+var b = [...]struct {
+	n int
+}{
+
+}
+
+var c = []int{
+	// none yet
+}
+
+func main() {
+	d := map2{
+	}
+	println(len(a), len(b), len(c), d.n)
+}
+
+type map2 struct {
+	n int
+}
+`
+	want := `var a = []int{}
+
+var b = [...]struct {
+	n int
+}{}
+
+var c = []int{
+	// none yet
+}
+
+func main() {
+	d := map2{}
+	println(len(a), len(b), len(c), d.n)
+}
+
+type map2 struct {
+	n int
+}
+`
+	formatCheck(t, in, want)
+	formatCheck(t, want, want)
+	gofmtCheck(t, want)
+}

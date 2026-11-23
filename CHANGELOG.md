@@ -67,6 +67,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **`ogo fmt` writes an empty composite literal on one line, as gofmt does**:
+  `[]int{` with `}` on the next line, and so a struct type's literal and a
+  `:=` of one, kept their line break, where go/printer prints a literal's
+  elements through its expression list, which writes no line break for none,
+  `[]int{}`. A comment between the braces keeps its lines. Found running
+  dom122's program through `scripts/fmtcmp.sh`; of the 64 domain programs no
+  other changes, and no tracked file. It changes no program's tokens.
 - **`ogo fmt` lays out three more shapes as gofmt does**, each found running
   dom116's port of freetype and golang.org/x/image through both. A binary
   expression in a composite literal handed to a call of several arguments,
