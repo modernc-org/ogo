@@ -105,6 +105,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A program Go refuses, built: a typed constant's arithmetic past its type
+  in a condition, a switch's tag, a case or an index**: `if n > maxInt*128/r {`
+  of a `const maxInt = int(^uint(0) >> 1)`, which Go refuses, "maxInt * 128
+  (constant 274877906816 of type int) overflows int", was asked nothing, and
+  built for the board the C wrapped the constant to -128, so `tooBig(1000, 1)`
+  answered true. An assignment, an argument and a return asked each step of
+  the constant's fold; an if's and a for's condition, a switch's tag, a case
+  and an index did not, for every integer type. They ask now. Found by
+  dom122's mutants of scrypt's parameter check. In every release checked
+  (v0.50.0, rc.4).
 - **A wrong answer, silent: a method's result called on a conversion to a
   pointer type was printed as an int**: `println(1, (*A)(&b).Big(), 2)` of a
   uint64 result printed "1 -1589934543 2" on the host, where Go prints "1

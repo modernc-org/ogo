@@ -5435,6 +5435,9 @@ func (f *File) multiValueOperandErr(s *Scope, n Node) bool {
 // selector, or unresolved name) yields no "non-bool" report.
 func (f *File) checkCondition(s *Scope, kw string, n Node) {
 	f.checkNames(s, n)
+	if f.checkFoldSteps(s, n) {
+		return
+	}
 	if f.multiValueOperandErr(s, n) {
 		return
 	}
@@ -8079,6 +8082,9 @@ func (f *File) checkSwitchTag(ss *Scope, g switchGuard) (Kind, bool) {
 	// Resolve the names in the expression switched on, reporting an undefined name,
 	// a blank read or an ill-typed operator there, just as a case expression's are.
 	f.checkNames(ss, g.tag)
+	if f.checkFoldSteps(ss, g.tag) {
+		return 0, false
+	}
 	if f.isNilOperand(g.tag) {
 		// No type to compare the cases with: `switch nil {` was taken.
 		f.err(f.tok(g.tag.Pos()).Position(), "use of untyped nil in switch expression")
@@ -8526,6 +8532,9 @@ func (f *File) checkCaseExprs(s *Scope, guardKind Kind, n Node) {
 // checkCaseExpr reports a case expression whose type is known and in a different
 // comparability class than the switch guard.
 func (f *File) checkCaseExpr(s *Scope, guardKind Kind, e Node) {
+	if f.checkFoldSteps(s, e) {
+		return
+	}
 	k, ok := f.exprType(s, e)
 	if !ok {
 		return
@@ -24611,6 +24620,9 @@ func (f *File) checkConstSliceOrder(s *Scope, index Node) {
 // valid programs.
 func (f *File) checkIndexValue(s *Scope, e Node) {
 	pos := f.tok(e.Pos()).Position()
+	if f.checkFoldSteps(s, e) {
+		return
+	}
 	// nil, and a value of no Kind -- a pointer, a struct, a slice -- which the
 	// Kind below cannot say: `a[nil]` indexed with 0, in silence.
 	if f.isNilOperand(e) {
@@ -32771,6 +32783,21 @@ func (f *File) checkConstFits(s *Scope, dst retResult, n Node, implicit bool) {
 		}
 	}
 	f.reportOverflow(f.tok(n.Pos()).Position(), cv, dst.kind, dst.name)
+}
+
+// checkFoldSteps refuses a typed constant that overflows its type at a step of
+// the expression n, standing where no type is asked of it: a condition, a
+// switch's tag, a case and an index. checkConstFits asks it where a value has a
+// type to fit -- an assignment, an argument, a return -- and nothing did here:
+// `if N > maxInt*128/r {` built, where Go refuses "maxInt * 128 (constant
+// 274877906816 of type int) overflows int" (dom122's m0345, scrypt's
+// parameter check; sweeps/const-overflow-pos). It reports whether it refused.
+func (f *File) checkFoldSteps(s *Scope, n Node) bool {
+	if o, bad := f.trackedFold(func() { f.constNumeric(s, n) }); bad {
+		f.err(o.pos, "%s", o.msg)
+		return true
+	}
+	return false
 }
 
 // foldOverflow is a typed constant's overflow at one step of a fold.
