@@ -495,6 +495,17 @@ silent fault puts the count back to 0. Each round's account is in
   pointer type, with no position; eca89bb), one listed (a return forwarding
   results Go assigns but of other C types, and a typed var declaration of an
   aggregate from a call, with no position) -- 0
+- dom122 (2026-11-23), an industrial controller's operator logins and
+  credential vault (x/crypto's blowfish, bcrypt, salsa20, scrypt, blake2b and
+  argon2 and Go 1.27's pbkdf2 ported with their tests, argon2's lanes on cogs,
+  a panel and a maintenance link on cogs), the first round against master on
+  dom121's records: silent (a typed constant's arithmetic past its type in a
+  condition, a switch's tag, a case or an index asked nothing, so Go's
+  rejects of it built; 46c03e4), a formatter shape fixed (an empty composite
+  literal written on two lines; 64e8508), two listed (a string conversion
+  handed to a callee that keeps nothing, which gc copies into the frame; an
+  undefined field with steps after it refused by the emitter, a third of the
+  rows with no position) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1355,7 +1366,12 @@ section. A new finding goes there; the rule it leaves goes here too.
   interleave: its peak is the scheduler's, and no output.** (dom113). **A
   runner's list is counted against the tests it is listed from: a pattern blind
   to gofmt's alignment of one-line functions left three unrun, in the twin as in
-  the program.** (dom121, testlist.py). A sweep's
+  the program.** (dom121, testlist.py). **A runner's list is read off the Go
+  file's own Test functions: port.py names a helper testArgon2d
+  argon2TestArgon2d, which a pattern takes for a test.** (dom122, testlist.py).
+  **An error of a comparable value type is interned in its pool: an interface
+  holds a pointer here, and == of two such errors compares as Go's only where
+  each value has one address.** (dom122, tables.py). A sweep's
   accessors record ORDER, `calls = calls*10 + k`, not a count ("Process rules
   learned the hard way").
 - **A MUTATED PROGRAM IS A PROBE OF THE FRONT END**; **A MUTATION WITH GO AS THE
@@ -1517,7 +1533,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   decoding.** (dom114, sweeps/runelit). **A model of the type C computes a
   constant in is asked its sign as well as its range: every value of
   `1<<31-1-1` fits an unsigned int, and the level stood as written, unsigned
-  beside Go's int.** (dom117, sweeps/uconst).
+  beside Go's int.** (dom117, sweeps/uconst). **A step a constant's fold is
+  asked at is asked wherever the expression stands: a condition, a switch's
+  tag, a case and an index have no type to fit, and a typed constant past its
+  type went to the C there.** (dom122, checkFoldSteps; sweeps/const-overflow-pos).
 - **AN INTERFACE WRITTEN OUT IS A TYPE**: **A rule asked by name is a row of every
   type that has none.** **A value no interface may hold is refused by every
   interface, one asking for nothing among them: what it holds is asserted to the
@@ -1587,7 +1606,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   accident is a rule nobody wrote**; **A rule that refuses on what the checker knows
   must ask what the checker fails to record, not only what it records**. **A shape
   made to compile is asked what Go refuses near it: a refusal by accident was
-  refusing a cycle too** (dom80, specTypeSettled).
+  refusing a cycle too** (dom80, specTypeSettled). **A check asked of a
+  selection alone is asked of the chain it heads: `c.p[0]` was no field
+  selection to the checker, and the emitter refused it by accident, a third of
+  the rows with no position.** (dom122, fieldSelector; sweeps/undef-field).
 - **A CALL'S RESULT HAD NO STEPS**: **A walk that types a value hands its type back
   to every rule, and a rule asked of a value asks the walk**. **A walk that passes a
   call hands the call to the argument check.** **A lowering that makes a shape
@@ -1968,7 +1990,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   out otherwise than by gofmt, one of them by a formatter changing its tokens.**
   **The problem pairs of go/printer are read off its source, all of them: the
   formatter had three of five, and `a & ^b` came back `a&^b`, another
-  operator.** (dom116, scripts/fmtcmp.sh).
+  operator.** (dom116, scripts/fmtcmp.sh). **A list go/printer prints through
+  exprList is written as exprList writes an empty one: no line break for no
+  element, `[]int{}`.** (dom122, formatSep).
 
 ## Notes
 
