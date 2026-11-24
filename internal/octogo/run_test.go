@@ -51928,6 +51928,90 @@ func main() {
 `,
 		want: "4 121212121\n5 2\n6\ntrue 7\n",
 	}, {
+		// A struct holding a function that returns the struct among SEVERAL
+		// results, glob's parser state held in a struct, `type state struct{ fn
+		// func(int) (state, int) }`: the result struct held the struct by value
+		// ahead of its declaration, which needed the function type, which was
+		// taken to need its results -- a cycle the typedef section was written in
+		// as found, and C both compilers refused (dom123's L1). The results' struct
+		// takes a tag, declared ahead, where such a cycle is (untieOutResults).
+		name: "a struct holding a function returning it among several results",
+		src: `import "errors"
+
+type node struct {
+	kind int
+}
+
+type state struct {
+	fn   func(int) (state, int)
+	name string
+}
+
+type step struct {
+	next func(*step, int) (step, *node, error)
+	seen int
+}
+
+var nodes [4]node
+
+var errDone = errors.New("done")
+
+func even(n int) (state, int) {
+	if n == 0 {
+		return state{}, 0
+	}
+	return state{odd, "odd"}, n - 1
+}
+
+func odd(n int) (state, int) {
+	if n == 0 {
+		return state{}, 1
+	}
+	return state{even, "even"}, n - 1
+}
+
+func (s state) run(n int) (int, string) {
+	steps := 0
+	last := s.name
+	for s.fn != nil {
+		var next state
+		next, n = s.fn(n)
+		if next.fn == nil {
+			break
+		}
+		s = next
+		last = s.name
+		steps++
+	}
+	return steps*10 + n, last
+}
+
+func walk(p *step, k int) (step, *node, error) {
+	if k >= len(nodes) {
+		return step{}, nil, errDone
+	}
+	nodes[k].kind = k * 3
+	return step{walk, p.seen + 1}, &nodes[k], nil
+}
+
+func main() {
+	r, last := state{even, "even"}.run(7)
+	println(r, last)
+	s := step{walk, 0}
+	sum := 0
+	for k := 0; ; k++ {
+		next, nd, err := s.next(&s, k)
+		if err != nil {
+			println(err.Error(), s.seen, sum)
+			break
+		}
+		sum += nd.kind
+		s = next
+	}
+}
+`,
+		want: "71 odd\ndone 4 18\n",
+	}, {
 		// The same type through every place a function value lives -- a package
 		// variable, a field, a slice and an array element, append, a call's
 		// result, a method expression and a method value, an interface method's

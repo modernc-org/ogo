@@ -4683,6 +4683,14 @@ func (e *emitter) funcTypeFor(fv funcValueType) string {
 	ret, params := fv.key[:at], fv.key[at+len(" (*)("):len(fv.key)-1]
 	e.addTypedef(name, "typedef "+ret+" (*"+name+")("+e.cFuncTypeParams(strings.Split(params, ", "))+");\n",
 		append(slices.Clone(fv.res), fv.params...)...)
+	if out := e.outResultOf(fv.res); out != "" {
+		// What the typedef needs where its results are written through a pointer:
+		// that pointer, not the results (untieOutResults).
+		if e.funcTypeLeanDeps == nil {
+			e.funcTypeLeanDeps = map[string][]string{}
+		}
+		e.funcTypeLeanDeps[name] = e.typedefDeps(append([]string{out + "*"}, fv.params...))
+	}
 	return name
 }
 
@@ -4898,6 +4906,54 @@ func (e *emitter) typedefDeps(ctypes []string) []string {
 		}
 	}
 	return deps
+}
+
+// untieOutResults breaks a cycle of the typedef section that goes through a
+// function type writing its results through an out parameter: a struct holding a
+// function that returns the struct among several results, `type state struct {
+// fn func(int) (state, int) }`. The function type was taken to need its results'
+// declarations, the results' struct needs the struct by value, and the struct
+// needs the function type: a cycle orderTypedefs leaves as it found it, and C
+// both compilers refuse ("field '_0' has incomplete type", dom123's L1). In such
+// a cycle a function type needs only the pointer it is written with, and the
+// results' struct takes a tag, forward-declared ahead of the section, so that
+// pointer needs nothing of it. Units of no cycle are left as they are, and a
+// program without one has the C it had.
+func (e *emitter) untieOutResults(units []typedefUnit) []typedefUnit {
+	names := make([]string, len(units))
+	deps := make([][]string, len(units))
+	for i, u := range units {
+		names[i], deps[i] = u.name, u.deps
+	}
+	_, cyclic := stableTopoOrderCycle(names, deps, make([]int, len(units)))
+	if len(cyclic) == 0 {
+		return units
+	}
+	out := slices.Clone(units)
+	tagged := map[string]bool{}
+	var forwards []typedefUnit
+	for _, i := range cyclic {
+		u := out[i]
+		if _, isRet := e.retStructs[u.name]; !isRet {
+			continue
+		}
+		body, ok := strings.CutPrefix(u.text, "typedef struct { ")
+		if ok {
+			body, ok = strings.CutSuffix(body, "} "+u.name+";\n")
+		}
+		if !ok {
+			continue
+		}
+		out[i].text = "struct " + u.name + " { " + body + "};\n"
+		forwards = append(forwards, typedefUnit{text: "typedef struct " + u.name + " " + u.name + ";\n"})
+		tagged[u.name] = true
+	}
+	for _, i := range cyclic {
+		if lean, ok := e.funcTypeLeanDeps[out[i].name]; ok {
+			out[i].deps = slices.DeleteFunc(slices.Clone(lean), func(d string) bool { return tagged[d] })
+		}
+	}
+	return append(forwards, out...)
 }
 
 // orderTypedefs returns the units in an order where each follows what it depends
@@ -7157,7 +7213,7 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	}
 	e.aliasAnonStructs()
 	var typedefUnits bytes.Buffer
-	for _, u := range orderTypedefs(e.typedefUnits) {
+	for _, u := range orderTypedefs(e.untieOutResults(e.typedefUnits)) {
 		typedefUnits.WriteString(u.text)
 	}
 	// The ogo_string typedef leads the typedef section (a struct, array, or result
@@ -8061,6 +8117,7 @@ type emitter struct {
 	recFuncTypes        map[string]bool          // the function typedefs of a type that names ITSELF as its result, `type stateFn func(*lexer) stateFn`: a call through one is made through the function's own type (see recFuncCallee)
 	recFuncShapes       map[string]string        // funcShapeID of such a type's signature spelled with its own name as the result -> its typedef, so a function of that signature is a value of it
 	retStructs          map[string]string        // result-struct typedef name -> the result types it stands for
+	funcTypeLeanDeps    map[string][]string      // a function type writing its results through a pointer -> what its typedef needs of them, that pointer (untieOutResults)
 	retStructByKey      map[string]string        // those result types -> the typedef name, so one list answers alike every time
 	typedefUnits        []typedefUnit            // the typedef section, in the order collected; emitted in dependency order
 	anonStructNames     map[string]string

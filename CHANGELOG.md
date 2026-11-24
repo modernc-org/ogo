@@ -112,6 +112,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A struct holding a function that returns the struct among several results
+  builds**: `type state struct { fn func(int) (state, int) }`, a parser's state
+  function held in a struct, passed the checker and the emitter and was C both
+  compilers refused, "field '_0' has incomplete type": the results' struct held
+  the struct by value ahead of its declaration, which needed the function type,
+  which was taken to need its results. Where the declarations form such a
+  cycle, the function type asks only for the pointer its results are written
+  through, and the results' struct takes a tag declared ahead of them; a
+  program with no such cycle has the C it had. The function type among its
+  own several results, `type parseFn func(*Node) (parseFn, error)`, is still
+  refused. Found by dom123's port of gobwas/glob's parser. In every release
+  checked (v0.50.0, rc.4).
 - **A program Go refuses, built: a typed constant's arithmetic past its type
   in a condition, a switch's tag, a case or an index**: `if n > maxInt*128/r {`
   of a `const maxInt = int(^uint(0) >> 1)`, which Go refuses, "maxInt * 128
