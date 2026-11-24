@@ -506,6 +506,17 @@ silent fault puts the count back to 0. Each round's account is in
   handed to a callee that keeps nothing, which gc copies into the frame; an
   undefined field with steps after it refused by the emitter, a third of the
   rows with no position) -- 0
+- dom123 (2026-11-24), a process plant's alarm management (gobwas/glob's
+  lexer, parser, compiler and matchers and google/uuid ported with their
+  tests, Go 1.27's time and unicode's folds cut from GOROOT, two field
+  controllers and a pager on cogs), the first round against master on
+  dom122's records: silent (printf of a value of a defined array type with a
+  String or an Error method wrote the array, a uuid.UUID its bytes; 8881189),
+  two loud faults fixed (a struct holding a function returning it among
+  several results, C no compiler builds; 58c9799; a pointer to such an array,
+  C naming a question's stand-in; 8881189), a false refusal fixed (%s of such
+  an array with an Error; 8881189), one listed (a slice read out of a struct
+  holding a slice literal, its contents taken for the literal's) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1371,7 +1382,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   argon2TestArgon2d, which a pattern takes for a test.** (dom122, testlist.py).
   **An error of a comparable value type is interned in its pool: an interface
   holds a pointer here, and == of two such errors compares as Go's only where
-  each value has one address.** (dom122, tables.py). A sweep's
+  each value has one address.** (dom122, tables.py). **A table of calls costs
+  its temporaries where it is built: a package's initializers are one C
+  function, and the backend lays every temporary of every table into its one
+  frame, which main's stack pays.** (dom123, C1). A sweep's
   accessors record ORDER, `calls = calls*10 + k`, not a count ("Process rules
   learned the hard way").
 - **A MUTATED PROGRAM IS A PROBE OF THE FRONT END**; **A MUTATION WITH GO AS THE
@@ -1492,7 +1506,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   refuses** (dom98). **A head a walk types is asked what a call on it returns: a
   conversion to a pointer type typed its fields and not its methods' results,
   and println wrote a uint64 by %d.** (dom121, ptrConvCType;
-  sweeps/ptrconv-type). **A CALL'S RESULTS FORWARDED WHOLE ARE A ROW**. **A
+  sweeps/ptrconv-type). **A question asked of a value's C type is asked of an
+  array by its defined type: an array has no C value type, and the String() of
+  a uuid.UUID, a [16]byte, was never asked.** (dom123, printArrayShape's name;
+  sweeps/array-stringer). **A CALL'S RESULTS FORWARDED WHOLE ARE A ROW**. **A
   question asked of a value where it goes is asked of each result a call
   forwards whole: a Kind was asked, and []byte went for []int, and a typed var
   declaration from a call was asked nothing at all.** **A check added beside
@@ -1745,7 +1762,10 @@ section. A new finding goes there; the rule it leaves goes here too.
 
 **The emitter: order and binding**
 
-- **A walk that answers a question must not change the program**. **An owner of
+- **A walk that answers a question must not change the program**. **A question
+  asked with a stand-in for the value writes nothing: the guard of a pointer to
+  an array is a statement, and stringerCallC's "_" was written into the
+  program.** (dom123, stringerMethodC). **An owner of
   deferred work is the storage the literal fills, not whatever is being rendered
   when it is found.** **What a question forgets of what it minted, it forgets
   whole: a name cached and a flag set are minting too** (dom72). **A clause is a
@@ -1920,7 +1940,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   and a bool takes one byte** (dom110, doc/bool-sizeof.c). **A zero a static
   has from the start is written as nothing: "{0}" stood for an empty literal at
   file scope as in a function, and the target's compiler reads a static's
-  braces row by row.** (dom120, emitArrayLitVarNamed).
+  braces row by row.** (dom120, emitArrayLitVarNamed). **A dependency a
+  declaration is given is asked how the declaration uses it: a function type
+  writing its results through a pointer needs the pointer, and its results by
+  value closed a cycle no C compiler builds.** (dom123, untieOutResults).
 - **A fault measured in one statement form is measured in the others: a plain store
   right says nothing of its compound form** (doc/row-call-compound.c). **A
   workaround's gate is asked of every shape its fault takes: the fault was an
