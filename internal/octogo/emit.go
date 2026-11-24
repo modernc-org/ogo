@@ -46650,6 +46650,14 @@ func (e *emitter) stringerMethodC(ct, tmp string) (text string, isIface, ptrRecv
 		if ptrRecv && !isPtr {
 			continue
 		}
+		if _, isArr := e.namedArrays[base]; isArr && isPtr && !ptrRecv && len(path) == 0 {
+			// A pointer to an array is dereferenced bare: each caller prints a nil
+			// one as <nil> itself, as fmt prints the panic a value method's copy of
+			// its receiver raises, and the guard of a pointer to an array is a
+			// statement (derefGuardC), which a question asked with "_" for the
+			// value wrote into the program, `ogo_nil_U_ptr(_);` (dom123's L2).
+			return cname + "(*" + tmp + ")", false, false, true
+		}
 		recv, okr := e.promotedRecvC(tmp, ct, path, ptrRecv, true)
 		if e.recvByRef[cname] {
 			recv, okr = e.promotedByRefRecvC(tmp, ct, path, true)
@@ -47006,11 +47014,26 @@ func (e *emitter) printValueC(expr, ct string, methods bool, plus string) (code,
 
 // printArrayC is printValueC for an array of the extents a, element by element.
 func (e *emitter) printArrayC(expr string, a arrDim, methods bool, plus string) (code, why string) {
+	if methods && a.name != "" {
+		// An array of a defined type with a String() or an Error() prints what that
+		// returns, as fmt prints it at depth: a struct's exported field, an element
+		// of an array of them (dom123's F1).
+		if text, _, _, ok := e.stringerMethodC(a.name, expr); ok {
+			e.usesStringPrint = true
+			return "ogo_print_str(" + text + ");", ""
+		}
+	}
 	i := e.newTmp()
 	el := "(" + expr + ")[" + i + "]"
 	var inner string
 	if len(a.inner) != 0 {
-		inner, why = e.printArrayC(el, arrDim{elem: a.elem, bound: a.inner[0], inner: a.inner[1:]}, methods, plus)
+		// The element's defined type, where the extents left are exactly its own:
+		// a `[2]U` is a [2][16]byte by now, and its rows are U's.
+		row := arrDim{elem: a.elem, bound: a.inner[0], inner: a.inner[1:], elemName: a.elemName, elemDims: a.elemDims}
+		if a.elemName != "" && len(a.inner) == a.elemDims {
+			row.name = a.elemName
+		}
+		inner, why = e.printArrayC(el, row, methods, plus)
 	} else {
 		inner, why = e.printValueC(el, a.elem, methods, plus)
 	}
@@ -47239,6 +47262,12 @@ func (e *emitter) structSpecRefusal(u string, verb byte) string {
 		ct := fld.ctype
 		if fld.dim.bound != "" {
 			ct = fld.dim.elem
+			if fld.dim.name != "" {
+				// The field's defined array type, which is what has the methods: asked
+				// by its element, a String() it has was printed past as the bytes
+				// (dom123's F1).
+				ct = fld.dim.name
+			}
 		}
 		if why := e.specValueRefusal(ct, token.IsExported(fld.name) && stringerVerb(verb), verb); why != "" {
 			return "field " + fld.name + " " + why
@@ -47733,7 +47762,17 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 	// hex of the text, and `%q` is "warm" quoted. Until 2026-09-18 those three
 	// printed the integer the value holds, 41 and 'A' for a Celsius of 65 --
 	// silently -- and refused an error outright.
-	if dct, declared := e.printfArgType(idx, arg); stringerVerb(verb) && declared {
+	dct, declared := e.printfArgType(idx, arg)
+	if !declared && stringerVerb(verb) {
+		// An array has no C value type to ask, and its DEFINED type is what has the
+		// method: a `type U [16]byte` with a String() printed by %v as its bytes, by
+		// %s as their text, where fmt prints what String() returns -- a uuid.UUID
+		// (dom123's F1).
+		if a, isArr := e.printArrayShape(idx, arg); isArr && a.name != "" {
+			dct, declared = a.name, true
+		}
+	}
+	if stringerVerb(verb) && declared {
 		tmp := e.newTmp()
 		if text, isIface, ptrRecv, ok := e.stringerMethodC(dct, tmp); ok {
 			// Bound in a block first: the value may be a call, whose field a chain
@@ -48086,7 +48125,19 @@ func (e *emitter) emitElementwiseArrayND(item printfItem, arg Node, a arrDim, va
 			return true, noSpec("an array of values with a String() method is printed element by element here")
 		}
 	}
-	byteRows := u == "uint8_t" && strings.IndexByte("sxXq", item.verb) >= 0
+	// The rows of a defined array type with a String() or an Error(), a `[2]U` of a
+	// `type U [16]byte`, print what each returns under the verbs fmt asks it for:
+	// as rows of bytes, %s printed their text (dom123's F1).
+	rowName := ""
+	if stringerVerb(item.verb) && a.elemName != "" && a.elemDims > 0 && a.elemDims < len(dims) {
+		if _, _, isStringer := e.stringerCallC(a.elemName, "_"); isStringer {
+			if item.spec != "" {
+				return true, noSpec("an array of values with a String() method is printed element by element here")
+			}
+			rowName = a.elemName
+		}
+	}
+	byteRows := rowName == "" && u == "uint8_t" && strings.IndexByte("sxXq", item.verb) >= 0
 	if byteRows && a.elem != "uint8_t" {
 		e.failAt(arg.ast, "printf: %%%s%c of an array of %s is not supported yet", item.spec, item.verb, e.goTypeName(a.elem))
 		return true, false
@@ -48104,6 +48155,25 @@ func (e *emitter) emitElementwiseArrayND(item printfItem, arg Node, a arrDim, va
 	ok = true
 	var walk func(level int, at string)
 	walk = func(level int, at string) {
+		if rowName != "" && level == len(dims)-a.elemDims {
+			text, _, _, _ := e.stringerMethodC(rowName, at)
+			e.usesStringPrint = true
+			print := "ogo_print_str(" + text + ");"
+			switch item.verb {
+			case 'x', 'X', 'q':
+				e.usesBytesPrint = true
+				e.usesString = true
+				e.usesRuneDecode = true
+				print = "ogo_print_qbytes(" + text + ");"
+				e.usesQBytes = item.verb == 'q' || e.usesQBytes
+				if item.verb != 'q' {
+					print = "ogo_print_hex_bytes(" + text + ", " + strconv.Itoa(boolToInt(item.verb == 'X')) + ");"
+				}
+			}
+			e.ind()
+			e.emit(print + "\n")
+			return
+		}
 		if byteRows && level == len(dims)-1 {
 			e.needSlice("uint8_t")
 			ok = e.emitScalarVerb(item, sliceCName("uint8_t"), func() {

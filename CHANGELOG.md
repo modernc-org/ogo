@@ -112,6 +112,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A wrong answer, silent: printf of a value of a defined array type with a
+  String() or an Error() method printed the array**: a `uuid.UUID`, a `[16]byte`
+  with a String(), printed by `%v` as its bytes, `[244 122 193 ...]`, and by `%s`
+  as their text, where fmt prints what String() returns; `%q`, `%x` and `%X` the
+  same. The method of a struct or an integer type was called; an array has no C
+  value type, and its defined type, which has the method, was never asked. It is
+  asked now, at the top, in a struct's exported field under %v, as the rows of an
+  array of the type and of a call's result. %s of such a type with an Error() was
+  refused, "printf: %s wants a string, not E", and a pointer to one was C naming
+  the question's stand-in for the value, `ogo_nil_U_ptr(_)`, which no compiler
+  builds: both print the method's text. Under a width, and in a struct printed by
+  %s, %q, %x or with a width, a field of such a type is refused, as a field of
+  any type with a String() is: it was printed as the array. Found by dom123's
+  mutants of google/uuid's tests. In every release checked (v0.50.0, rc.4).
 - **A struct holding a function that returns the struct among several results
   builds**: `type state struct { fn func(int) (state, int) }`, a parser's state
   function held in a struct, passed the checker and the emitter and was C both

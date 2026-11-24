@@ -52012,6 +52012,59 @@ func main() {
 `,
 		want: "71 odd\ndone 4 18\n",
 	}, {
+		// A value of a DEFINED ARRAY type with a String() or an Error(), printed by
+		// printf, prints what the method returns, as fmt prints it: a uuid.UUID, a
+		// [16]byte with a String(), printed by %v as its bytes and by %s as their
+		// text (dom123's F1), at the top, in a struct's exported field, as the rows
+		// of a [2]UUID, through a pointer, from a call; %s of one with an Error()
+		// was refused, and the pointer's C named the question's stand-in "_".
+		name: "printf of a defined array type with a String or an Error method",
+		src: `type UUID [16]byte
+
+var names = [4]string{"id-zero", "id-one", "id-two", "id-three"}
+
+func (u UUID) String() string { return names[u[0]&3] }
+
+type Code [2]int
+
+func (c Code) Error() string { return "code error" }
+
+type Event struct {
+	ID   UUID
+	Tag  string
+	seen UUID
+}
+
+type Pair [2]UUID
+
+func mk(k byte) UUID {
+	var u UUID
+	for i := range u {
+		u[i] = k + byte(i)
+	}
+	return u
+}
+
+func main() {
+	u := mk(1)
+	c := Code{4, 2}
+	ev := Event{u, "LEVEL.HI", mk(2)}
+	p := Pair{u, mk(3)}
+	pu := &u
+	printf("%v|%s|%q\n", u, u, u)
+	printf("%x|%X\n", u, u)
+	printf("%v|%s\n", c, c)
+	printf("%v\n", ev)
+	printf("%+v\n", ev)
+	printf("%v|%s\n", p, p)
+	printf("%v|%s\n", pu, pu)
+	printf("%v|%v\n", mk(0), ev.ID)
+	printf("[%10s]\n", u)
+	printf("%d\n", c)
+}
+`,
+		want: "id-one|id-one|\"id-one\"\n69642d6f6e65|69642D6F6E65\ncode error|code error\n{id-one LEVEL.HI [2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17]}\n{ID:id-one Tag:LEVEL.HI seen:[2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17]}\n[id-one id-three]|[id-one id-three]\nid-one|id-one\nid-zero|id-one\n[    id-one]\n[4 2]\n",
+	}, {
 		// The same type through every place a function value lives -- a package
 		// variable, a field, a slice and an array element, append, a call's
 		// result, a method expression and a method value, an interface method's
