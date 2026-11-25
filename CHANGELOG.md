@@ -152,6 +152,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   builds (`unknown type name 'ogo_anonface4'`). A pointer to such an interface
   needs its declarations now, as a pointer to an anonymous struct does. In
   every release checked.
+- **A type switch case of a pointer to a type holding an interface written
+  out binds its name**: `case *[]interface{}: r = *t`, `*[2]interface{}`,
+  `*[]interface{ M() }`, were refused, "cannot indirect t: it is an
+  interface": the case's spelling was none the duplicate check compares, and
+  the clause was left unbound. v0.50.0 built it; rc.4 refused it.
+  `case *interface{}:` is still refused.
 - **A method of several results on what a call hands back, of a defined slice
   type, builds**: `a, b := get().Split()` for a `type D []int`, in a
   declaration or an assignment, was refused with no position, "multiple-

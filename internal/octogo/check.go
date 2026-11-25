@@ -7486,13 +7486,18 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 				continue // reported where the type was resolved
 			}
 			written := f.typeAtMessage(typeAt{tn, cs, f})
+			// A shape with no spelling to compare, `*[]interface{}`, is asked no
+			// duplicate; it binds the name all the same. It was left unbound, the
+			// name the operand's interface, and `r = *t` was "cannot indirect t: it
+			// is an interface" (dom124's N1).
 			if written == "" || strings.HasPrefix(written, "a ") || strings.HasPrefix(written, "an ") {
-				continue // a shape with no spelling to compare
+				written = strings.TrimPrefix(strings.Join(strings.Fields(f.exprSource(ex)), ""), "*")
+			} else {
+				if seen["*"+written] {
+					f.err(f.tok(ex.Pos()).Position(), "duplicate case *%s in type switch", written)
+				}
+				seen["*"+written] = true
 			}
-			if seen["*"+written] {
-				f.err(f.tok(ex.Pos()).Position(), "duplicate case *%s in type switch", written)
-			}
-			seen["*"+written] = true
 			base, baseQual, bound = Token{}, Token{}, &TypeNodePointer{TypeNode: tn}
 			if set, _ := f.interfaceMethodsNamed(cs, iface); len(set) != 0 {
 				f.err(f.tok(ex.Pos()).Position(), "impossible type switch case: %s.(type) case *%s: *%s does not implement %s (missing method %s)",

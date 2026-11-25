@@ -52139,6 +52139,37 @@ func main() {
 `,
 		want: "1 3 10 true 1 9\n",
 	}, {
+		// A type switch's case of a pointer to a type holding an interface written
+		// out, `case *[]interface{}:`, binds its name at that pointer: its spelling
+		// was none the duplicate check compares, and the clause was left unbound,
+		// the name the operand's interface, "cannot indirect t: it is an
+		// interface" (dom124's N1, stats.LoadRawData's).
+		name: "a type switch case of a pointer to a type holding an interface written out",
+		src: `func f(raw interface{}) int {
+	switch t := raw.(type) {
+	case *[]interface{}:
+		return len(*t)
+	case *[2]interface{}:
+		return 10 + len(*t)
+	case *[]interface{ M() }:
+		return 20 + len(*t)
+	case *[]int:
+		return 100 + len(*t)
+	}
+	return -1
+}
+
+func main() {
+	x := []interface{}{nil, nil}
+	var y [2]interface{}
+	z := []interface{ M() }{nil}
+	w := []int{1, 2, 3}
+	n := 5
+	println(f(&x), f(&y), f(&z), f(&w), f(&n))
+}
+`,
+		want: "2 12 21 103 -1\n",
+	}, {
 		// The same type through every place a function value lives -- a package
 		// variable, a field, a slice and an array element, append, a call's
 		// result, a method expression and a method value, an interface method's
