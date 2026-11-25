@@ -13680,7 +13680,8 @@ func (e *emitter) litParamNames(lit Node) (funcInfo, bool) {
 	if sig == nil || body == nil {
 		return funcInfo{}, false
 	}
-	fi := funcInfo{cname: e.litKey(lit), srcName: "func", body: body, locals: e.localTypeNames(body), resultToks: e.namedResultToks(sig)}
+	locals, decls := e.localTypeNames(body)
+	fi := funcInfo{cname: e.litKey(lit), srcName: "func", body: body, locals: locals, localDecls: decls, resultToks: e.namedResultToks(sig)}
 	// A literal's parameters are typed from its signature: nothing else has, this
 	// early. One naming a type its function declares does not resolve yet, and the
 	// error that would latch is put back.
@@ -14839,6 +14840,110 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			return base, recvLocal, argLocal, true
 		}
 		return base, recvOutlives, argLocal, true
+	}
+	// A method called on a LOCAL holding a VALUE is the method of the type its
+	// bindings give it: `x := ks[0]`, `x := get()`, `x := pk`, `for _, x := range
+	// ks`. The body scans read a written type, a literal and a copy of what fi
+	// types (localTypeNames, noteLocalCopies), and a call on a local bound any
+	// other way named no method, so what the method kept of an argument was kept
+	// in silence (dom124). Where the bindings give the name two types, the one of
+	// the binding the call is in the scope of (declAt); none where a binding is
+	// typed by nothing, or the call stands in a type switch's clause binding it.
+	fi.localValue = func(name string, pos int32) (ct string, ok bool) {
+		if !e.inUnminted {
+			e.inUnminted = true
+			defer func() { e.inUnminted = false }()
+			e.unminted(func() { ct, ok = fi.localValue(name, pos) })
+			return ct, ok
+		}
+		if _, typed := curOf(name); typed || name == recvName || unbound[name] {
+			return "", false
+		}
+		if _, inClause := clauseAt(name, pos); inClause {
+			return "", false
+		}
+		value := func(c accessCur) string {
+			if c.slice || len(c.dims) != 0 || c.ctype == "" || e.isPointer(c.ctype) || !e.typeNames[c.ctype] {
+				return ""
+			}
+			return c.ctype
+		}
+		if cur, typed := rootCur(name); typed {
+			ct = value(cur)
+			return ct, ct != ""
+		}
+		var ds []localDecl
+		typedAt := func(c accessCur, ok bool, at int32) bool {
+			if ok {
+				ds = append(ds, localDecl{value(c), at})
+			}
+			return ok
+		}
+		for _, ta := range declared[name] {
+			if c, ok := e.declaredCur(ta); !typedAt(c, ok, firstIndex(ta)) {
+				return "", false
+			}
+		}
+		for _, v := range bound[name] {
+			if e.isNilExpr(v.ast) {
+				continue
+			}
+			if c, ok := exprCur(v); !typedAt(c, ok, v.Pos()) {
+				return "", false
+			}
+		}
+		for _, r := range ranged[name] {
+			if c, ok := rangedCur(r.x, r.key); !typedAt(c, ok, r.x.Pos()) {
+				return "", false
+			}
+		}
+		for _, r := range results[name] {
+			if c, ok := resultCur(r.call, r.i); !typedAt(c, ok, r.call.Pos()) {
+				return "", false
+			}
+		}
+		if len(ds) == 0 {
+			return "", false
+		}
+		ct = e.declAt(body, ds, pos)
+		return ct, ct != ""
+	}
+	// A method called on an ELEMENT of a local slice or array, `ls[0].keep(r)`,
+	// is the method of the element's type, by the local's bindings: a slice's
+	// element is storage behind what the slice holds, by what it holds, as a
+	// pointer's pointee is (localRecv); an array's is the frame's own. Matched by
+	// nothing, the call was none to the summaries, and what the method kept of an
+	// argument was kept in silence (dom124).
+	fi.localElem = func(name string) (elem string, kind recvKind, at0 int, ok bool) {
+		if !e.inUnminted {
+			e.inUnminted = true
+			defer func() { e.inUnminted = false }()
+			e.unminted(func() { elem, kind, at0, ok = fi.localElem(name) })
+			return elem, kind, at0, ok
+		}
+		if _, typed := curOf(name); typed || name == recvName {
+			return "", recvNone, argLocal, false
+		}
+		cur, typed := rootCur(name)
+		switch {
+		case !typed || cur.elem == "" || !e.typeNames[cur.elem]:
+			return "", recvNone, argLocal, false
+		case len(cur.dims) == 1 && !cur.slice:
+			return cur.elem, recvLocal, argLocal, true
+		case !cur.slice || len(cur.dims) != 0:
+			return "", recvNone, argLocal, false
+		}
+		r, inPkg := landsIn(name)
+		switch {
+		case !valueKnown(name):
+		case len(r.vals) != 0 && r.vals[0] < intoBits:
+			return cur.elem, recvParam, r.vals[0], true
+		case r.recvVal:
+			return cur.elem, recvOwn, argLocal, true
+		case !inPkg:
+			return cur.elem, recvLocal, argLocal, true
+		}
+		return cur.elem, recvOutlives, argLocal, true
 	}
 	// What a POINTER name points at, by the type of what the name is -- a
 	// parameter, the receiver, a package variable, or a local by its bindings.
@@ -17117,7 +17222,8 @@ func (e *emitter) funcParamNames(d []int32) (funcInfo, bool) {
 	if !ok || name == "" || body == nil {
 		return funcInfo{}, false
 	}
-	fi := funcInfo{cname: e.mangle(e.curPkgPrefix, name), srcName: name, body: body, locals: e.localTypeNames(body), resultToks: e.namedResultToks(sig)}
+	locals, decls := e.localTypeNames(body)
+	fi := funcInfo{cname: e.mangle(e.curPkgPrefix, name), srcName: name, body: body, locals: locals, localDecls: decls, resultToks: e.namedResultToks(sig)}
 	if recv != nil {
 		rn, rct, _ := e.receiverInfo(recv)
 		fi.cname = e.methodCName(methodBaseType(rct), name)
@@ -17208,8 +17314,10 @@ func (e *emitter) ptrParamBase(ta []int32) string {
 // A name declared TWICE with different types is dropped rather than guessed at. Two
 // blocks may each declare a scratch of their own, and this map has no scopes; a
 // wrong type would name a wrong method, which is worse than naming none.
-func (e *emitter) localTypeNames(body []int32) map[string]string {
+func (e *emitter) localTypeNames(body []int32) (map[string]string, map[string][]localDecl) {
 	out := map[string]string{}
+	decls := map[string][]localDecl{}
+	var at int32
 	note := func(name, tname string) {
 		if name == "" || tname == "" {
 			return
@@ -17218,6 +17326,7 @@ func (e *emitter) localTypeNames(body []int32) map[string]string {
 		if !e.typeNames[mn] {
 			return
 		}
+		decls[name] = append(decls[name], localDecl{mn, at})
 		if prev, seen := out[name]; seen && prev != mn {
 			out[name] = "" // two declarations disagree: name neither
 			return
@@ -17227,11 +17336,13 @@ func (e *emitter) localTypeNames(body []int32) map[string]string {
 	e.eachStmt(body, func(nodes []Node) {
 		for _, n := range nodes {
 			if n.sym == VarDecl {
+				at = n.Pos()
 				e.noteVarSpecTypes(n.ast, note)
 			}
 		}
 		// `scratch := H{}`: the type is the literal's own name.
 		if len(nodes) == 2 && nodes[0].sym == AssignHead && nodes[1].sym == Postfix {
+			at = nodes[0].Pos()
 			name := e.soleIdent(nodes[0].ast)
 			for _, v := range e.definedValues(nodes[1].ast) {
 				if tn, _, isLit := e.soleCompositeLit(v); isLit {
@@ -17245,7 +17356,80 @@ func (e *emitter) localTypeNames(body []int32) map[string]string {
 			delete(out, n)
 		}
 	}
-	return out
+	for n, ds := range decls {
+		if _, typed := out[n]; typed || len(ds) < 2 {
+			delete(decls, n) // one type, or one declaration: locals names it
+		}
+	}
+	return out, decls
+}
+
+// localDecl is a declaration of a local a body scan read: the type it gives
+// the name, and where it stands.
+type localDecl struct {
+	ct  string
+	pos int32
+}
+
+// localTypeAt is the type the declaration of name a use at pos is in the scope
+// of gives it, where two declarations of fi's body give the name two types:
+// the latest declaration before pos whose scope -- the innermost block, clause
+// or statement holding it, a header's declaration its statement's -- holds pos.
+// "" for none. Asked by position, as Go's scopes are: a name is a variable of
+// each declaration, and the summaries' receivers were a map from the name to
+// one type, which named neither of two (dom124).
+func (e *emitter) localTypeAt(fi funcInfo, name string, pos int32) string {
+	ds := fi.localDecls[name]
+	if len(ds) < 2 {
+		return ""
+	}
+	return e.declAt(fi.body, ds, pos)
+}
+
+// declAt is the type of the declaration among ds a use at pos is in the scope
+// of, in body: the latest before pos whose scope holds pos (localTypeAt).
+func (e *emitter) declAt(body []int32, ds []localDecl, pos int32) string {
+	var spans [][2]int32
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for n := range it(ast) {
+			if n.sym == 0 {
+				continue
+			}
+			switch n.sym {
+			case Block, IfStmt, SwitchStmt, SelectStmt, CaseClause, CommClause:
+				spans = append(spans, [2]int32{n.Pos(), n.End()})
+			case Statement:
+				for c := range it(n.ast) {
+					if c.sym == ForHeader {
+						spans = append(spans, [2]int32{n.Pos(), n.End()})
+						break
+					}
+				}
+			}
+			walk(n.ast)
+		}
+	}
+	walk(body)
+	scope := func(at int32) (lo, hi int32) {
+		lo, hi = 0, math.MaxInt32
+		for _, sp := range spans {
+			if sp[0] <= at && at < sp[1] && sp[1]-sp[0] < hi-lo {
+				lo, hi = sp[0], sp[1]
+			}
+		}
+		return lo, hi
+	}
+	best, bestPos := "", int32(math.MinInt32)
+	for _, d := range ds {
+		if d.pos > pos || d.pos <= bestPos {
+			continue
+		}
+		if lo, hi := scope(d.pos); lo <= pos && pos < hi {
+			best, bestPos = d.ct, d.pos
+		}
+	}
+	return best
 }
 
 // noteLocalCopies adds to fi.locals the locals a body declares as COPIES of what fi
@@ -17328,16 +17512,32 @@ func (e *emitter) noteLocalCopies(fi *funcInfo) {
 	if fi.locals == nil {
 		fi.locals = map[string]string{}
 	}
+	var copyAt int32
+	copyDecl := map[string]localDecl{}
 	note := func(name, ct string) {
 		if name == "" || slices.Contains(fi.params, name) {
 			return
 		}
+		if ct == "" {
+			return
+		}
+		if fi.localDecls == nil {
+			fi.localDecls = map[string][]localDecl{}
+		}
 		switch prev, seen := fi.locals[name]; {
-		case ct == "":
+		case len(fi.localDecls[name]) != 0:
+			// The declarations disagree already (localTypeAt).
+			fi.localDecls[name] = append(fi.localDecls[name], localDecl{ct, copyAt})
 		case !seen:
 			fi.locals[name] = ct
+			copyDecl[name] = localDecl{ct, copyAt}
 		case prev != ct:
 			delete(fi.locals, name) // two declarations disagree: name neither
+			first, ok := copyDecl[name]
+			if !ok {
+				first = localDecl{prev, -1} // localTypeNames' declaration, before every use
+			}
+			fi.localDecls[name] = append(fi.localDecls[name], first, localDecl{ct, copyAt})
 		}
 	}
 	e.eachStmt(fi.body, func(nodes []Node) {
@@ -17345,6 +17545,7 @@ func (e *emitter) noteLocalCopies(fi *funcInfo) {
 			return
 		}
 		if vals := e.definedValues(nodes[1].ast); len(vals) == 1 {
+			copyAt = nodes[0].Pos()
 			note(e.soleIdent(nodes[0].ast), typeOf(vals[0]))
 		}
 	})
@@ -17362,6 +17563,7 @@ func (e *emitter) noteLocalCopies(fi *funcInfo) {
 					r, rok := e.exprIdent(e.unparenExpr(h.rangeExpr))
 					if vok && rok {
 						ct, _ := valueOf(r)
+						copyAt = n.Pos()
 						note(v, defined(elemOf(ct)))
 					}
 				}
@@ -17695,10 +17897,21 @@ type funcInfo struct {
 	// locals maps a local variable to the DEFINED type it was declared with, for
 	// the receivers only a body scan can name (see localTypeNames).
 	locals map[string]string
+	// localDecls are the declarations of a name two of them give two types,
+	// which locals names neither of: a method called on the name is the method
+	// of the declaration the call is in the scope of (localTypeAt, dom124).
+	localDecls map[string][]localDecl
 	// localRecv types a local holding a POINTER as a receiver, by what it holds:
 	// the method's base type, the receiver's kind and the parameter it is behind
 	// (collectFuncCross).
 	localRecv func(name string) (string, recvKind, int, bool)
+	// localValue types a local holding a VALUE as a receiver, by its bindings,
+	// at the call's position (collectFuncCross).
+	localValue func(name string, pos int32) (string, bool)
+	// localElem types an element of a local slice or array as a receiver, by the
+	// local's bindings: the element's type, the receiver's kind and the parameter
+	// it is behind (collectFuncCross).
+	localElem func(name string) (string, recvKind, int, bool)
 	// pointeeType types what a POINTER name points at, `*T` for `hh` of a `**T`
 	// (collectFuncCross), for a method called through it (methodCallThrough).
 	pointeeType func(name string) (string, bool)
@@ -19645,6 +19858,34 @@ func (e *emitter) methodExprCallOf(me emMethodExpr, fi funcInfo) (methodCall, bo
 // answer: one is a copy of a part of the root, and what the method keeps of it is
 // part of what the root holds (copyOf).
 func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodCall, bool) {
+	// A local holding a value, of the type its bindings give it where the call
+	// stands (localValue): every form that gives the name a value is asked, where
+	// the body scans asked a written type, a literal and a copy of a parameter, so
+	// `x := ks[0]; x.keep(r)` was a call of no method (dom124).
+	if len(suffix) >= 2 && fi.localValue != nil && recv != fi.recvName && !slices.Contains(fi.params, recv) && !e.isPackageVar(recv) {
+		if ct, ok := fi.localValue(recv, suffix[len(suffix)-2].Pos()); ok {
+			alt := fi
+			alt.locals = maps.Clone(fi.locals)
+			if alt.locals == nil {
+				alt.locals = map[string]string{}
+			}
+			alt.locals[recv] = ct
+			alt.localDecls, alt.localValue = nil, nil
+			return e.methodCallOf(recv, suffix, alt)
+		}
+	}
+	// A local two declarations give two types: the one the call is in the scope
+	// of (localTypeAt). Named by neither, the call was of no method, and what
+	// the method kept of an argument was kept in silence (dom124).
+	if len(suffix) != 0 && fi.locals[recv] == "" && len(fi.localDecls[recv]) > 1 {
+		if ct := e.localTypeAt(fi, recv, suffix[0].Pos()); ct != "" {
+			alt := fi
+			alt.locals = maps.Clone(fi.locals)
+			alt.locals[recv] = ct
+			alt.localDecls = nil
+			return e.methodCallOf(recv, suffix, alt)
+		}
+	}
 	if len(suffix) < 2 {
 		return methodCall{}, false
 	}
@@ -19710,6 +19951,15 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 		// package variable is, and with no edge at all nothing said so. Nor is what
 		// the local holds: `w := W{v}; w.save()` keeps v if save keeps w.xs.
 		ct, kind, copyOf = fi.locals[recv], recvLocal, recv
+	case len(fields) != 0 && fields[0].sym == Index && !e.isSliceIndex(fields[0]) && i < 0 && fi.localElem != nil && func() bool {
+		lct, lkind, lat, ok := fi.localElem(recv)
+		if ok {
+			ct, kind, at, fields = lct, lkind, lat, fields[1:]
+		}
+		return ok
+	}():
+		// An ELEMENT of a local slice or array, `ls[0].keep(r)`, by the local's
+		// bindings (localElem).
 	case len(fields) != 0 && i >= 0 && i < len(fi.paramCType) && i < intoBits &&
 		e.sliceElemByName[e.underlyingCType(fi.paramCType[i])] != "":
 		// A SLICE parameter, `ws[0].save()`: its elements are storage behind it,

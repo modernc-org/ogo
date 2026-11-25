@@ -121,6 +121,23 @@ shipped section tells a reader on that version that they have behaviour they do 
   read the dead frame after (`stats.LoadRawData`'s shape). Each switch's
   operand is the name's now, and such a program is refused as one whose
   switches bind two names was. In every release checked (v0.50.0, rc.4).
+- **A wrong answer, silent: a local's address kept past its frame through a
+  method called on a local name two declarations give two types**: `{ var s
+  H; s.stash(p) }` beside `{ var s K; ... }`: the summaries' map from a
+  local's name to its type named neither, so the call was of no method, and
+  what H's `stash` kept of p was kept in silence. A call on such a name is
+  the method of the declaration whose scope holds the call now, a copy `s :=
+  *q` and a range value among the declarations. In every release checked.
+- **A wrong answer, silent: a local's address kept past its frame through a
+  method called on a local bound by a copy of a package variable, a call's
+  result or a range value**: `x := ks[0]; x.stash(p)`, `x := get()`, `x :=
+  pk`, `for _, x := range ks`, `ls[0].stash(p)` of a local slice: the
+  summaries typed a local receiver by a written type, a composite literal or
+  a copy of a parameter alone, so the call was of no method, and what `stash`
+  kept of p was kept in silence; so was a store into an element of a local
+  holding a package slice, `x := ks; x[0].hold(p)`. A local receiver is of
+  the type every binding of it gives it now, the one whose scope holds the
+  call where they give two. In every release checked.
 - **A wrong answer, silent: printf of a value of a defined array type with a
   String() or an Error() method printed the array**: a `uuid.UUID`, a `[16]byte`
   with a String(), printed by `%v` as its bytes, `[244 122 193 ...]`, and by `%s`

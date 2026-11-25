@@ -13191,8 +13191,10 @@ func main() {
 }
 `,
 		},
-		// The scan has no scopes, so a name declared TWICE with different types
-		// names neither -- guessing would name a wrong method.
+		// A name declared TWICE with different types is the type of the
+		// declaration a call is in the scope of (localTypeAt): named by neither,
+		// the call was of no method, and what H's stash kept of d was kept in
+		// silence (dom124's F3). A method keeping nothing is no refusal.
 		{
 			name: "the same local name in two blocks",
 			src: `func (t *H) keep(d []int) int { return len(d) }
@@ -13217,6 +13219,284 @@ func main() {
 	println(f(a[:]))
 }
 `,
+		},
+		{
+			name: "the same local name in two blocks, the first's method keeping",
+			src: `func (t *H) stash(d []int) { gs = d }
+
+func (o *Other) stash(d []int) { o.n = len(d) }
+
+func pass(d []int) {
+	{
+		var s H
+		s.stash(d)
+	}
+	{
+		var s Other
+		s.stash(d)
+	}
+}
+
+func leak() {
+	var a [4]int
+	pass(a[:])
+}
+
+func main() {
+	leak()
+	println(len(gs))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "the same local name in two blocks, the second's method keeping",
+			src: `func (t *H) stash(d []int) { t.n = len(d) }
+
+func (o *Other) stash(d []int) { gs = d }
+
+func pass(d []int) {
+	{
+		s := H{}
+		s.stash(d)
+	}
+	{
+		s := Other{}
+		s.stash(d)
+	}
+}
+
+func leak() {
+	var a [4]int
+	pass(a[:])
+}
+
+func main() {
+	leak()
+	println(len(gs))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "an outer local shadowed by an inner block, called after it",
+			src: `func (t *H) stash(d []int) { gs = d }
+
+func (o *Other) stash(d []int) { o.n = len(d) }
+
+func pass(d []int) {
+	var s H
+	{
+		var s Other
+		s.stash(d)
+	}
+	s.stash(d)
+}
+
+func leak() {
+	var a [4]int
+	pass(a[:])
+}
+
+func main() {
+	leak()
+	println(len(gs))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "control: an inner shadow keeping nothing, the outer keeping nothing",
+			src: `func (t *H) stash(d []int) { t.n = len(d) }
+
+func (o *Other) stash(d []int) { o.n = len(d) }
+
+func pass(d []int) {
+	var s H
+	{
+		var s Other
+		s.stash(d)
+	}
+	s.stash(d)
+}
+
+func main() {
+	var a [4]int
+	pass(a[:])
+	println(len(gs))
+}
+`,
+		},
+		// A local receiver bound any other way than by a written type, a literal
+		// or a copy of what the function types -- a copy of a package variable's
+		// element, a range value, a call's result, an element of a local slice --
+		// named no method, and what stash kept of d was kept in silence: the
+		// type its bindings give it (localValue, localElem; dom124's F4).
+		{
+			name: "a local copied out of a package slice's element",
+			src: `var hs = []H{{}}
+
+func (t *H) stash(d []int) { gs = d }
+
+func pass(d []int) {
+	x := hs[0]
+	x.stash(d)
+}
+
+func leak() {
+	var a [4]int
+	pass(a[:])
+}
+
+func main() {
+	leak()
+	println(len(gs), len(hs))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "a range value over a package slice",
+			src: `var hs = []H{{}}
+
+func (t *H) stash(d []int) { gs = d }
+
+func pass(d []int) {
+	for _, x := range hs {
+		x.stash(d)
+	}
+}
+
+func leak() {
+	var a [4]int
+	pass(a[:])
+}
+
+func main() {
+	leak()
+	println(len(gs), len(hs))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "a local bound to a call's result",
+			src: `func get() H { return H{} }
+
+func (t *H) stash(d []int) { gs = d }
+
+func pass(d []int) {
+	x := get()
+	x.stash(d)
+}
+
+func leak() {
+	var a [4]int
+	pass(a[:])
+}
+
+func main() {
+	leak()
+	println(len(gs))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "an element of a local slice literal",
+			src: `func (t *H) stash(d []int) { gs = d }
+
+func pass(d []int) {
+	ls := []H{{}}
+	ls[0].stash(d)
+}
+
+func leak() {
+	var a [4]int
+	pass(a[:])
+}
+
+func main() {
+	leak()
+	println(len(gs))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "a store into an element of a local holding a package slice",
+			src: `var hs = []H{{}}
+
+func (t *H) hold(d []int) { t.d = d }
+
+func pass(d []int) {
+	x := hs
+	x[0].hold(d)
+}
+
+func leak() {
+	var a [4]int
+	pass(a[:])
+}
+
+func main() {
+	leak()
+	println(len(hs[0].d))
+}
+`,
+			want: "cannot pass a slice backed by local a",
+		},
+		{
+			name: "control: a store into an element of a local slice literal",
+			src: `func (t *H) hold(d []int) { t.d = d }
+
+func pass(d []int) int {
+	ls := []H{{}}
+	ls[0].hold(d)
+	return len(ls[0].d)
+}
+
+func leak() {
+	var a [4]int
+	println(pass(a[:]))
+}
+
+func main() {
+	leak()
+	println(len(gs))
+}
+`,
+		},
+		{
+			name: "the same local name a copy and a range value, the range's method keeping",
+			src: `var others = []Other{{}}
+
+func (t *H) stash(d []int) { t.n = len(d) }
+
+func (o *Other) stash(d []int) { gs = d }
+
+func pass(d []int, hp *H) {
+	{
+		x := *hp
+		x.stash(d)
+	}
+	for _, x := range others {
+		x.stash(d)
+	}
+}
+
+func leak() {
+	var a [4]int
+	var h H
+	pass(a[:], &h)
+}
+
+func main() {
+	leak()
+	println(len(gs), len(others))
+}
+`,
+			want: "cannot pass a slice backed by local a",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
