@@ -177,6 +177,21 @@ func (f *formatter) declParens(body []int32) (lp, rp int32, ok bool) {
 	return lp, rp, lp >= 0 && rp >= 0 && specs > 0
 }
 
+// labelsEmpty reports whether the semicolon at semi is a labeled empty statement,
+// `L: ;`: the ":" before it a label's, an identifier where a statement may begin
+// -- after a ";", a "{" or a case's ":" -- and not a case's own, whose empty
+// statement gofmt drops (`case 1: ;` is `case 1:`).
+func (f *formatter) labelsEmpty(semi int32) bool {
+	if semi < 3 || Symbol(f.p.Token(semi-1).Ch) != COLON || Symbol(f.p.Token(semi-2).Ch) != IDENT {
+		return false
+	}
+	switch Symbol(f.p.Token(semi - 3).Ch) {
+	case SEMICOLON, LBRACE, COLON:
+		return true
+	}
+	return false
+}
+
 // breakItems puts every production of body on a line of its own, and closer,
 // what closes the body, where there is one. The semicolons between them go. The
 // first production of a file begins no line but the first.
@@ -186,6 +201,14 @@ func (f *formatter) breakItems(body []int32, closer int32, file bool) {
 		switch {
 		case k.sym == 0:
 			if tok := f.p.Token(k.ast[0]); Symbol(tok.Ch) == SEMICOLON && len(tok.SrcBytes()) != 0 {
+				if f.labelsEmpty(k.ast[0]) {
+					// `L: ;`: the semicolon is the empty statement the label
+					// stands on, which gofmt writes on a line of its own. Dropped,
+					// the label stood on the statement after it, a loop that a
+					// `continue L` Go refuses then names.
+					f.breakBefore[k.ast[0]] = true
+					continue
+				}
 				f.dropSemi[k.ast[0]] = true
 			}
 		case k.sym == SwitchGuard || k.sym == ForHeader:

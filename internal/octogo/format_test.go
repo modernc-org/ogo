@@ -973,6 +973,51 @@ func main() {
 	gofmtCheck(t, want)
 }
 
+// TestFormatLabeledEmpty pins a label on an empty statement, `L: ;`: gofmt writes
+// the semicolon on a line of its own, the empty statement the label stands on,
+// and drops a case's, `case 1: ;`. `ogo fmt` dropped both, and the label stood on
+// the statement after it -- a loop a `continue L` Go refuses then names.
+func TestFormatLabeledEmpty(t *testing.T) {
+	const in = `func main() {
+	x := 1
+	switch x {
+	case 1: ;
+	case 2:
+	M: ;
+		goto M
+	}
+L: ;
+	x++
+	goto L
+N:
+	;
+	goto N
+P:
+}
+`
+	const want = `func main() {
+	x := 1
+	switch x {
+	case 1:
+	case 2:
+	M:
+		;
+		goto M
+	}
+L:
+	;
+	x++
+	goto L
+N:
+	;
+	goto N
+P:
+}
+`
+	formatCheck(t, in, want)
+	gofmtCheck(t, want)
+}
+
 // TestFormatArrayLengthSpacing pins the blanks of an array type's length where a
 // composite literal or a conversion begins with the type, `[n + 1]T{...}`: the
 // length is no subscript, and go/printer prints it at depth 1 whatever surrounds

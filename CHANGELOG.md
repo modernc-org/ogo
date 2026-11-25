@@ -131,6 +131,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   to the emitter. `m := size_t(n) + 1` was refused with no position, "cannot
   infer a type for the declaration of m", and `m = size_t(n) + 1` called a C
   function nothing declares, C no compiler builds. In every release checked.
+- **`ogo fmt` keeps the empty statement a label stands on**: it dropped the `;`
+  of `L: ;`, where gofmt writes `L:` and the `;` on a line of its own. The
+  label then stood on the next statement, and a `continue L` Go refuses, the
+  label not being on a loop, built after `ogo fmt`. A case's empty statement,
+  `case 1: ;`, is dropped as gofmt drops it.
+
 - **A wrong answer, silent: a local's address kept past its frame through a
   name two type switches of one function bind**: `switch t := raw.(type) {
   case Reader: keep(t) }` and a later `switch t := v.(type)` in the same
