@@ -8108,6 +8108,7 @@ type emitter struct {
 	localTypes          map[string]string        // a LOCAL type declaration's source name -> its minted C name, per function
 	gotoTargets         map[string]bool          // labels a goto of the CURRENT function names, scanned before its body is emitted
 	gotoLast            map[string]int32         // the token of the last goto naming each of gotoTargets: a label before it is gone back to (emitLabeledStatement)
+	gotoSuffix          map[string]string        // in a clause body a fallthrough repeats, its labels' C suffix (emitCaseCopy), nil elsewhere
 	labelHeads          map[string]loopHead      // the marks at each goto target of the current function emitted so far, a goto back to which is a loop's end (noteLoopSeeds)
 	aliasedLocals       map[string]bool          // locals of the CURRENT function whose storage something else may reach (see scanAliasedLocals)
 	localTypeSeq        int                      // uniquifies minted local-type names across the program
@@ -21298,6 +21299,8 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		}
 	}
 	e.gotoTargets, e.labelHeads, e.gotoLast = map[string]bool{}, map[string]loopHead{}, map[string]int32{}
+	savedGotoSuffix := e.gotoSuffix // a literal's labels are its own function's
+	e.gotoSuffix = nil
 	e.scanGotoTargets(body)
 	e.aliasedLocals = map[string]bool{}
 	e.scanAliasedLocals(body)
@@ -21376,6 +21379,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.tmp, e.indent, e.deferReplay, e.defers = saved.tmp, saved.indent, saved.deferReplay, saved.defers
 	e.curFunc, e.curResultNames, e.curResultTypes = saved.curFunc, saved.curResultNames, saved.curResultTypes
 	e.curResultToks, e.curAddressed, e.gotoLast = saved.curResultToks, saved.curAddressed, saved.gotoLast
+	e.gotoSuffix = savedGotoSuffix
 	e.scopeNames, e.shadows = saved.scopeNames, saved.shadows
 	e.curArrayResult = saved.curArrayResult
 	e.aliasedLocals = saved.aliasedLocals
@@ -25370,7 +25374,7 @@ func (e *emitter) emitLabeledStatement(label string, inner, site []int32) {
 		// A goto somewhere in this function names this label; the C label leads
 		// whatever statement it stands on -- a loop head included.
 		e.ind()
-		e.emit("ogo_goto_" + cIdent(label) + ":;\n")
+		e.emit(e.gotoCLabel(label) + ":;\n")
 		// A goto after it is a loop's end, this its head (loopSeeds).
 		e.applyLoopSeeds(&site[0], false)
 		e.labelHeads[label] = e.loopHeadAt(&site[0], nil)
@@ -25833,7 +25837,7 @@ func (e *emitter) emitStatementInner(nodes []Node, ast []int32) {
 		// already verified the target and Go's jump rules.
 		if len(nodes) >= 2 && nodes[1].sym == 0 {
 			e.ind()
-			e.emit("goto ogo_goto_" + cIdent(e.src(nodes[1].tok)) + ";\n")
+			e.emit("goto " + e.gotoCLabel(e.src(nodes[1].tok)) + ";\n")
 			// Back to a label already emitted: the end of a loop (loopSeeds).
 			if h, ok := e.labelHeads[e.src(nodes[1].tok)]; ok {
 				e.noteLoopSeeds(h)
@@ -39431,7 +39435,62 @@ func (e *emitter) emitCaseFrom(clauses []Node, i int) {
 	e.indent--
 	e.ind()
 	e.emit("}\n")
-	e.emitCaseFrom(clauses, i+1)
+	e.emitCaseCopy(clauses, i+1)
+}
+
+// emitCaseCopy is emitCaseFrom for the clause a fallthrough repeats inside the
+// one before it. The copy's labels are its own: a goto reaches a label of a clause
+// only from inside the clause, Go's jump rules, so each copy names the labels it
+// declares with a suffix of its own and its gotos follow (gotoCLabel). Repeated
+// under the names they had, the copies declared one C label twice, which no C
+// compiler builds (ccgo's mquickjs: `default: fallthrough` into a clause of
+// labeled gotos).
+func (e *emitter) emitCaseCopy(clauses []Node, i int) {
+	labels := e.labelsDeclaredIn(clauses[i].ast)
+	if len(labels) == 0 {
+		e.emitCaseFrom(clauses, i)
+		return
+	}
+	saved := e.gotoSuffix
+	m := maps.Clone(saved)
+	if m == nil {
+		m = map[string]string{}
+	}
+	e.labelSeq++
+	for _, l := range labels {
+		m[l] = fmt.Sprintf("_ft%d", e.labelSeq)
+	}
+	e.gotoSuffix = m
+	e.emitCaseFrom(clauses, i)
+	e.gotoSuffix = saved
+}
+
+// labelsDeclaredIn lists the labels a goto of the current function names that
+// a statement in ast declares, a function literal's own left out.
+func (e *emitter) labelsDeclaredIn(ast []int32) (r []string) {
+	for n := range it(ast) {
+		if n.sym == 0 || n.sym == FuncLiteral {
+			continue
+		}
+		if n.sym == Statement {
+			var nodes []Node
+			for c := range it(n.ast) {
+				nodes = append(nodes, c)
+			}
+			if l, _, _, ok := e.stmtLabelParts(nodes); ok && e.gotoTargets[l] {
+				r = append(r, l)
+			}
+		}
+		r = append(r, e.labelsDeclaredIn(n.ast)...)
+	}
+	return r
+}
+
+// gotoCLabel is the C label a goto names and a labeled statement sets for a
+// source label: minted per label, with the suffix of the copy of a clause body a
+// fallthrough repeats (emitCaseCopy), so each copy's labels are its own.
+func (e *emitter) gotoCLabel(label string) string {
+	return "ogo_goto_" + cIdent(label) + e.gotoSuffix[label]
 }
 
 // clauseFallsThrough reports whether a case clause's last non-empty statement is

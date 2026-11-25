@@ -119,6 +119,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   statement of an empty one, and the checker and the emitter took a label only
   where a statement followed its `:`. In every release checked (v0.50.0,
   rc.4).
+- **A `fallthrough` into a clause of labeled gotos builds**: a switch written
+  as a chain of ifs repeats the clause a `fallthrough` goes to in the clause
+  before it, and each copy declared the clause's labels again. That was C no
+  compiler builds, "duplicate label". Each copy's labels are its own now; a goto
+  reaches a clause's labels only from inside it. ccgo's mquickjs has the shape,
+  `default: fallthrough` into a clause of labeled gotos. In every release
+  checked.
 - **A wrong answer, silent: a local's address kept past its frame through a
   name two type switches of one function bind**: `switch t := raw.(type) {
   case Reader: keep(t) }` and a later `switch t := v.(type)` in the same

@@ -52225,6 +52225,67 @@ func main() {
 `,
 		want: "10 10 20 30 4\n",
 	}, {
+		// A fallthrough into a clause of labeled gotos, a chain of them through a
+		// default written mid-list: the chain lowering repeats the body, and each copy
+		// declared the clause's C labels again, which no C compiler builds (ccgo's
+		// mquickjs, js_dump_object).
+		name: "a fallthrough into a clause of labeled gotos",
+		src: `const (
+	kClosure = 1
+	kErr     = 2
+	kArray   = 3
+	kObject  = 4
+	kU8      = 5
+	kI8      = 6
+)
+
+func dump(c, t int) int {
+	n := 0
+	switch int32(c & 0xff) {
+	case int32(kClosure):
+		n = 100
+	case int32(kErr):
+		i := 0
+	retry:
+		if i < 2 {
+			i++
+			n += 1000
+			goto retry
+		}
+		fallthrough
+	default:
+		fallthrough
+	case int32(kArray):
+		fallthrough
+	case int32(kObject):
+		for i := 0; i < 2; i++ {
+			switch int32(t) {
+			case int32(kU8):
+				goto u8
+			default:
+				goto other
+			case int32(kI8):
+				goto i8
+			}
+		other:
+			n += 1
+		u8:
+			n += 10
+			goto end
+		i8:
+			n += 100
+		end:
+		}
+	}
+	return n
+}
+
+func main() {
+	println(dump(1, 0), dump(4, 5), dump(3, 6), dump(9, 7), dump(2, 6))
+}
+`,
+		want: "100 20 200 22 2200\n",
+	}, {
 		// The same type through every place a function value lives -- a package
 		// variable, a field, a slice and an array element, append, a call's
 		// result, a method expression and a method value, an interface method's
