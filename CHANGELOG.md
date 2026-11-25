@@ -112,6 +112,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A wrong answer, silent: a local's address kept past its frame through a
+  name two type switches of one function bind**: `switch t := raw.(type) {
+  case Reader: keep(t) }` and a later `switch t := v.(type)` in the same
+  function: the lifetime summary kept one operand for the name, the later
+  switch's, so the first keeping its binding was a store of what the second
+  switched on, and a caller handing in a local's address was let through to
+  read the dead frame after (`stats.LoadRawData`'s shape). Each switch's
+  operand is the name's now, and such a program is refused as one whose
+  switches bind two names was. In every release checked (v0.50.0, rc.4).
 - **A wrong answer, silent: printf of a value of a defined array type with a
   String() or an Error() method printed the array**: a `uuid.UUID`, a `[16]byte`
   with a String(), printed by `%v` as its bytes, `[244 122 193 ...]`, and by `%s`

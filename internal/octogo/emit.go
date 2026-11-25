@@ -13755,8 +13755,10 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	// its switch anyway, and merging two switches' bindings can only refuse more.
 	buildHolds := func() map[string][]held {
 		holds := e.summaryHolds(body)
-		for name, operand := range e.typeSwitchAliases(body) {
-			holds[name] = append(holds[name], held{operand, heldAlias})
+		for name, operands := range e.typeSwitchAliases(body) {
+			for _, operand := range operands {
+				holds[name] = append(holds[name], held{operand, heldAlias})
+			}
 		}
 		// And what a callee stored through a local's address, which the closed
 		// summaries said (applyIntoCands): `set(&k, buf); return k` hands buf back.
@@ -19300,17 +19302,21 @@ func (e *emitter) storedInPackageVars(nodes []Node) [][]int32 {
 	return out
 }
 
-// typeSwitchAliases maps each name a type switch binds to the operand it switched
+// typeSwitchAliases maps each name a type switch binds to the operands it switched
 // on, for every type switch in a body. What the binding names is the same value the
-// operand named, so a question asked about one is asked about the other.
-func (e *emitter) typeSwitchAliases(body []int32) map[string]string {
-	alias := map[string]string{}
+// operand named, so a question asked about one is asked about the other. A name two
+// switches bind is each one's: kept as one operand, the later switch's took the
+// earlier's place, and a store of the earlier one's binding was a store of nothing
+// the summary followed -- `switch t := raw.(type) { case Reader: keep(t) }`, then
+// `switch t := v.(type)`, kept a pointer into the caller's frame (dom124).
+func (e *emitter) typeSwitchAliases(body []int32) map[string][]string {
+	alias := map[string][]string{}
 	var walk func(ast []int32)
 	walk = func(ast []int32) {
 		for n := range it(ast) {
 			if n.sym == SwitchGuard {
-				if name, operand, ok := e.typeSwitchNames(n.ast); ok {
-					alias[name] = operand
+				if name, operand, ok := e.typeSwitchNames(n.ast); ok && !slices.Contains(alias[name], operand) {
+					alias[name] = append(alias[name], operand)
 				}
 			}
 			walk(n.ast)

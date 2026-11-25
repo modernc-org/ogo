@@ -93,6 +93,72 @@ func run() { t := T{7}; keep(&t) }`, true},
 func run() { t := T{7}; keep(&t) }`, true},
 		{"control type switch case written out", `func run() { t := T{7}; var r any = &t; switch v := r.(type) { case interface{ get() int }: println(v.get()) } }`, false},
 		{"control package written out", `func run() { var r any = &gt; switch v := r.(type) { case interface{ get() int }: keepG = v } }`, false},
+		// Two type switches binding one name: each one's operand is the name's. The
+		// later one's took the earlier one's place, and the earlier keeping its
+		// binding was a store of what the later one switched on (dom124).
+		{"callee two type switches, the first keeping", `func keep(p G, q G) {
+	switch v := p.(type) {
+	case *T:
+		keepT = v
+	}
+	switch v := q.(type) {
+	case *T:
+		println(v.n)
+	}
+}
+
+func run() { t := T{7}; keep(&t, &gt) }`, true},
+		{"callee two type switches, the second keeping", `func keep(p G, q G) {
+	switch v := q.(type) {
+	case *T:
+		println(v.n)
+	}
+	switch v := p.(type) {
+	case *T:
+		keepT = v
+	}
+}
+
+func run() { t := T{7}; keep(&t, &gt) }`, true},
+		{"two type switches, the first keeping", `func run() {
+	t := T{7}
+	var r G = &t
+	switch v := r.(type) {
+	case *T:
+		keepT = v
+	}
+	var o G = &gt
+	switch v := o.(type) {
+	case *T:
+		println(v.n)
+	}
+}`, true},
+		{"callee two type switches, the first's keeping call", `func store(r G) { keepG = r }
+
+func keep(p G, q G) {
+	switch v := p.(type) {
+	case G:
+		store(v)
+	}
+	switch v := q.(type) {
+	case *T:
+		println(v.n)
+	}
+}
+
+func run() { t := T{7}; keep(&t, &gt) }`, true},
+		{"control callee two type switches", `func keep(p G, q G) {
+	switch v := p.(type) {
+	case *T:
+		println(v.n)
+	}
+	switch v := q.(type) {
+	case *T:
+		println(v.n)
+	}
+}
+
+func run() { t := T{7}; keep(&t, &gt) }`, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			src := head + test.src + "\n\nfunc main() {\n\trun()\n\tprintln(keepT != nil)\n}\n"
