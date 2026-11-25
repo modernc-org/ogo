@@ -126,6 +126,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   reaches a clause's labels only from inside it. ccgo's mquickjs has the shape,
   `default: fallthrough` into a clause of labeled gotos. In every release
   checked.
+- **A conversion through an alias of a predeclared type builds**: `size_t(n)`
+  for a `type size_t = uint64`, as ccgo writes C's typedefs, was no conversion
+  to the emitter. `m := size_t(n) + 1` was refused with no position, "cannot
+  infer a type for the declaration of m", and `m = size_t(n) + 1` called a C
+  function nothing declares, C no compiler builds. In every release checked.
 - **A wrong answer, silent: a local's address kept past its frame through a
   name two type switches of one function bind**: `switch t := raw.(type) {
   case Reader: keep(t) }` and a later `switch t := v.(type)` in the same

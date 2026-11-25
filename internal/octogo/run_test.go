@@ -52225,6 +52225,45 @@ func main() {
 `,
 		want: "10 10 20 30 4\n",
 	}, {
+		// A conversion through an alias of a predeclared type, ccgo's typedefs:
+		// asked only for a defined type, `size_t(n)` was no conversion, a := of it
+		// "cannot infer a type" and an assignment a call of a C function nothing
+		// declares.
+		name: "a conversion through an alias of a predeclared type",
+		src: `type size_t = uint64
+type BOOL = int32
+type flag = bool
+type text = string
+type real = float64
+type octet = byte
+
+type pair struct {
+	n size_t
+	b BOOL
+}
+
+func half(x real) real { return x / 2 }
+
+func width(n int32) size_t { return size_t(n) * 8 }
+
+func main() {
+	var n int32 = 7
+	a := size_t(n) + 1
+	var b BOOL
+	b = BOOL(n) - 3
+	if n > 3 {
+		b += BOOL(1)
+	}
+	f := flag(n > 5)
+	t := text("x") + text("y")
+	r := half(real(n))
+	o := octet(n + 250)
+	p := pair{size_t(n) << 2, BOOL(-n)}
+	println(a, b, f, t, r, o, width(n), p.n, p.b)
+}
+`,
+		want: "8 5 true xy 3.5 1 56 28 -7\n",
+	}, {
 		// A fallthrough into a clause of labeled gotos, a chain of them through a
 		// default written mid-list: the chain lowering repeats the body, and each copy
 		// declared the clause's C labels again, which no C compiler builds (ccgo's

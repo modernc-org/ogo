@@ -25714,6 +25714,16 @@ func (e *emitter) bindOperandsInOrder(kids []Node, all bool) (release func()) {
 	}
 }
 
+// predeclaredCType reports whether ct is the C type of a predeclared type of Go's:
+// a number, a bool or a string.
+func (e *emitter) predeclaredCType(ct string) bool {
+	switch {
+	case cIntWidths[ct] != 0, ct == "float", ct == "double", ct == cF64, ct == cBool, ct == cString:
+		return true
+	}
+	return false
+}
+
 // bindableCType reports whether a temporary of C type ct holds a value as the value
 // is: a number, a bool, a pointer, or a string or slice header. A float64 is one,
 // its two words a struct: left out, `k(1) + k(2)` of two float64 calls was
@@ -29841,6 +29851,14 @@ func (e *emitter) convType(recv string) (string, bool) {
 	mn := e.unaliased(e.typeCName(recv))
 	if e.namedTypes[mn] || mn == cUnsafePtr {
 		return mn, true // `type Celsius int` used as Celsius(x), and `type P = unsafe.Pointer` as P(x)
+	}
+	// An alias of a predeclared type converts as the type it names: `size_t(n)` for
+	// a `type size_t = uint64` is `uint64(n)`. Asked only for a defined type, the
+	// name was no conversion, and a := declaration of it "cannot infer a type" while
+	// an assignment called a C function nothing declares (ccgo writes C's typedefs
+	// so).
+	if _, isAlias := e.aliasOf[e.typeCName(recv)]; isAlias && e.predeclaredCType(mn) {
+		return mn, true
 	}
 	// A struct type names a conversion too: `Point(n)` for a Named defined over
 	// Point, which is how a value comes back from the defined type. Only the name
