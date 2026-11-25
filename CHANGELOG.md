@@ -112,6 +112,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A label on an empty statement builds**: `L: ;`, a label alone on a line
+  before a `;`, and a label before a block's `}`, which Go builds and ccgo
+  writes at every label, were refused, "label L not defined" for the `goto`
+  and "L: evaluated but not used" for the label. The parser makes no
+  statement of an empty one, and the checker and the emitter took a label only
+  where a statement followed its `:`. In every release checked (v0.50.0,
+  rc.4).
 - **A wrong answer, silent: a local's address kept past its frame through a
   name two type switches of one function bind**: `switch t := raw.(type) {
   case Reader: keep(t) }` and a later `switch t := v.(type)` in the same

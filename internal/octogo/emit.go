@@ -24739,7 +24739,7 @@ func (e *emitter) emitBlockStmts(ast []int32) {
 // qualifies only where the function never writes it nor takes its address
 // (nilQualifies), so what was checked is what is read.
 func (e *emitter) emitTopStatement(ast []int32) {
-	if _, _, labeled := e.stmtLabelParts(slices.Collect(it(ast))); labeled {
+	if _, _, _, labeled := e.stmtLabelParts(slices.Collect(it(ast))); labeled {
 		clear(e.nilSafe)
 	}
 	e.nilEmitted = map[string]bool{}
@@ -24803,7 +24803,7 @@ func (e *emitter) nilDerefStmt(stmt []int32, name string) bool {
 		}
 		return false
 	case AssignHead:
-		if _, _, labeled := e.stmtLabelParts(kids); labeled {
+		if _, _, _, labeled := e.stmtLabelParts(kids); labeled {
 			return false
 		}
 	case 0, VarDecl:
@@ -24944,14 +24944,18 @@ func (e *emitter) soleFactorIdent(n Node) (string, bool) {
 
 // stmtLabelParts reports whether the statement is a labeled one, "L: Stmt" -- an
 // AssignHead identifier followed by a Postfix that is a ":" continuation -- and
-// returns the label name and the labeled statement's AST.
-func (e *emitter) stmtLabelParts(nodes []Node) (label string, inner []int32, ok bool) {
+// returns the label name and the labeled statement's AST, and site, the AST the
+// label stands on: the statement, or for an empty one, `L: ;` or `L:` before a
+// "}", which the parser makes no Statement of, the ":" continuation itself (the
+// checker's postfixLabel). Its first element keys the label's loop head, and its
+// first token is where the label is.
+func (e *emitter) stmtLabelParts(nodes []Node) (label string, inner, site []int32, ok bool) {
 	if len(nodes) < 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
-		return "", nil, false
+		return "", nil, nil, false
 	}
 	label, isID := e.exprIdent(nodes[0].ast)
 	if !isID {
-		return "", nil, false
+		return "", nil, nil, false
 	}
 	for n := range it(nodes[1].ast) {
 		if n.sym != PostfixOp {
@@ -24963,11 +24967,14 @@ func (e *emitter) stmtLabelParts(nodes []Node) (label string, inner []int32, ok 
 			case c.sym == 0 && e.f.ch(c.tok) == COLON:
 				sawColon = true
 			case c.sym == Statement && sawColon:
-				return label, c.ast, true
+				return label, c.ast, c.ast, true
 			}
 		}
+		if sawColon {
+			return label, nil, n.ast, true
+		}
 	}
-	return "", nil, false
+	return "", nil, nil, false
 }
 
 // stmtLabelOperand returns the label a "break"/"continue" names, from the optional
@@ -25358,24 +25365,27 @@ func (e *emitter) scanGotoTargets(ast []int32) {
 // labeled "switch" binds L to the end label the switch already mints, and a labeled
 // "select" gets a break-target label after it. A label on anything else has no
 // break/continue target (there is no goto), so its statement is emitted plainly.
-func (e *emitter) emitLabeledStatement(label string, inner []int32) {
+func (e *emitter) emitLabeledStatement(label string, inner, site []int32) {
 	if e.gotoTargets[label] {
 		// A goto somewhere in this function names this label; the C label leads
 		// whatever statement it stands on -- a loop head included.
 		e.ind()
 		e.emit("ogo_goto_" + cIdent(label) + ":;\n")
 		// A goto after it is a loop's end, this its head (loopSeeds).
-		e.applyLoopSeeds(&inner[0], false)
-		e.labelHeads[label] = e.loopHeadAt(&inner[0], nil)
+		e.applyLoopSeeds(&site[0], false)
+		e.labelHeads[label] = e.loopHeadAt(&site[0], nil)
 		// And what follows the label to the end of its block runs again, every
 		// declaration in it a new variable each time, as a loop's body is: it is a
 		// block of its own to the lifetime rules (blockDepthOf), ended with the block
 		// the label stands in (enterScope). Counted as the declarations before the
 		// label, `p = a[:]` of a `var a` after it kept the first pass's array, which
 		// the next pass zeroed and wrote over -- 3 printed where Go prints 1 (dom71).
-		if e.gotoLast[label] > firstIndex(inner) {
+		if e.gotoLast[label] > firstIndex(site) {
 			e.scopeNames = append(e.scopeNames, e.visibleLocals())
 		}
+	}
+	if len(inner) == 0 {
+		return // `L: ;`, the C label alone (stmtLabelParts)
 	}
 	switch e.stmtKind(inner) {
 	case FOR:
@@ -25730,8 +25740,8 @@ func (e *emitter) pureCall(recv string) bool {
 }
 
 func (e *emitter) emitStatementInner(nodes []Node, ast []int32) {
-	if label, inner, ok := e.stmtLabelParts(nodes); ok {
-		e.emitLabeledStatement(label, inner)
+	if label, inner, site, ok := e.stmtLabelParts(nodes); ok {
+		e.emitLabeledStatement(label, inner, site)
 		return
 	}
 	switch first := nodes[0]; {
@@ -30701,7 +30711,7 @@ func (e *emitter) inlineCandidate(name, proto string, body []int32) bool {
 				if firstIndex(c.ast) >= 0 {
 					n++
 				}
-				if _, _, isLabel := e.stmtLabelParts(slices.Collect(it(c.ast))); isLabel {
+				if _, _, _, isLabel := e.stmtLabelParts(slices.Collect(it(c.ast))); isLabel {
 					plain = false
 				}
 			}

@@ -421,7 +421,7 @@ func (w *refWalker) stmt(ast []int32) {
 	if len(nodes) == 0 {
 		return
 	}
-	if _, inner, ok := w.e.stmtLabelParts(nodes); ok {
+	if _, inner, _, ok := w.e.stmtLabelParts(nodes); ok {
 		// The label is neither a reference nor a declaration.
 		w.stmt(inner)
 		return

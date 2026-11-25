@@ -52170,6 +52170,61 @@ func main() {
 `,
 		want: "2 12 21 103 -1\n",
 	}, {
+		// A label on an empty statement, `L: ;`, `L:` before a "}" and before a
+		// case: the parser makes no Statement of it, and the label was an expression
+		// statement "L", its goto naming no label, where Go builds it (ccgo writes
+		// every label so; dom124's ccgo experiment).
+		name: "a label on an empty statement",
+		src: `func sum(n int) int {
+	i, s := 0, 0
+again:
+	;
+	if i < n {
+		s += i
+		i++
+		goto again
+	}
+	return s
+}
+
+func clause(k int) int {
+	r := 0
+	switch k {
+	case 1:
+		r = 10
+		goto out
+	out: ;
+	case 2:
+		if r == 0 {
+			r = 20
+			goto skip
+		}
+		r = -1
+	skip: ;
+	default:
+		r = 30
+	}
+	return r
+}
+
+func loop() int {
+	total := 0
+	for j := 0; j < 4; j++ {
+		if j == 2 {
+			goto next
+		}
+		total += j
+	next:
+	}
+	return total
+}
+
+func main() {
+	println(sum(5), clause(1), clause(2), clause(3), loop())
+}
+`,
+		want: "10 10 20 30 4\n",
+	}, {
 		// The same type through every place a function value lives -- a package
 		// variable, a field, a slice and an array element, append, a call's
 		// result, a method expression and a method value, an interface method's

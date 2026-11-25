@@ -2202,6 +2202,11 @@ func (f *File) findLabel(name string) (labelFrame, bool) {
 // leading identifier a label -- `PostfixOp = ... | ":" Statement` -- and returns
 // the labeled Statement. A well-formed label has no other suffix; hasSuffix flags
 // a malformed one like "a.b:" so the caller can reject it while still descending.
+//
+// The labeled statement may be empty, `L: ;` or `L:` before a "}", and then the
+// parser makes no Statement of it: the ":" alone is the label, its inner the zero
+// Node. Asked for a Statement, `L: ;` was an expression statement "L" and its
+// goto named no label, where Go builds it (ccgo writes every label so).
 func (f *File) postfixLabel(postfix Node) (inner Node, hasSuffix, ok bool) {
 	for n := range it(postfix.ast) {
 		switch n.sym {
@@ -2212,7 +2217,7 @@ func (f *File) postfixLabel(postfix Node) (inner Node, hasSuffix, ok bool) {
 			for c := range it(n.ast) {
 				switch {
 				case c.sym == 0 && f.ch(c.tok) == COLON:
-					sawColon = true
+					sawColon, ok = true, true
 				case c.sym == Statement && sawColon:
 					inner, ok = c, true
 				}
@@ -2383,7 +2388,9 @@ func (f *File) checkLabeledStatement(s *Scope, results []retResult, head, postfi
 		f.labelSites[name.Src()] = labelSite{scope: s, offset: name.Position().Offset}
 	}
 	f.labels = append(f.labels, labelFrame{name: name.Src(), kind: f.labelKindOf(inner)})
-	f.checkStatement(s, results, inner)
+	if inner.ast != nil { // `L: ;` labels an empty statement (postfixLabel)
+		f.checkStatement(s, results, inner)
+	}
 	f.labels = f.labels[:len(f.labels)-1]
 }
 
