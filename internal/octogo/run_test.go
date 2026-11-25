@@ -52107,6 +52107,38 @@ func main() {
 `,
 		want: "[]interface { A(int) string; B() }\n[]interface { A(); main.b() }\n[]interface { M(main.T, main.Count) (*main.T, error) }\n[]interface { M(); N(...int) }\n[]interface { M([]main.Count) [2]main.T }\n[]interface { M(func(int) bool, chan main.Count) }\n[]interface {}\n*[]interface {}\n[2]interface {}\n0 1 true\n",
 	}, {
+		// A method of several results on what a call hands back, of a defined
+		// SLICE type, `a, b := get().Split()`: the walk typing the receiver let a
+		// defined type's name through for an array alone, and it was "multiple-
+		// assignment target/result count mismatch", with no position (dom124's N2).
+		name: "a method of several results on a call's result of a defined slice type",
+		src: `type D []int
+
+func (d D) Split() (D, D) { return d[:1], d[1:] }
+
+func (d D) Sum() (int, bool) {
+	s := 0
+	for _, v := range d {
+		s += v
+	}
+	return s, len(d) > 0
+}
+
+var back = [4]int{1, 2, 3, 4}
+
+func get() D { return D(back[:]) }
+
+func main() {
+	a, b := get().Split()
+	s, ok := get().Sum()
+	var n int
+	n, ok = a.Sum()
+	t, _ := b.Sum()
+	println(len(a), len(b), s, ok, n, t)
+}
+`,
+		want: "1 3 10 true 1 9\n",
+	}, {
 		// The same type through every place a function value lives -- a package
 		// variable, a field, a slice and an array element, append, a call's
 		// result, a method expression and a method value, an interface method's

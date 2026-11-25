@@ -54417,7 +54417,11 @@ func (e *emitter) chainMethodCName(base string, steps []Node) (string, bool) {
 		// name carries. It types and emits nothing; the rendering walk binds the
 		// call's result where the call is emitted.
 		c, ok := e.chainResultCur(base, prefix)
-		if !ok || c.ctype == "" && (len(c.dims) == 0 || c.name == "") {
+		// A defined SLICE type, `get().Two()` for a `type D []int`, carries its
+		// methods in its name as an array does: a slice the walk reached has no C
+		// type here, and the name was let through for an array alone, "multiple-
+		// assignment target/result count mismatch" with no position (dom124).
+		if !ok || c.ctype == "" && (len(c.dims) == 0 && !c.slice || c.name == "") {
 			return "", false
 		}
 		cur = c

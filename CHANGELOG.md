@@ -152,6 +152,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   builds (`unknown type name 'ogo_anonface4'`). A pointer to such an interface
   needs its declarations now, as a pointer to an anonymous struct does. In
   every release checked.
+- **A method of several results on what a call hands back, of a defined slice
+  type, builds**: `a, b := get().Split()` for a `type D []int`, in a
+  declaration or an assignment, was refused with no position, "multiple-
+  assignment target/result count mismatch". In every release checked.
 - **A wrong answer, silent: printf of a value of a defined array type with a
   String() or an Error() method printed the array**: a `uuid.UUID`, a `[16]byte`
   with a String(), printed by `%v` as its bytes, `[244 122 193 ...]`, and by `%s`
