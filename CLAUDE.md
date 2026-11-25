@@ -517,6 +517,22 @@ silent fault puts the count back to 0. Each round's account is in
   C naming a question's stand-in; 8881189), a false refusal fixed (%s of such
   an array with an Error; 8881189), one listed (a slice read out of a struct
   holding a slice literal, its contents taken for the literal's) -- 0
+- dom124 (2026-11-25), a water treatment plant's process historian
+  (google/btree and montanaflynn/stats ported with their tests, three field
+  controllers on cogs, a B-tree's copy-on-write clones handed to a reporter
+  cog), the first round against master on dom123's records: silent (a name
+  two type switches bind kept the later switch's operand alone; d55a4a4; a
+  method called on a local two declarations give two types, or one bound by
+  a copy of a package variable, a call's result or a range value, was of no
+  method to the summaries, so what it kept was kept in silence; 842aa6e; %T
+  of a type holding an interface written out spelled as a diagnostic spells
+  it; 2f4e450), two loud faults fixed (a slice of an interface written out
+  whose methods take a slice, C no compiler builds; 2f4e450; a package
+  variable of another file read by the asking file's tokens, a crash of the
+  checker; 1b97881), two false refusals fixed (a type switch case of a
+  pointer to a type holding an interface written out; d07ebad; a method of
+  several results on a call's result of a defined slice type, with no
+  position; 043db0f), one listed (the same of a defined array type) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1385,9 +1401,15 @@ section. A new finding goes there; the rule it leaves goes here too.
   each value has one address.** (dom122, tables.py). **A table of calls costs
   its temporaries where it is built: a package's initializers are one C
   function, and the backend lays every temporary of every table into its one
-  frame, which main's stack pays.** (dom123, C1). A sweep's
-  accessors record ORDER, `calls = calls*10 + k`, not a count ("Process rules
-  learned the hard way").
+  frame, which main's stack pays.** (dom123, C1). **A fix's sweep is run
+  after the fix as well as before it: the rows the fix leaves are the next
+  find.** **A sweep's control that does not build is no control: a variable
+  -Werror refuses as unused hid six of F2's silent rows as GCC FAIL.** **A
+  pass over every program the probes left behind asks what the corpus does
+  not: a domain program's parts are a package of several files, and the
+  checker read one file's declaration by another's tokens.** (dom124). A
+  sweep's accessors record ORDER, `calls = calls*10 + k`, not a count
+  ("Process rules learned the hard way").
 - **A MUTATED PROGRAM IS A PROBE OF THE FRONT END**; **A MUTATION WITH GO AS THE
   ORACLE IS A PROBE OF THE CHECKER**; **A MUTANT GO ACCEPTS IS A PROBE OF THE
   EMITTER** -- **A mutant that compiles is run**; **A MUTANT IS RUN ON THE BOARD, AND
@@ -1509,7 +1531,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   sweeps/ptrconv-type). **A question asked of a value's C type is asked of an
   array by its defined type: an array has no C value type, and the String() of
   a uuid.UUID, a [16]byte, was never asked.** (dom123, printArrayShape's name;
-  sweeps/array-stringer). **A CALL'S RESULTS FORWARDED WHOLE ARE A ROW**. **A
+  sweeps/array-stringer). **A spelling the diagnostics give a type is no
+  spelling %T prints: Go's reflect writes `interface {}`, a method's package
+  and its types' names, and an interface written out was left to the
+  diagnostics'.** (dom124, typeNameForT; sweeps/iface-typename). **A CALL'S RESULTS FORWARDED WHOLE ARE A ROW**. **A
   question asked of a value where it goes is asked of each result a call
   forwards whole: a Kind was asked, and []byte went for []int, and a typed var
   declaration from a call was asked nothing at all.** **A check added beside
@@ -1674,7 +1699,14 @@ section. A new finding goes there; the rule it leaves goes here too.
   form that gives a name a value -- a statement, a clause, a header, a guard -- and a
   rule reading a name's bindings reads every form**, **a target no walk types is
   asked as one through a pointer**, and **what a call hands back of its receiver is
-  asked how far past it the result is**. **AN EMBEDDED POINTER IS A POINTER THE CHAIN
+  asked how far past it the result is**. **A map a summary keeps by a name is
+  asked what a second binding of the name does to it: a type switch's operand
+  was the name's one entry, and the later switch wrote over the earlier.** **A
+  walk that types a name by its bindings is asked wherever the name is typed:
+  rootCur answered for a pointer, the receivers asked a written type, and a
+  method on a copy of anything else was a call of no method.** (dom124,
+  typeSwitchAliases, localValue; sweeps/tswitch-rebind, recv-bindings). **AN
+  EMBEDDED POINTER IS A POINTER THE CHAIN
   DOES NOT SPELL**: **a promoted field or method is asked as the chain its promotion
   spells: every pointer step a rule asks of, it asks of the members the promotion
   goes through**. **A STAR IS GO'S SHORTHAND OVER ONE POINTER**: **a reader that
