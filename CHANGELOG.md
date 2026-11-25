@@ -138,6 +138,20 @@ shipped section tells a reader on that version that they have behaviour they do 
   holding a package slice, `x := ks; x[0].hold(p)`. A local receiver is of
   the type every binding of it gives it now, the one whose scope holds the
   call where they give two. In every release checked.
+- **A wrong answer, silent: `%T` of a type holding an interface written out
+  was spelled as a diagnostic spells it**: `*[]interface{}` where Go prints
+  `*[]interface {}`, `[]interface{ M(T) int }` where Go prints `[]interface {
+  M(main.T) int }`, an unexported method unqualified, `[]any` the same. It is
+  spelled as Go's reflect spells it now: the methods in order, an unexported
+  one qualified by its package, each method's types named as `%T` names them.
+  `interface{ Error() string }` written out stays `error` under `%T`, one type
+  with it here ([DIFFERENCES.md](DIFFERENCES.md)). In every release checked.
+- **A slice of an interface written out whose methods take a slice, a
+  function or a channel, or which embeds an interface, builds**: the slice's
+  header was written ahead of the interface's declarations, C no compiler
+  builds (`unknown type name 'ogo_anonface4'`). A pointer to such an interface
+  needs its declarations now, as a pointer to an anonymous struct does. In
+  every release checked.
 - **A wrong answer, silent: printf of a value of a defined array type with a
   String() or an Error() method printed the array**: a `uuid.UUID`, a `[16]byte`
   with a String(), printed by `%v` as its bytes, `[244 122 193 ...]`, and by `%s`

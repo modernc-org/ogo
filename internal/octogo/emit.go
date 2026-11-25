@@ -4897,8 +4897,11 @@ func (e *emitter) typedefDeps(ctypes []string) []string {
 		}
 		// An anonymous struct's typedef has no tag to forward, and may become a
 		// typedef of a declared struct after it (aliasAnonStructs): a pointer to one
-		// needs the typedef itself.
-		if _, isStruct := e.structs[name]; isStruct && strings.Contains(ct, "*") && !e.isAnonStructName(name) {
+		// needs the typedef itself. So does an interface written out: its forward
+		// declarations are its own unit's (registerInterface), not the section's,
+		// and a slice of one whose methods take a slice, a function or a channel
+		// was written ahead of them, C no compiler builds (dom124).
+		if _, isStruct := e.structs[name]; isStruct && strings.Contains(ct, "*") && !e.isAnonStructName(name) && !e.anonIfaceMinted[name] {
 			continue
 		}
 		if !slices.Contains(deps, name) {
@@ -6928,7 +6931,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool, seeds loopSeeds) (loopSeeds, error) {
-	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanSendClosedElems: map[string]bool{}, chanBufElems: map[string]bool{}, chanLenElems: map[string]bool{}, chanReadyElems: map[string]bool{}, aliasOf: map[string]string{}, aliasLits: map[string]bool{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]int{}, frameHolder: map[string]string{}, frameHolderPlain: map[string]bool{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, recvInto: map[string]uint32{}, recvSelf: map[string]bool{}, intoHolds: map[string]map[string][]held{}, intoSeen: map[string]bool{}, crossInfos: map[string]crossInfo{}, retRecv: map[string]bool{}, retRecvShallow: map[string]bool{}, recvElemsNothing: map[string]bool{}, retRecvCont: map[string]bool{}, retPosUnknown: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string]shiftHelper{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, stackChecked: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, anonIfacePkg: map[string]string{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanSendClosedElems: map[string]bool{}, chanBufElems: map[string]bool{}, chanLenElems: map[string]bool{}, chanReadyElems: map[string]bool{}, aliasOf: map[string]string{}, aliasLits: map[string]bool{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]int{}, frameHolder: map[string]string{}, frameHolderPlain: map[string]bool{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, recvInto: map[string]uint32{}, recvSelf: map[string]bool{}, intoHolds: map[string]map[string][]held{}, intoSeen: map[string]bool{}, crossInfos: map[string]crossInfo{}, retRecv: map[string]bool{}, retRecvShallow: map[string]bool{}, recvElemsNothing: map[string]bool{}, retRecvCont: map[string]bool{}, retPosUnknown: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string]shiftHelper{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, stackChecked: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -8123,6 +8126,7 @@ type emitter struct {
 	anonStructNames     map[string]string
 	anonIfaceNames      map[string]string       // method-set shape -> the minted name of an anonymous interface
 	anonIfaceMinted     map[string]bool         // the minted names, so a message says the SHAPE rather than the name
+	anonIfacePkg        map[string]string       // the package each was first minted in, which qualifies its unexported methods under %T
 	ifaceASTs           map[string]ifaceAST     // interface name -> its body, for resolving an EMBEDDED name whatever the declaration order        // an anonymous struct's field shape -> its minted typedef, so identical ones are one type
 	sliceElems          map[string]bool         // element C types that need an ogo_slice_<T> typedef
 	sliceElemByName     map[string]string       // ogo_slice_<T> C type name -> its element C type; the forward direction mangles pointers, so the reverse is recorded, not derived
@@ -9355,6 +9359,50 @@ func (e *emitter) goMethodSig(m ifaceMethod) string {
 	return text
 }
 
+// methodSigForT spells an interface method's parameters and results as Go's %T
+// does in an interface type written out, `(main.T, ...int) (*main.T, error)`:
+// goMethodSig's, the types named as typeNameForT names them and an array
+// parameter by its extents.
+func (e *emitter) methodSigForT(m ifaceMethod) string {
+	var ps []string
+	for i, p := range m.params {
+		t := e.typeNameForT(p)
+		if i < len(m.arrParams) && m.arrParams[i].bound != "" {
+			t = e.arrayDimNameForT(m.arrParams[i])
+		}
+		if m.vararg == i+1 {
+			t = "..." + strings.TrimPrefix(t, "[]")
+		}
+		ps = append(ps, t)
+	}
+	text := "(" + strings.Join(ps, ", ") + ")"
+	var rs []string
+	if m.arr.bound != "" {
+		rs = []string{e.arrayDimNameForT(m.arr)}
+	} else {
+		for _, r := range ifaceResultTypes(m) {
+			rs = append(rs, e.typeNameForT(r))
+		}
+	}
+	switch len(rs) {
+	case 0:
+	case 1:
+		text += " " + rs[0]
+	default:
+		text += " (" + strings.Join(rs, ", ") + ")"
+	}
+	return text
+}
+
+// anonIfacePkgName is the name of the package an interface written out was first
+// minted in, which qualifies its unexported methods under %T: `main.b()`.
+func (e *emitter) anonIfacePkgName(ct string) string {
+	if pre := e.anonIfacePkg[ct]; pre != "" {
+		return e.pkgNames[pre]
+	}
+	return "main"
+}
+
 // vtTypeField names the vtable member holding the dynamic type's name, which "%T"
 // reads. It leads the table so its offset does not depend on the method set.
 const vtTypeField = "_ogo_type"
@@ -9589,6 +9637,7 @@ func (e *emitter) anonInterfaceOf(methods []ifaceMethod) string {
 	name := e.mangle(e.curPkgPrefix, fmt.Sprintf("ogo_anonface%d", len(e.anonIfaceNames)))
 	e.anonIfaceNames[key.String()] = name
 	e.anonIfaceMinted[name] = true
+	e.anonIfacePkg[name] = e.curPkgPrefix
 	e.interfaceTypes[name] = true
 	e.typeNames[name] = true
 	e.registerInterface(name, methods, true)
@@ -46824,6 +46873,28 @@ func (e *emitter) typeNameForT(ct string) string {
 	}
 	if a, ok := e.namedArrays[ct]; ok {
 		return e.arrayDimNameForT(a)
+	}
+	// An interface written out is spelled as Go's reflect spells one, `interface
+	// { M(main.T) int }`, its methods in their order, an unexported one qualified
+	// by its package, `interface {}` the empty one: goTypeName's is the
+	// diagnostics' `interface{ M(T) int }`, and %T printed that (dom124).
+	if e.anonIfaceMinted[ct] {
+		ms := e.ifaceMethods[ct]
+		if len(ms) == 0 {
+			return "interface {}"
+		}
+		if e.isErrorIface(ct) {
+			return "error"
+		}
+		var parts []string
+		for _, m := range ms {
+			name := m.name
+			if r, _ := utf8.DecodeRuneInString(name); !unicode.IsUpper(r) {
+				name = e.anonIfacePkgName(ct) + "." + name
+			}
+			parts = append(parts, name+e.methodSigForT(m))
+		}
+		return "interface { " + strings.Join(parts, "; ") + " }"
 	}
 	if params, isFunc := e.funcTypeParams[ct]; isFunc {
 		var ps []string

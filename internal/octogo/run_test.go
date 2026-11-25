@@ -52065,6 +52065,48 @@ func main() {
 `,
 		want: "id-one|id-one|\"id-one\"\n69642d6f6e65|69642D6F6E65\ncode error|code error\n{id-one LEVEL.HI [2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17]}\n{ID:id-one Tag:LEVEL.HI seen:[2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17]}\n[id-one id-three]|[id-one id-three]\nid-one|id-one\nid-zero|id-one\n[    id-one]\n[4 2]\n",
 	}, {
+		// An interface written out is spelled under %T as Go's reflect spells one,
+		// `interface { M(main.T) int }`, its methods in order and an unexported one
+		// qualified, `interface {}` the empty one: the diagnostics' spelling,
+		// `interface{ M(T) int }`, was printed (dom124's F1). And a slice of one
+		// whose methods take a slice, a function or a channel, or which embeds an
+		// interface, was C no compiler builds, the slice's header written ahead of
+		// the interface's declarations (dom124's L1).
+		name: "%T of a type holding an interface written out",
+		src: `type T struct{ a int }
+
+type I interface{ M() }
+
+type Count int
+
+func (t *T) M() {}
+
+func main() {
+	a := []interface {
+		B()
+		A(x int) string
+	}{}
+	b := []interface {
+		b()
+		A()
+	}{}
+	c := []interface{ M(T, Count) (*T, error) }{}
+	d := []interface {
+		I
+		N(...int)
+	}{}
+	e := []interface{ M([]Count) [2]T }{}
+	g := []interface{ M(func(int) bool, chan Count) }{}
+	h := []any{nil}
+	var p any = &h
+	var q [2]interface{}
+	printf("%T\n%T\n%T\n%T\n", a, b, c, d)
+	printf("%T\n%T\n%T\n%T\n%T\n", e, g, h, p, q)
+	println(len(a), len(h), q[0] == nil)
+}
+`,
+		want: "[]interface { A(int) string; B() }\n[]interface { A(); main.b() }\n[]interface { M(main.T, main.Count) (*main.T, error) }\n[]interface { M(); N(...int) }\n[]interface { M([]main.Count) [2]main.T }\n[]interface { M(func(int) bool, chan main.Count) }\n[]interface {}\n*[]interface {}\n[2]interface {}\n0 1 true\n",
+	}, {
 		// The same type through every place a function value lives -- a package
 		// variable, a field, a slice and an array element, append, a call's
 		// result, a method expression and a method value, an interface method's

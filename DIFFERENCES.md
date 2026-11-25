@@ -422,6 +422,33 @@ Go prints:
 [3/3]0xc000012120
 ```
 
+### An interface written out as `error`'s is `error` under `%T`
+
+An interface type written out with `error`'s one method, `interface{ Error()
+string }`, is `error` itself here, and `%T` of a type holding it says so. Go keeps
+the two apart as types, though either is assigned the other, and its `%T` spells
+the one written out. Any other interface written out is spelled as Go spells it.
+
+```go
+func main() {
+	var es []interface{ Error() string }
+	var ee []error
+	printf("%T %T\n", es, ee)
+}
+```
+
+OctoGo prints:
+
+```
+[]error []error
+```
+
+Go prints:
+
+```
+[]interface { Error() string } []error
+```
+
 ### Memory shared between cogs is defined
 
 One cog may write a variable while another reads it, with no lock. A read in a loop is
