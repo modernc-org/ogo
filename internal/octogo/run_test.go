@@ -63625,6 +63625,27 @@ func TestCrossFileConsts(t *testing.T) {
 			b:    "var arr [2]int\n\nconst B = 2\n",
 			want: "200 34 200 0\n",
 		},
+		{
+			// A variable b.ogo declares from a constant, its initializer read by
+			// a.ogo's token table where an operand asks what its type is: the
+			// checker panicked (dom124's L2).
+			name: "a variable of the other file declared from a constant",
+			a:    "type C int\n\nfunc take(c C) int { return int(c) * 2 }\n\nfunc main() {\n\tprintln(big+1, take(C(big)))\n}\n",
+			b:    "var big = 1 << 3\n",
+			want: "9 16\n",
+		},
+		{
+			name: "a variable of the other file declared from len",
+			a:    "func main() {\n\tn := big * 2\n\tprintln(n, big)\n}\n",
+			b:    "var big = len(\"abc\")\n",
+			want: "6 3\n",
+		},
+		{
+			name: "a slice of the other file declared from a literal",
+			a:    "func main() {\n\tprintln(xs == nil, len(xs), xs[1])\n}\n",
+			b:    "var xs = []int{1, 2}\n",
+			want: "false 2 2\n",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{
@@ -63659,6 +63680,32 @@ func TestCrossFileConsts(t *testing.T) {
 			}
 			if g := stripTestTimes(strings.ReplaceAll(string(got), "\r\n", "\n")); g != test.want {
 				t.Errorf("output:\n got %q\nwant %q\n--- emitted ---\n%s", g, test.want, buf.String())
+			}
+		})
+	}
+}
+
+// TestCrossFileVarRefused: a variable b.ogo declares from a constant, handed by
+// a.ogo where Go refuses it -- an int for a defined type -- is refused in Go's
+// terms. Its initializer was read by a.ogo's token table, and the checker
+// panicked (dom124's L2).
+func TestCrossFileVarRefused(t *testing.T) {
+	for _, test := range []struct{ name, a, b, want string }{
+		{"an argument", "type C int\n\nfunc take(c C) { println(c) }\n\nfunc main() {\n\ttake(big)\n}\n", "var big = 1 << 3\n", "cannot use big of type int as type C in argument to take"},
+		{"a declaration", "type C int\n\nfunc main() {\n\tvar c C = big\n\tprintln(c)\n}\n", "var big = 1 << 3\n", "cannot use big"},
+		{"an argument from len", "type C int\n\nfunc take(c C) { println(c) }\n\nfunc main() {\n\ttake(big)\n}\n", "var big = len(\"abc\")\n", "cannot use big"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{
+				"a.ogo": &fstest.MapFile{Data: []byte(test.a)},
+				"b.ogo": &fstest.MapFile{Data: []byte(test.b)},
+			}
+			_, err := Build(-1, []string{"a.ogo", "b.ogo"}, fsys)
+			switch {
+			case err == nil:
+				t.Fatal("accepted a program Go refuses")
+			case !strings.Contains(err.Error(), test.want):
+				t.Fatalf("got %q, want it to mention %q", err, test.want)
 			}
 		})
 	}

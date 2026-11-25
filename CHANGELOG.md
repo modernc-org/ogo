@@ -146,6 +146,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   one qualified by its package, each method's types named as `%T` names them.
   `interface{ Error() string }` written out stays `error` under `%T`, one type
   with it here ([DIFFERENCES.md](DIFFERENCES.md)). In every release checked.
+- **A package variable one file declares from a constant builds where another
+  file of the package uses it**: `var big = 1 << 3` in one file and
+  `println(big + 1)` in another crashed the checker, the initializer read by
+  the other file's tokens; handing it where Go refuses it, `take(big)` for a
+  defined type's parameter, crashed it too, and is refused in Go's terms now.
+  In every release checked.
 - **A slice of an interface written out whose methods take a slice, a
   function or a channel, or which embeds an interface, builds**: the slice's
   header was written ahead of the interface's declarations, C no compiler

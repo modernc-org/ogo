@@ -5782,6 +5782,7 @@ func (f *File) sliceOrArrayOf(d *VarDeclaration, depth int) (string, bool) {
 	if depth > 8 || d.init.sym == 0 || d.declScope == nil || d.declType != nil {
 		return "", false
 	}
+	f = f.fileOfToken(d.Token()) // the initializer is read by its own file's tokens
 	fac, ok := f.soleFactor(d.init)
 	if !ok {
 		return "", false
@@ -15600,10 +15601,14 @@ func (f *File) typeIdentity(s *Scope, n Node) (string, bool) {
 				return "", true
 			}
 			if d.init.sym != 0 && d.declScope != nil {
-				if _, isConst := f.constValue(d.declScope, d.init); isConst {
+				// The initializer is read by its own file's tokens: a package
+				// variable of another file, `var big = 1 << 3`, read by this
+				// one's, was a crash of the checker (dom124).
+				wf := f.fileOfToken(d.Token())
+				if _, isConst := wf.constValue(d.declScope, d.init); isConst {
 					return "", true
 				}
-				if callee, ok := f.exprCallee(d.init); ok && (callee.Src() == "len" || callee.Src() == "cap") && f.isUniverseFunc(d.declScope, callee.Src()) {
+				if callee, ok := wf.exprCallee(d.init); ok && (callee.Src() == "len" || callee.Src() == "cap") && wf.isUniverseFunc(d.declScope, callee.Src()) {
 					return "", true
 				}
 			}
@@ -17957,6 +17962,7 @@ func (f *File) unnamedTypeString(d *VarDeclaration, depth int) (string, bool) {
 	if depth > 4 || d.declScope == nil {
 		return "", false
 	}
+	f = f.fileOfToken(d.Token()) // the initializer is read by its own file's tokens
 	s := d.declScope
 	if t, ok := f.varTypeAt(d); ok && t.tn != nil {
 		// The written type, or a literal's or a conversion's (`xs := []int{1}`; a
