@@ -1407,9 +1407,13 @@ section. A new finding goes there; the rule it leaves goes here too.
   -Werror refuses as unused hid six of F2's silent rows as GCC FAIL.** **A
   pass over every program the probes left behind asks what the corpus does
   not: a domain program's parts are a package of several files, and the
-  checker read one file's declaration by another's tokens.** (dom124). A
-  sweep's accessors record ORDER, `calls = calls*10 + k`, not a count
-  ("Process rules learned the hard way").
+  checker read one file's declaration by another's tokens.** (dom124). **A
+  transpiler's output is a probe of the shapes no person writes: ccgo writes a
+  label on ";" at every label, an alias for every C typedef and a fallthrough
+  through a default written mid-list, and each was a fault here that no round
+  had met.** (mquickjs through ccgo, build/probes/mquickjs). A sweep's
+  accessors record ORDER, `calls = calls*10 + k`, not a count ("Process rules
+  learned the hard way").
 - **A MUTATED PROGRAM IS A PROBE OF THE FRONT END**; **A MUTATION WITH GO AS THE
   ORACLE IS A PROBE OF THE CHECKER**; **A MUTANT GO ACCEPTS IS A PROBE OF THE
   EMITTER** -- **A mutant that compiles is run**; **A MUTANT IS RUN ON THE BOARD, AND
