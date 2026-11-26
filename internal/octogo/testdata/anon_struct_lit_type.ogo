@@ -1,0 +1,35 @@
+// dom125's F4: a variable declared from a literal of a struct written out, and a
+// chain on such a literal, are typed by the struct. Typed by nothing, every field
+// was asked nothing, and Go's rejects of it built.
+
+type N int
+
+func (n N) One() N { return n*1000 + 7 }
+
+type W uint8
+
+func retW(n N) W {
+	// ERROR "cannot use struct\{ p N \}\{n\}\.p of type N as type W in return statement"
+	return struct{ p N }{n}.p
+}
+
+func run() {
+	q := struct{ p N }{300}
+	// ERROR "cannot use q\.p of type N as type W in variable declaration"
+	var a W = q.p
+	var vq = struct{ p, r int }{300, 1}
+	// ERROR "cannot use vq\.r of type int as type uint8 in variable declaration"
+	var b uint8 = vq.r
+	pq := &struct{ p int }{300}
+	// ERROR "cannot use pq\.p of type int as type float32 in variable declaration"
+	var c float32 = pq.p
+	// ERROR "cannot use q\.p\.One\(\) of type N as type W in variable declaration"
+	var d W = q.p.One()
+	var e N = q.p
+	q = struct{ p N }{2}
+	var r struct{ p N }
+	r = q
+	_, _, _, _, _, _ = a, b, c, d, e, r
+}
+
+func main() { run() }

@@ -122,6 +122,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   shift's count. The same made `take((a - b).Two())` one argument to the count,
   "not enough arguments in call to take". Found by dom125's port of meeus. In
   every release checked (v0.50.0, rc.4).
+- **A program Go refuses, built: a field of a variable declared from a literal
+  of a struct written out**: `q := struct{ p int }{300}; var y uint8 = q.p`,
+  which Go refuses, built and printed 44; `var y float32 = q.p`, `var q =
+  struct{...}{...}`, `&struct{...}{...}`, a method on a field, `q.p.One()`, and
+  a chain on such a literal in a return, `return struct{ p N }{n}.p`, the same.
+  The checker typed a variable from a named literal, a bracketed one and a
+  conversion, and not from `struct{...}{...}`, so every field of it was asked
+  nothing. Found by dom125's sweep of its parenthesised heads. In every release
+  checked.
 - **A label on an empty statement builds**: `L: ;`, a label alone on a line
   before a `;`, and a label before a block's `}`, which Go builds and ccgo
   writes at every label, were refused, "label L not defined" for the `goto`

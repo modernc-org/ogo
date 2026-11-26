@@ -6209,6 +6209,17 @@ func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 		}
 		return 0, false
 	}
+	// A chain on a literal of a struct written out, `struct{ p N }{n}.p`: what
+	// the walk from the struct reaches (namedLitChain). It had no Kind, and
+	// `return struct{ p N }{n}.p` of a W result built (dom125).
+	if kids := slices.Collect(it(n.ast)); len(kids) == 3 && kids[0].sym == StructType && hasSuffix {
+		if t, ok := f.valueTypeAt(s, n); ok && t.f != nil {
+			if k, ok := t.f.typeKind(t.s, t.tn); ok {
+				return k, true
+			}
+		}
+		return 0, false
+	}
 	switch {
 	case hasSuffix:
 		// `pkg.V` -- a variable or constant of an imported package. Its type is
@@ -34341,6 +34352,15 @@ func (f *File) namedLitChain(s *Scope, n Node) (typeAt, []Node, bool) {
 		return typeAt{}, nil, false
 	}
 	kids := slices.Collect(it(n.ast))
+	// A literal of a struct written out, `struct{ p N }{n}.p`: walked from the
+	// struct, as a variable declared from the literal is (litOrConvType).
+	// Unread, `return struct{ p N }{n}.p` of a W result built (dom125).
+	if len(kids) == 3 && kids[0].sym == StructType && kids[1].sym == CompositeLit && kids[2].sym == FactorSuffix {
+		n0 := len(f.errList)
+		st := f.structType(s, kids[0])
+		f.errList = f.errList[:n0]
+		return typeAt{st, s, f}, slices.Collect(it(kids[2].ast)), true
+	}
 	if len(kids) < 3 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[len(kids)-1].sym != FactorSuffix || kids[len(kids)-2].sym != CompositeLit {
 		return typeAt{}, nil, false
 	}
@@ -34898,6 +34918,16 @@ func (f *File) litOrConvType(s *Scope, n Node) (typeAt, bool) {
 		return typeAt{&TypeNodeArray{Expression: constVal{cv: constant.MakeInt64(length)}, TypeNode: elemTN}, s, f}, true
 	case len(kids) == 2 && kids[0].sym == 0 && f.ch(kids[0].tok) == IDENT && kids[1].sym == CompositeLit:
 		return typeAt{&TypeNodeIdent{Name: f.tok(kids[0].tok)}, s, f}, true // `Row{...}`
+	case len(kids) == 2 && kids[0].sym == StructType && kids[1].sym == CompositeLit:
+		// `struct{ p int }{300}`: the struct written out. Untyped, a variable
+		// declared from one, `q := struct{ p int }{300}`, typed its fields by
+		// nothing, and `var y uint8 = q.p` and `var y float32 = q.p.One()` built
+		// (dom125). The literal's own check resolves the same type and reports
+		// what is wrong with it, so what resolving it here reports is trimmed.
+		n0 := len(f.errList)
+		st := f.structType(s, kids[0])
+		f.errList = f.errList[:n0]
+		return typeAt{st, s, f}, true
 	case len(kids) == 3 && kids[0].sym == 0 && f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix && kids[2].sym == CompositeLit:
 		steps := slices.Collect(it(kids[1].ast))
 		if len(steps) != 1 || steps[0].sym != Selector || !f.isImportQualifier(s, f.tok(kids[0].tok).Src()) {
