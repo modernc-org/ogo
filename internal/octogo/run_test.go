@@ -52325,6 +52325,70 @@ func main() {
 `,
 		want: "100 20 200 22 2200\n",
 	}, {
+		// dom125's N2: a method of several results called on a parenthesised
+		// operand -- a run of operators, a name, a call, a field, an element, a
+		// pointer method on a variable -- in a definition, an assignment, a
+		// header, a return forwarding it and an argument list it is. Each was
+		// "multiple assignment requires a single function call", with no
+		// position, or no C the compiler built; meeus's `(α0 - α).Sincos()`.
+		name: "a method of several results on a parenthesised operand",
+		src: `type A float64
+
+func (a A) Two() (A, int) { return a * 2, int(a) }
+
+type P struct{ x, y int }
+
+func (p P) Two() (int, int) { return p.x + p.y, p.x - p.y }
+
+func (p *P) PTwo() (int, int) {
+	p.x++
+	return p.x, p.y
+}
+
+var calls int
+
+func note(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func af() A {
+	note(8)
+	return 2.5
+}
+
+func take(a A, n int) { println("take", a, n) }
+
+func fwd(a, b A) (A, int) { return (a - b).Two() }
+
+func main() {
+	var a, b A = 1.5, 0.5
+	q := struct{ p P }{P{5, 2}}
+	pv := P{6, 1}
+	ps := [2]P{{1, 1}, {9, 3}}
+	x, n := (a - b).Two()
+	println(x, n)
+	x, n = (-a).Two()
+	println(x, n)
+	take((a).Two())
+	take((af()).Two())
+	u, v := (q.p).Two()
+	println(u, v)
+	u, v = (ps[1]).Two()
+	println(u, v)
+	u, v = (pv).PTwo()
+	println(u, v, pv.x)
+	if s, c := ((a + b)).Two(); c != 0 {
+		println(s, c)
+	}
+	println(fwd(a, b))
+	var t [3]A
+	t[note(1)], n = (af()).Two()
+	println(calls, t[1], n)
+}
+`,
+		want: "2 1\n-3 -1\ntake 3 1\ntake 5 2\n7 3\n12 6\n7 1 7\n4 2\n2 1\n818 5 2\n",
+	}, {
 		// The same type through every place a function value lives -- a package
 		// variable, a field, a slice and an array element, append, a call's
 		// result, a method expression and a method value, an interface method's

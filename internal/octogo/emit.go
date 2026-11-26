@@ -41336,6 +41336,13 @@ func (e *emitter) resultCallOf(ast []int32) (callee string, suffix []Node, ok bo
 			return tmp, steps, true
 		}
 	}
+	// A method of several results on a parenthesised operand, `return
+	// (a - b).Sincos()`: the operand bound once (parenMethodHead).
+	if !ok {
+		if tmp, steps, isParen := e.parenMethodHead(ast); isParen {
+			return tmp, steps, true
+		}
+	}
 	return callee, suffix, ok
 }
 
@@ -41378,6 +41385,73 @@ func (e *emitter) ptrConvMethodHead(ast []int32) (string, []Node, bool) {
 		e.hoistedArrayCalls[key] = tmp
 	}
 	return tmp, pc.rest, true
+}
+
+// parenMethodHead binds a parenthesised operand at the head of a call of a method
+// of SEVERAL results, `(a - b).Sincos()`, `(x).Two()`, to a temporary of the
+// operand's type, declared ahead of the statement and marked as a declaration of
+// it is (convMethodHead's), and answers it and the method's steps. The method is
+// asked first, binding nothing, and the binding is made once for the occurrence,
+// as ptrConvMethodHead's. A pointer method of an operand that is no pointer is
+// left to the paths that refuse it: Go calls it on the operand's address, and a
+// copy's would be another variable's. Before it the shape was "multiple
+// assignment requires a single function call", with no position (dom125:
+// meeus's `sα0α, cα0α := (α0 - α).Sincos()`).
+func (e *emitter) parenMethodHead(ast []int32) (string, []Node, bool) {
+	kids := e.factorKids(ast)
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression || kids[3].sym != FactorSuffix {
+		return "", nil, false
+	}
+	steps := slices.Collect(it(kids[3].ast))
+	if len(steps) != 2 || steps[0].sym != Selector || steps[1].sym != CallSuffix {
+		return "", nil, false
+	}
+	// A primary expression in the parentheses, `(pv).PTwo()`, `(q.p).Two()`: the
+	// call written without them (spliceParenShape), its receiver the variable
+	// itself, as Go's is, a pointer method's included.
+	if spliced, ok := e.spliceParenShape(kids); ok {
+		sp := encodeNode(Factor, spliced.ast)
+		if callee, suffix, ok := e.directCall(sp); ok {
+			return callee, suffix, true
+		}
+		if callee, suffix, ok := e.chainCallOf(sp); ok {
+			return callee, suffix, true
+		}
+	}
+	member := e.soleIdent(steps[0].ast)
+	if member == "" {
+		return "", nil, false
+	}
+	ct, typed := e.inferCType(kids[1].ast)
+	if !typed || ct == "" || e.isIfaceCType(ct) {
+		return "", nil, false
+	}
+	if _, isArr := e.namedArrays[ct]; isArr {
+		return "", nil, false
+	}
+	isPtr := strings.HasSuffix(ct, "*")
+	cname, _, _, isMethod := e.promotedMethod(strings.TrimSuffix(ct, "*"), member)
+	if !isMethod || len(e.funcRet[cname]) < 2 || !isPtr && e.methodPtr[cname] {
+		return "", nil, false
+	}
+	key := -(1 << 29) - kids[1].Pos()
+	if tmp, done := e.hoistedArrayCalls[key]; done {
+		return tmp, steps, true
+	}
+	operand := kids[1].ast
+	tmp := e.hoist(ct, func() { e.emitExpr(operand) })
+	e.locals[tmp] = ct
+	if u := e.underlyingCType(ct); e.isSliceCType(u) {
+		e.sliceVars[tmp] = e.sliceElemFromCName(u)
+		if e.initViewsFrame(operand) {
+			e.markBacked(tmp, e.viewDepth(operand))
+		}
+	}
+	e.noteDeclFrameHolder(ct, tmp, operand)
+	if e.hoistedArrayCalls != nil {
+		e.hoistedArrayCalls[key] = tmp
+	}
+	return tmp, steps, true
 }
 
 // forwardedCallInto is forwardedCallCAs, of this function's results, for a call
@@ -54117,6 +54191,11 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 			// `a, b := (*T)(p).Two()`: the converted pointer bound
 			// (ptrConvMethodHead).
 			tmp, steps, isLit = e.ptrConvMethodHead(rhs)
+		}
+		if !isLit {
+			// `s, c := (a - b).Sincos()`: the operand bound
+			// (parenMethodHead).
+			tmp, steps, isLit = e.parenMethodHead(rhs)
 		}
 		if !isLit {
 			e.fail("multiple assignment requires a single function call on the right-hand side")

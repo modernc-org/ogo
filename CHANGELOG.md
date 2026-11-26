@@ -140,6 +140,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   so the view's result was clean. The one-result method and a function of
   several results were refused. Found by dom125's sweep of its parenthesised
   heads. In rc.4.
+- **A method of several results on a parenthesised operand builds**: `s, c :=
+  (a - b).Sincos()`, meeus's, `(x).Two()` and `(pv).PTwo()` were refused,
+  "multiple assignment requires a single function call on the right-hand side",
+  with no position, and as the arguments of a call or a return's results they
+  were C no compiler builds. The operand is bound ahead of the statement where it
+  is a value, and a variable or a chain in the parentheses is the call written
+  without them, a pointer method's receiver the variable itself. In every
+  release checked.
 - **A label on an empty statement builds**: `L: ;`, a label alone on a line
   before a `;`, and a label before a block's `}`, which Go builds and ccgo
   writes at every label, were refused, "label L not defined" for the `goto`
