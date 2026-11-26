@@ -34134,6 +34134,57 @@ func (f *File) valueTypeAt(s *Scope, n Node) (typeAt, bool) {
 	return f.operandType(s, n, true)
 }
 
+// runOperandType is the type of a run of binary operators of one precedence,
+// `a - b`, `a*2 + b`, `x << n * y`, its operands kids[0], kids[2], ... and its
+// operators between them: Go's for an arithmetic operator, the type of its
+// operands, and for a shift the left operand's, the count after it being no
+// operand of the run's type. An operand that is a constant takes the type the
+// others give it, so the first that is none answers; a run of constants is
+// typed by its first, a typed constant's type. A comparison is no such run: it
+// is a bool, of no type a walk names. Untyped, a method called on a run in
+// parentheses had its results typed by nothing, and `var y uint8 = (n -
+// m).One()` of an N built, while `take((a - b).Two())` was one argument to the
+// count (dom125).
+func (f *File) runOperandType(s *Scope, run Symbol, kids []Node) (typeAt, bool) {
+	var constants []Node
+	for i := 0; i < len(kids); i += 2 {
+		if i > 0 {
+			if run == Term {
+				if op := f.mulOp(s, kids[i-1]); op == SHL || op == SHR {
+					continue
+				}
+			}
+		}
+		if _, isConst := f.constValue(s, kids[i]); isConst {
+			constants = append(constants, kids[i])
+			continue
+		}
+		if t, ok := f.operandType(s, kids[i], true); ok && t.tn != nil {
+			return f.arithTypeAt(t)
+		}
+	}
+	if len(constants) != 0 && len(constants) == (len(kids)+1)/2 {
+		if t, ok := f.operandType(s, constants[0], true); ok && t.tn != nil {
+			return f.arithTypeAt(t)
+		}
+	}
+	return typeAt{}, false
+}
+
+// arithTypeAt is t where a binary arithmetic operator makes a value of it, a
+// number or a string: a run of any other type is no value Go computes, and its
+// error is the operator's, not every rule's that would ask the run's type.
+func (f *File) arithTypeAt(t typeAt) (typeAt, bool) {
+	if t.f == nil {
+		return typeAt{}, false
+	}
+	k, ok := t.f.typeKind(t.s, t.tn)
+	if !ok || !(isNumericKind(k) || isFloatKind(k) || k == PredeclaredString) {
+		return typeAt{}, false
+	}
+	return t, true
+}
+
 // operandType is lenOperandType, and with calls valueTypeAt.
 func (f *File) operandType(s *Scope, n Node, calls bool) (typeAt, bool) {
 	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term || n.sym == UnaryExpr {
@@ -34197,6 +34248,11 @@ func (f *File) operandType(s *Scope, n Node, calls bool) (typeAt, bool) {
 				return f.operandType(s, kids[1], calls)
 			}
 			return typeAt{}, false
+		}
+		if calls && len(kids) > 1 && (n.sym == SimpleExpr || n.sym == Term) {
+			// A run of binary operators, `(a - b).Sincos()`: the type of its
+			// operands (runOperandType). valueTypeAt's only, as an address is.
+			return f.runOperandType(s, n.sym, kids)
 		}
 		if len(kids) != 1 {
 			return typeAt{}, false

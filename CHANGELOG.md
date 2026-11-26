@@ -112,6 +112,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A program Go refuses, built: a method's result on a run of operators in
+  parentheses**: `var y uint8 = (n - m).One()` of a `type N int`, which Go
+  refuses, "cannot use (n - m).One() (value of int type N) as uint8 value", built
+  and printed what C truncated, 23 for 300007; an assignment, an argument, a field
+  and a comparison the same. The checker typed a unary operator's operand and no
+  run of binary ones, so a method called on one had its result typed by nothing.
+  A run is of its operands' type now, the first that is no constant and no
+  shift's count. The same made `take((a - b).Two())` one argument to the count,
+  "not enough arguments in call to take". Found by dom125's port of meeus. In
+  every release checked (v0.50.0, rc.4).
 - **A label on an empty statement builds**: `L: ;`, a label alone on a line
   before a `;`, and a label before a block's `}`, which Go builds and ccgo
   writes at every label, were refused, "label L not defined" for the `goto`

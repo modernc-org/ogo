@@ -1,0 +1,37 @@
+// dom125's F1: a method called on a run of binary operators in parentheses has
+// its result typed by the run's type, the type of its operands -- the first that
+// is no constant and no shift's count. Typed by nothing, Go's rejects of it built,
+// and a call's several results forwarded from one were one argument to the count.
+
+type N int
+
+func (n N) One() N { return n*1000 + 7 }
+
+func (n N) Two() (N, N) { return n + 1, n + 2 }
+
+type W uint8
+
+func takeW(w W) {}
+
+func take2(a, b N) {}
+
+func run() {
+	var n, m N = 300, 2
+	// ERROR "cannot use \(n - m\)\.One\(\) of type N as type W in variable declaration"
+	var a W = (n - m).One()
+	var b W
+	// ERROR "cannot use \(n \+ m \+ 1\)\.One\(\) of type N as type W in assignment"
+	b = (n + m + 1).One()
+	// ERROR "cannot use \(3 - n\)\.One\(\) of type N as type W in argument to takeW"
+	takeW((3 - n).One())
+	// ERROR "cannot use \(n\*2 << 1\)\.One\(\) of type N as type W in variable declaration"
+	var c W = (n*2 << 1).One()
+	// ERROR "cannot use \(\(n - m\)\)\.One\(\) of type N as type W in variable declaration"
+	var d W = ((n - m)).One()
+	var e N = (n - m).One()
+	take2((n - m).Two())
+	f, g := (n & 0xff).Two()
+	_, _, _, _, _, _, _ = a, b, c, d, e, f, g
+}
+
+func main() { run() }
