@@ -13113,7 +13113,11 @@ func (e *emitter) calleeResultsCarryNothing(cname string, n int) []bool {
 		if !seen {
 			return nil
 		}
-		out[i] = !slices.Contains(rp, true) && !slices.Contains(e.retContents[pn], true) && !e.retRecv[pn]
+		// What the position hands back of what its receiver holds counts as its
+		// receiver does (retRecvCont): `x, n := t.Two()` of a value method handing
+		// back `s[:1]` of a slice t viewing a local array was clean, and `gs = x`
+		// kept the view past the frame (dom125).
+		out[i] = !slices.Contains(rp, true) && !slices.Contains(e.retContents[pn], true) && !e.retRecv[pn] && !e.retRecvCont[pn]
 	}
 	return out
 }

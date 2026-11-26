@@ -131,6 +131,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   conversion, and not from `struct{...}{...}`, so every field of it was asked
   nothing. Found by dom125's sweep of its parenthesised heads. In every release
   checked.
+- **A wrong answer, silent: a view of a local array kept past its frame through
+  a method of several results**: `t := S(buf[:]); k, n := t.two(); gk = k`, for
+  a value method `func (s S) two() (S, int) { return s[:2], len(s) }` of a
+  `type S []byte`, stored the view in a package variable, read after the frame
+  as another call's stack. The summary of each result asked what the result hands
+  back of the parameters and of the receiver, and not of what the receiver holds,
+  so the view's result was clean. The one-result method and a function of
+  several results were refused. Found by dom125's sweep of its parenthesised
+  heads. In rc.4.
 - **A label on an empty statement builds**: `L: ;`, a label alone on a line
   before a `;`, and a label before a block's `}`, which Go builds and ccgo
   writes at every label, were refused, "label L not defined" for the `goto`

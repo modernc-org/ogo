@@ -9871,6 +9871,61 @@ func main() { run() }
 `,
 			want: "cannot store a slice backed by local k in package variable gk",
 		},
+		{
+			// dom125's F2: what a value method of several results hands back of
+			// what its receiver holds, a slice's view, asked of each position.
+			name: "a view a value method of several results hands back of its receiver, kept",
+			src: `type S []byte
+
+func (s S) two() (S, int) { return s[:2], len(s) }
+
+func run() {
+	var buf [4]byte
+	t := S(buf[:])
+	k, n := t.two()
+	gk = k
+	println(n)
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local k in package variable gk",
+		},
+		{
+			name: "a view a value method of several results hands back of its receiver, assigned to a package variable",
+			src: `type S []byte
+
+func (s S) two() (S, int) { return s[:2], len(s) }
+
+func run() {
+	var buf [4]byte
+	t := S(buf[:])
+	var n int
+	gk, n = t.two()
+	println(n)
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local",
+		},
+		{
+			name: "the number a value method of several results hands back beside a view, kept",
+			src: `type S []byte
+
+func (s S) two() (S, int) { return s[:2], len(s) }
+
+func run() {
+	var buf [4]byte
+	t := S(buf[:])
+	k, n := t.two()
+	gn = n
+	println(len(k))
+}
+
+func main() { run() }
+`,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}
