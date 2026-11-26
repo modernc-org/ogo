@@ -9960,6 +9960,143 @@ func main() { run() }
 `,
 			want: "cannot store a slice backed by local k in package variable gk",
 		},
+		{
+			// dom125's F5: a struct literal read or called on where it stands, and a
+			// method of several results through a local holding a literal's address.
+			name: "a field of a struct literal viewing a local array, kept",
+			src: `type L struct{ b []byte }
+
+func (l L) get() []byte { return l.b }
+
+func (l L) two() ([]byte, int) { return l.b, len(l.b) }
+
+func (l *L) ptwo() ([]byte, int) { return l.b, len(l.b) }
+
+func run() {
+	var buf [4]byte
+	gk = L{b: buf[:]}.b
+}
+
+func main() { run() }
+`,
+			want: "cannot store L{b: buf[:]}.b, which holds a pointer into local buf",
+		},
+		{
+			name: "a value method's result on a struct literal viewing a local array, kept",
+			src: `type L struct{ b []byte }
+
+func (l L) get() []byte { return l.b }
+
+func (l L) two() ([]byte, int) { return l.b, len(l.b) }
+
+func (l *L) ptwo() ([]byte, int) { return l.b, len(l.b) }
+
+func run() {
+	var buf [4]byte
+	gk = L{b: buf[:]}.get()
+}
+
+func main() { run() }
+`,
+			want: "cannot store L{b: buf[:]}.get(), which holds a pointer into local buf",
+		},
+		{
+			name: "a value method of several results on a struct literal in parentheses, kept",
+			src: `type L struct{ b []byte }
+
+func (l L) get() []byte { return l.b }
+
+func (l L) two() ([]byte, int) { return l.b, len(l.b) }
+
+func (l *L) ptwo() ([]byte, int) { return l.b, len(l.b) }
+
+func run() {
+	var buf [4]byte
+	k, n := (L{b: buf[:]}).two()
+	gk = k
+	println(n)
+}
+
+func main() { run() }
+`,
+			want: "cannot store local k, which holds a pointer into local buf",
+		},
+		{
+			name: "a method of several results through a local holding a literal's address, kept",
+			src: `type L struct{ b []byte }
+
+func (l L) get() []byte { return l.b }
+
+func (l L) two() ([]byte, int) { return l.b, len(l.b) }
+
+func (l *L) ptwo() ([]byte, int) { return l.b, len(l.b) }
+
+func run() {
+	var buf [4]byte
+	q := &L{b: buf[:]}
+	k, n := q.ptwo()
+	gk = k
+	println(n)
+}
+
+func main() { run() }
+`,
+			want: "cannot store local k",
+		},
+		{
+			name: "a view of an array of a struct literal through its address, kept",
+			src: `type L struct{ b []byte }
+
+func (l L) get() []byte { return l.b }
+
+func (l L) two() ([]byte, int) { return l.b, len(l.b) }
+
+func (l *L) ptwo() ([]byte, int) { return l.b, len(l.b) }
+
+func run() {
+	gk = (&struct{ a [4]byte }{}).a[:]
+}
+
+func main() { run() }
+`,
+			want: "the address of a composite literal",
+		},
+		{
+			name: "a field of a struct literal viewing package storage, kept",
+			src: `type L struct{ b []byte }
+
+func (l L) get() []byte { return l.b }
+
+func (l L) two() ([]byte, int) { return l.b, len(l.b) }
+
+func (l *L) ptwo() ([]byte, int) { return l.b, len(l.b) }
+
+func run() {
+	gk = L{b: gbuf[:]}.b
+}
+
+func main() { run() }
+`,
+		},
+		{
+			name: "a value method of several results on a struct literal viewing package storage, kept",
+			src: `type L struct{ b []byte }
+
+func (l L) get() []byte { return l.b }
+
+func (l L) two() ([]byte, int) { return l.b, len(l.b) }
+
+func (l *L) ptwo() ([]byte, int) { return l.b, len(l.b) }
+
+func run() {
+	k, n := L{b: gbuf[:]}.two()
+	gk = k
+	println(n)
+}
+
+func main() { run() }
+`,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}

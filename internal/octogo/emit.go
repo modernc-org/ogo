@@ -54061,6 +54061,9 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 	// ...but not through a result the callee's summary of its position says hands
 	// back nothing of the call's (resultsCarryNothing).
 	clean := e.resultsCarryNothing(rhs, len(targets))
+	if e.storeCarries != nil && e.storeCarries.r.whole {
+		clean = nil
+	}
 	if !e.fixTargetAddrs(targets, declare) {
 		return
 	}
@@ -61316,6 +61319,12 @@ type frameRef struct {
 	// for `s := xs[:]` (sliceElemRef): the array has no name here to be moved, so
 	// the advice is a view's, and the value is no view.
 	backing bool
+	// whole marks a reference of a call of several results that each result able
+	// to carry one carries, read off no summary: a marked holder's method, a
+	// literal's. No summary of a position clears a result of it
+	// (resultsCarryNothing): the summaries are one level deep, and a permission
+	// read off them misses what they do not record (KNOWN MEANS MUST).
+	whole bool
 }
 
 func sliceRef(name string) frameRef {
@@ -61961,6 +61970,19 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 	if r, ok := e.litChainFrameRef(ast); ok {
 		return r, true
 	}
+	// A STRUCT literal read or called on where it stands, `Q{b: a[:]}.b`,
+	// `Q{b: a[:]}.get()`, `(&Q{b: a[:]}).get()`: what it hands on, the literal's
+	// elements reach (litHeadRef).
+	if r, ok := e.litHeadRef(ast); ok {
+		return r, true
+	}
+	// And the address of a part of one through its address, `&(&R{n: 5}).n`: a
+	// pointer into the literal's own storage, a temporary of the frame.
+	if un, ok := e.unaryExprKids(ast); ok && len(un) == 2 && un[0].sym == UnaryOp && un[1].sym == Factor {
+		if tok, ok := e.unaryOpTok(un[0].ast); ok && e.f.ch(tok) == AND && e.addrLitHeadPart(slices.Collect(it(un[1].ast))) {
+			return addrLitRef(), true
+		}
+	}
 	// Reading a field OUT of a marked holder hands on the reference the holder
 	// carries. `b.d = a[:]` marks b, and handing b on is refused -- but `g = b.d` is
 	// the same header by another spelling, and it was accepted at every sink: a
@@ -61989,6 +62011,16 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 				if ct, okc := e.callResultCType(base, steps); okc &&
 					(ct == cString || e.carriesReference(ct)) {
 					return readHolderRef(e.f.exprSource(fac), origin), true
+				}
+				// And a method of several results, which has no one result type to
+				// ask: each result that can carry a reference carries the holder's,
+				// whatever the method's summary says of the position (whole), as the
+				// one result does. Asked of nothing, `q := &Q{b: a[:]}; b, _ :=
+				// q.two()` kept the local array's view past the frame (dom125).
+				if _, rts, okr := e.callResultInfo(base, steps); okr && len(rts) > 1 && e.resultsCanCarry(rts) {
+					r := readHolderRef(e.f.exprSource(fac), origin)
+					r.whole = true
+					return r, true
 				}
 			}
 		}
@@ -62150,6 +62182,117 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 		return e.callFrameRef(recv, suffix)
 	}
 	return frameRef{}, false
+}
+
+// resultsCanCarry reports whether one of a call's result types can carry a
+// reference: a string counts, as a method's string result out of a marked holder
+// does.
+func (e *emitter) resultsCanCarry(rts []string) bool {
+	return slices.ContainsFunc(rts, func(t string) bool { return t == cString || e.carriesReference(t) })
+}
+
+// litHeadRef is frameRefOf for a struct literal with steps where it stands,
+// `Q{b: a[:]}.b`, `Q{b: a[:]}.get()`, and in parentheses, `(Q{...}).get()`,
+// `(&Q{...}).b`, `(&Q{...}).get()`: what is read, or what a method on it hands
+// back, reaches what the literal's elements reach (frameRefInLit) where its type
+// can carry a reference -- a method's results asked by their types, as a marked
+// holder's are, its arguments by its summary. Through the address of one, the
+// literal's own storage is a temporary of the frame: a view of an array field of
+// it is that storage, and so is whatever a pointer method of a result that can
+// carry a reference hands back, as of a local holding the literal's address
+// (the holder rule; N1, listed), no summary saying otherwise being known. Asked
+// of nothing, `return Q{b: a[:]}.b`, `return (Q{b: a[:]}).get()` and `b, _ :=
+// Q{b: a[:]}.two()` kept a local array's view past the frame, in every release
+// (dom125).
+func (e *emitter) litHeadRef(ast []int32) (frameRef, bool) {
+	kids := e.factorKids(e.unparenExpr(ast))
+	addr := false
+	if len(kids) == 4 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression && kids[3].sym == FactorSuffix {
+		inner := e.factorKids(e.unparenExpr(kids[1].ast))
+		switch {
+		case len(inner) == 2 && inner[0].sym == UnaryOp && e.opText(inner[0].ast) == "&" && inner[1].sym == Factor:
+			kids, addr = append(slices.Collect(it(inner[1].ast)), kids[3]), true
+		case len(inner) >= 2 && inner[len(inner)-1].sym == CompositeLit:
+			kids = append(slices.Clone(inner), kids[3])
+		}
+	}
+	_, _, steps, ok := e.factorStructLitChain(kids)
+	if !ok {
+		return frameRef{}, false
+	}
+	head := kids[:len(kids)-1]
+	src := e.f.exprSource(Node{sym: Expression, ast: ast})
+	inLit, reaches := e.frameRefInLit(factorStepsExpr(head, nil))
+	n := len(steps)
+	if !containsSym(steps, CallSuffix) {
+		// A part of the literal read: what it holds, where it can hold a reference;
+		// through its address, a view of an array of its own is its storage.
+		if addr && e.endsInSliceStep(steps) {
+			lct, _ := e.inferCType(factorStepsExpr(head, nil))
+			if cur, ok := e.accessChainTypeAt(accessCur{ctype: lct}, steps[:n-1], false); !ok || len(cur.dims) != 0 {
+				return addrLitRef(), true
+			}
+		}
+		if !reaches {
+			return frameRef{}, false
+		}
+		if ct, typed := e.inferCType(ast); typed && ct != cString && !e.carriesReference(ct) {
+			return frameRef{}, false
+		}
+		return readHolderRef(src, inLit.origin), true
+	}
+	if n < 2 || steps[n-2].sym != Selector || steps[n-1].sym != CallSuffix || containsSym(steps[:n-2], CallSuffix) {
+		return frameRef{}, false
+	}
+	rct, typed := e.inferCType(factorStepsExpr(head, steps[:n-2]))
+	if !typed || rct == "" {
+		return frameRef{}, false
+	}
+	base, method := methodBaseType(rct), e.soleIdent(steps[n-2].ast)
+	cname := e.methodCName(base, method)
+	if _, declared := e.funcRet[cname]; !declared {
+		cn, _, _, found := e.promotedMethod(base, method)
+		if !found {
+			return frameRef{}, false
+		}
+		cname = cn
+	}
+	call := steps[n-1].ast
+	at := -1
+	if !e.spreadCall(call) {
+		at = e.packAt(cname)
+	}
+	if r, ok := e.callArgsRef(e.funcSourceName(cname), e.retParams[cname], e.retContents[cname], at, e.callArgExprs(call)); ok {
+		return r, true
+	}
+	rts := e.funcRet[cname]
+	if !e.resultsCanCarry(rts) {
+		return frameRef{}, false
+	}
+	if reaches {
+		r := readHolderRef(src, inLit.origin)
+		r.whole = len(rts) > 1
+		return r, true
+	}
+	if addr && e.methodPtr[cname] {
+		r := addrLitRef()
+		r.whole = len(rts) > 1
+		return r, true
+	}
+	return frameRef{}, false
+}
+
+// addrLitHeadPart reports a Factor reading a part of a struct literal through its
+// address in parentheses, `(&R{n: 5}).n`, `(&R{...}).a[1]`: no step calls.
+func (e *emitter) addrLitHeadPart(kids []Node) bool {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression || kids[3].sym != FactorSuffix {
+		return false
+	}
+	if containsSym(slices.Collect(it(kids[3].ast)), CallSuffix) {
+		return false
+	}
+	_, _, isAddrLit := e.addrOfCompositeLit(e.unparenExpr(kids[1].ast))
+	return isAddrLit
 }
 
 // derefCall reads a call through a parenthesised dereference of a name as a call on

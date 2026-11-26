@@ -154,6 +154,20 @@ shipped section tells a reader on that version that they have behaviour they do 
   a package variable. The lifetime rules read through parentheses holding a
   variable and its steps, and not a conversion or a call. Found by dom125's sweep
   of its parenthesised heads. In every release checked.
+- **A wrong answer, silent: a view of a local array kept past its frame through
+  a struct literal read or called on where it stands**: `return Q{b:
+  buf[:]}.b`, `return Q{b: buf[:]}.get()`, `k, _ := Q{b: buf[:]}.two()`, the
+  same in parentheses, `(&Q{...}).b`, and a struct written out, handed the view
+  on, read after the frame as another call's stack; and `q := &Q{b: buf[:]}; k, _
+  := q.two()` through a method of several results. The lifetime rules asked what
+  a literal's elements reach where the literal is handed on, and not where a
+  part of it is read or a method is called on it, and a method on a variable
+  holding a literal's address was asked by one result's type. Found by dom125's
+  gates, dom110's listed `(&addrParser{...}).parseSingleAddress()` building
+  with the fix above. In every release checked. A pointer method through a
+  literal's address, and a method of several results through a variable holding
+  one, are refused where a result can hold a reference, as a method of one
+  result through such a variable was (a gap, listed), and so is dom110's port.
 - **A label on an empty statement builds**: `L: ;`, a label alone on a line
   before a `;`, and a label before a block's `}`, which Go builds and ccgo
   writes at every label, were refused, "label L not defined" for the `goto`
