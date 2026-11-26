@@ -533,6 +533,24 @@ silent fault puts the count back to 0. Each round's account is in
   pointer to a type holding an interface written out; d07ebad; a method of
   several results on a call's result of a defined slice type, with no
   position; 043db0f), one listed (the same of a defined array type) -- 0
+- dom125 (2026-11-26), a solar tower's heliostat field (soniakeys/meeus's base,
+  interp, julian, deltat, sidereal, nutation, globe, coord, solar, refraction
+  and eqtime, unit and sexagesimal ported with their tests, Go 1.27's time cut,
+  a clock and three rows of heliostats on cogs), the first round against master
+  on the ccgo experiment's records: silent (a method's result on a run of
+  binary operators in parentheses and a field of a variable declared from a
+  literal of a struct written out typed by nothing, so Go's rejects of them
+  built; b0b6703, 906bec9; what a method of several results hands back of its
+  receiver's holdings, cleared where its results are taken apart; cc275b1; a
+  method on a call or a conversion in parentheses, no chain to the lifetime
+  rules; 3df0feb; and, found by the gates, a struct literal read or called on
+  where it stands, and a marked holder's method of several results, handing on
+  a local array's view; b594d08), a false refusal fixed and a loud fault of its
+  cause (a method of several results on a parenthesised operand, with no
+  position, and as a call's arguments C no compiler builds; 0070644), two
+  listed (a method's result through a local pointer to a literal taken to hold
+  the receiver whatever it returns; a receiver stored past every frame refused
+  with no position) -- 0
 
 **From a release candidate to v1.0** (the user's call, 2026-10-27, after an
 outside review read three clean rounds as the start of a stabilization, not its
@@ -1411,7 +1429,12 @@ section. A new finding goes there; the rule it leaves goes here too.
   transpiler's output is a probe of the shapes no person writes: ccgo writes a
   label on ";" at every label, an alias for every C typedef and a fallthrough
   through a default written mid-list, and each was a fault here that no round
-  had met.** (mquickjs through ccgo, build/probes/mquickjs). A sweep's
+  had met.** (mquickjs through ccgo, build/probes/mquickjs). **A listed gap a
+  fix closes is a shape that newly compiles: N2's closed dom106's and dom110's
+  rows unasked, and asked where it keeps a view, a literal's kept a local
+  array's past the frame in every release.** **A split of a change into commits
+  is built commit by commit: two alignments of one diff put a row's closing
+  brace in two parts.** (dom125, F5 and the split). A sweep's
   accessors record ORDER, `calls = calls*10 + k`, not a count ("Process rules
   learned the hard way").
 - **A MUTATED PROGRAM IS A PROBE OF THE FRONT END**; **A MUTATION WITH GO AS THE
@@ -1448,7 +1471,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   order mark in a string, a rune literal or a comment was text to the
   grammar, and built.** (dom114, sweeps/bom). **A shape a fix makes valid is
   asked of every tool that reads the source, and capped: the formatter
-  looped for ever on the BOM the scanner let stand.** (dom114).
+  looped for ever on the BOM the scanner let stand.** (dom114). **A row of
+  programs Go refuses is read for Go's reason: a generator's slip made a syntax
+  error both refuse, and it counted as agreement until it was read.** (dom125,
+  sweeps/typed-heads).
 - **A PROGRAM OF SIZE ASKS WHAT NO SWEEP ASKS**: **a build's TIME is a verdict**;
   **a line's length is a limit of the backend**.
 - **A refusal for what a construct costs asks what Go's compiler pays for it where
@@ -1611,7 +1637,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   printf's took what println's refused** (dom88).
 - **A question a walk answers is answered by the walk wherever it is asked: a field
   asked one step away read only the written type, and a table of test cases has
-  none** (dom97, sweeps/anon-fields).
+  none** (dom97, sweeps/anon-fields). **A walk that types a literal's variable
+  reads every alternative of the Factor that makes a literal: a struct written out
+  is one, and its fields were typed by nothing.** (dom125, litOrConvType)
 - **A table read by its value is asked by its key, and asked what else it holds: an
   empty struct's fields are nil, and so are an interface's** (isStruct, fieldEqCmp).
   **Two keys for one type are two tables: the reader asks by the key the writer
@@ -1634,7 +1662,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   none.**
 - **A RUN HAS A TYPE AT EVERY OPERATOR**: **A check asked of a run's innermost
   operator is asked of each operator out: the operand of each is what the operators
-  inside it yield.**
+  inside it yield.** **A walk that types an operand asks every shape the grammar's
+  repetition makes: a unary operator's operand was typed and a run of binary
+  operators was not, so a method's result on `(n - m)` was typed by nothing.**
+  (dom125, runOperandType; sweeps/typed-heads)
 - **A HEAD IS READ BY EVERY TARGET READER**: **A target reader that dispatches on
   its head asks what a qualifier is: `*lib.P` is a star over another package's
   variable, not over a field of one named lib.** **A shape that newly compiles is
@@ -1688,10 +1719,19 @@ section. A new finding goes there; the rule it leaves goes here too.
 
 - **The lifetime rules are asked of SHAPES, and a shape nobody asked about is a
   hole**: **A new binding form, or a new way to write a value, is a new row or column
-  there** (TestEmitCFrameRefForms and its siblings).
+  there** (TestEmitCFrameRefForms and its siblings). **A literal is asked what it
+  hands on wherever it stands with steps: its elements were asked where it is
+  handed on whole, and a part read or a method called on it handed on what they
+  reach.** (dom125, litHeadRef; sweeps/lit-heads)
 - **KNOWN MEANS MUST**: a rule that PERMITS on what it knows needs what is true on
   every path, one that refuses may believe a mark. **"Nothing here can name it" is an
-  answer for a refusal, never for a permission**.
+  answer for a refusal, never for a permission**. **A permission read off a
+  summary asks what the summary misses: what a method hands back of its receiver
+  was read where the result's type answered, and two programs the type refused
+  went by.** **A mark that names one origin answers one question: a local
+  holding a literal's address is marked with the literal's storage, not with
+  what its elements reach, and a refusal of whatever its methods return is the
+  answer that keeps no hole.** (dom125, N1's fix reverted; the holder rule)
 - **A STORE RULE IS ASKED AT EVERY STORE SITE**: **A new place that stores calls
   both** (refuseStore and noteStoredThrough); **A new way a callee stores is read by
   those two and sunk by that one.**
@@ -1760,10 +1800,15 @@ section. A new finding goes there; the rule it leaves goes here too.
   copied from** (dom78, sweeps/callee-recv-contents). **A struct's contents are a
   level above a slice's: a value copied out of a struct's slice holds what the
   slice's elements reach, and where they are bytes, nothing.** (dom113,
-  sweeps/reffree).
+  sweeps/reffree). **A summary kept by position is asked by every map it keeps: a
+  result's question asked three of the four, and what a method of several results
+  hands back of its receiver's holdings was clean.** (dom125,
+  calleeResultsCarryNothing; sweeps/paren-multi)
 - **A PARENTHESISED HEAD IS A ROW OF EVERY SCAN**: **A new scan reads heads through
   them, and a new shape the emitter reads through parentheses is a row in each
-  scan.**
+  scan.** **A splice that reads a head through its parentheses is asked of every
+  shape a head takes: a variable and its steps were spliced, and a call in
+  parentheses was no chain.** (dom125, spliceParenShape)
 - **A CALL'S RESULT IN A LOCAL IS A ROW OF THE SUMMARIES**: **A new way a value
   passes through a call is a gate there, not a new edge kind.** **WHAT A CALL HANDS
   BACK IS ASKED ONCE**: **A new way to call is a row there, and a new kind of
