@@ -50187,6 +50187,22 @@ func (e *emitter) spliceParenShape(kids []Node) (Node, bool) {
 	return chainFactor(fk[0].tok, append(slices.Collect(it(fk[1].ast)), slices.Collect(it(kids[3].ast))...)), true
 }
 
+// parenCallMethod reports whether kids, a Factor's, are a method called on a call
+// or a conversion in parentheses, `(S(a[:])).One()`, `(idH(&lh)).Self()`: a
+// name and steps holding a call in them, a selector and a call after them.
+func (e *emitter) parenCallMethod(kids []Node) bool {
+	if len(kids) != 4 || kids[1].sym != Expression || kids[3].sym != FactorSuffix {
+		return false
+	}
+	after := slices.Collect(it(kids[3].ast))
+	n := len(after)
+	if n < 2 || after[n-2].sym != Selector || after[n-1].sym != CallSuffix {
+		return false
+	}
+	fk := e.factorKids(e.unparenExpr(kids[1].ast))
+	return len(fk) == 2 && fk[1].sym == FactorSuffix && containsSym(slices.Collect(it(fk[1].ast)), CallSuffix)
+}
+
 // chainFactor is the Factor of a name and the steps after it.
 func chainFactor(name int32, steps []Node) Node {
 	var suffix []int32
@@ -61754,6 +61770,17 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 			// `(h.s).g[:]` is `h.s.g[:]` (spliceParenSteps), which the emitter writes:
 			// read with the parentheses, `gsl = (h.s).g[:]` kept a view of a local.
 			ast = encodeNode(Factor, spliced.ast)
+		} else if spliced, ok := e.spliceParenShape(kids); ok && e.parenCallMethod(kids) {
+			// And a method called on a call or a conversion in them,
+			// `(S(a[:])).One()`, is `S(a[:]).One()`: parentheses around a primary
+			// expression change nothing. Read with them, a method handing back a
+			// view of its receiver kept the local array's past the frame (dom125).
+			// What is shown is what the program wrote.
+			r, ok := e.frameRefOf(encodeNode(Factor, spliced.ast))
+			if ok {
+				r.what = strings.Replace(r.what, e.f.exprSource(spliced), e.f.exprSource(Node{sym: Expression, ast: ast}), 1)
+			}
+			return r, ok
 		}
 	}
 	// And the address of one, `&(h.s).n`, is the address of `h.s.n`: unread, `gp =

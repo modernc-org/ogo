@@ -148,6 +148,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   is a value, and a variable or a chain in the parentheses is the call written
   without them, a pointer method's receiver the variable itself. In every
   release checked.
+- **A wrong answer, silent: a view of a local array kept past its frame through
+  a method called on a conversion or a call in parentheses**: `gk =
+  (S(buf[:])).one()`, refused written without the parentheses, kept the view in
+  a package variable. The lifetime rules read through parentheses holding a
+  variable and its steps, and not a conversion or a call. Found by dom125's sweep
+  of its parenthesised heads. In every release checked.
 - **A label on an empty statement builds**: `L: ;`, a label alone on a line
   before a `;`, and a label before a block's `}`, which Go builds and ccgo
   writes at every label, were refused, "label L not defined" for the `goto`

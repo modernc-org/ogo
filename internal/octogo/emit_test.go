@@ -9926,6 +9926,40 @@ func run() {
 func main() { run() }
 `,
 		},
+		{
+			// dom125's F3: a method handing back its receiver's view, called on a
+			// conversion in parentheses.
+			name: "a view a method hands back of a conversion in parentheses, kept",
+			src: `type S []byte
+
+func (s S) one() S { return s[:2] }
+
+func run() {
+	var buf [4]byte
+	gk = (S(buf[:])).one()
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local buf in package variable gk",
+		},
+		{
+			name: "a view a method of several results hands back of a conversion in parentheses, kept",
+			src: `type S []byte
+
+func (s S) two() (S, int) { return s[:2], len(s) }
+
+func run() {
+	var buf [4]byte
+	k, n := (S(buf[:])).two()
+	gk = k
+	println(n)
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local k in package variable gk",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}
